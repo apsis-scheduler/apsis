@@ -16,7 +16,7 @@
   "dependencies": {
     "lodash": "^4.17.10",
     "moment": "^2.22.2",
-    "moment-timezone": "^0.5.21",
+    "moment-timezone": "^0.5.35",
     "node-sass": "^7.0.3",
     "npm": "^6.1.0",
     "showdown": "^1.9.1",
