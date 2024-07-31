@@ -125,6 +125,61 @@ def main():
         help="don't print job changes")
 
     #-------------------------------------------------------------
+    # command: rename-job
+
+    def _replace_occurrences(file_path, old_value, new_value):
+        with open(file_path, 'r') as file:
+            lines = file.readlines()
+
+        modified = any(old_value in line for line in lines)
+
+        if not modified:
+            return
+
+        new_lines = [line.replace(old_value, new_value) for line in lines]
+        with open(file_path, 'w') as file:
+            file.writelines(new_lines)
+
+
+    def cmd_rename_job_and_dependencies(args):
+        old_path = args.old_path.with_suffix(".yaml")
+        new_path = args.new_path.with_suffix(".yaml")
+
+        if not old_path.is_file():
+            raise FileNotFoundError(f"Invalid argument: OLD_JOB_PATH does not exist: '{old_path}'.")
+
+        if new_path.is_file():
+            raise FileExistsError(f"Invalid argument: NEW_JOB_PATH already exists: '{new_path}'.")
+
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        old_path.rename(new_path)
+
+        old_id = str(old_path.with_suffix(""))
+        new_id = str(new_path.with_suffix(""))
+
+        cur_dir = Path.cwd()
+        if cur_dir.name != "jobs":
+            logging.warning(f"Please, make sure to be at your jobs dir root to find all dependencies: {cur_dir}")
+
+        for root, _, files in os.walk(cur_dir):
+            for file in files:
+                file_path = Path(root) / file
+                if file_path.suffix != '.yaml':
+                    continue
+                _replace_occurrences(file_path, old_id, new_id)
+
+            
+    cmd = parser.add_command(
+        "rename-job", cmd_rename_job_and_dependencies,
+        description="Renames a job and all the dependencies to that job starting from current dir.")
+    cmd.add_argument(
+        "old_path", metavar="OLD_JOB_PATH", type=Path,
+        help="Path of the job to be renamed.")
+    cmd.add_argument(
+        "new_path", metavar="NEW_JOB_PATH", type=Path,
+        help="The new path to use.")
+    
+    #-------------------------------------------------------------
     # command: restart
 
     def cmd_restart(args):
