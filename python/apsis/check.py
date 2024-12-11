@@ -126,7 +126,7 @@ def check_job_dependencies_scheduled(
                 # Bind the dependency to get the precise args that match.
                 dep = dep.bind(run, jobs)
 
-                # Look at cheduled runs of the dependency job in `dep_times.
+                # Look at scheduled runs of the dependency job in `dep_times`.
                 # Check if any matches the dependency args.
                 dep_job = jobs_dir.get_job(dep.job_id)
                 if not any(
