@@ -111,8 +111,12 @@ def check_job_dependencies_scheduled(
     jobs = Jobs(jobs_dir, MockJobDb())
     time = ora.now()
 
-    sched_start, sched_stop = time, time + 86400
-    dep_start, dep_stop = time - 86400, time + 86400
+    sched_start, sched_stop = (
+        sched_times if sched_times is not None else (time, time + 86400)
+    )
+    dep_start, dep_stop = (
+        dep_times if dep_times is not None else (time - 86400, time + 86400)
+    )
     dep_ivl = f"[{dep_start}, {dep_stop})"
 
     for schedule in job.schedules:
