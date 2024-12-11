@@ -100,7 +100,7 @@ def check_job_dependencies_scheduled(
       none, uses (now, now + 1 day).
     :param dep_times:
       (start, stop) time interval in which to look for scheduled runs of
-      dependencies.  If none, uses (now - 1 day, now + 1 day).
+      dependencies.  If none, uses (now - 2 days, now + 2 days).
     :return:
       Generator of errors indicating apparently unscheduled dependencies.
     """
@@ -115,7 +115,7 @@ def check_job_dependencies_scheduled(
         sched_times if sched_times is not None else (time, time + 86400)
     )
     dep_start, dep_stop = (
-        dep_times if dep_times is not None else (time - 86400, time + 86400)
+        dep_times if dep_times is not None else (time - 86400*2, time + 86400*2)
     )
     dep_ivl = f"[{dep_start}, {dep_stop})"
 
