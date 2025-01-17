@@ -46,6 +46,7 @@ with closing(sqlite3.connect(args.path)) as conn:
     for table_name, col_name, col_def in (
             ("runs", "conds", "VARCHAR NULL"),
             ("runs", "actions", "VARCHAR NULL"),
+            ("runs", "stop_time", "FLOAT NULL"),
     ):
         if not has_column(table_name, col_name):
             log.info(f"creating column: {table_name}.{col_name}")
