@@ -44,7 +44,7 @@ config file.
 
     python:
       gc:
-        enable: true
+        enabled: true
         threshold: [100000, 100, 100]
 
     procstar:
@@ -163,7 +163,7 @@ substantial time, which blocks Apsis and can lead to timeouts.  To enable
 
     python:
       gc:
-        enable: false
+        enabled: false
         threshold: [100000, 100, 100]
 
 The thresholds apply only if GC is enabled.  See documentation for
