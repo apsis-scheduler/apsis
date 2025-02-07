@@ -12,6 +12,7 @@ div
       State.state(:state="run.state" name)
       OperationButton(
         v-for="operation in OPERATIONS[run.state]"
+        v-if="operation !== 'stop' || (run.times && run.times.stop !== undefined && run.times.stop !== null)"
         :key="operation"
         :run_id="run_id"
         :operation="operation"
