@@ -74,7 +74,7 @@ def build_apsis(cfg):
     job_dir = cfg["job_dir"]
     log.info(f"opening jobs dir {job_dir}")
     try:
-        jobs = load_jobs_dir(job_dir)
+        jobs = asyncio.get_event_loop().run_until_complete(load_jobs_dir(job_dir))
     except JobsDirErrors as exc:
         for err in exc.errors:
             log.error(f"job {err.job_id}: {err}")
