@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apsis"
-version = "0.33.3"
+version = "0.33.4"
 description = "Easy-to-use task scheduler"
 readme = "README.md"
 license = {text = "MIT License"}
