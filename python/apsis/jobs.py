@@ -241,21 +241,19 @@ async def load_jobs_dir(path):
 
     jobs = {}
     errors = []
-    semaphore = asyncio.Semaphore(10)
 
     async def load_job(path, job_id):
-        async with semaphore:
-            log.debug(f"loading: {path}")
-            try:
-                async with aiofiles.open(path, mode='r') as file:
-                    content = await file.read()
-                job_jso = yaml.safe_load(content)
-                job = Job.from_jso(job_jso, job_id)
-                return job_id, job, None
-            except SchemaError as exc:
-                log.debug(f"error: {path}: {exc}", exc_info=True)
-                exc.job_id = job_id
-                return job_id, None, exc
+        log.debug(f"loading: {path}")
+        try:
+            async with aiofiles.open(path, mode='r') as file:
+                content = await file.read()
+            job_jso = yaml.safe_load(content)
+            job = Job.from_jso(job_jso, job_id)
+            return job_id, job, None
+        except SchemaError as exc:
+            log.debug(f"error: {path}: {exc}", exc_info=True)
+            exc.job_id = job_id
+            return job_id, None, exc
 
     load_coros = [
         load_job(path, job_id)
