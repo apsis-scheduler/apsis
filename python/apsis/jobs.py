@@ -257,11 +257,11 @@ async def load_jobs_dir(path):
                 exc.job_id = job_id
                 return job_id, None, exc
 
-    load_tasks = [
+    load_coros = [
         load_job(path, job_id)
         for path, job_id in list_yaml_files(jobs_path)
     ]
-    results = await asyncio.gather(*load_tasks)
+    results = await asyncio.gather(*load_coros)
     for job_id, job, exc in results:
         if job is not None:
             jobs[job_id] = job
