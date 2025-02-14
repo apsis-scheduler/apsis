@@ -1,5 +1,7 @@
 import yaml
 
+import pytest
+
 from   apsis.check import check_job_dependencies_scheduled
 from   apsis.exc import JobsDirErrors
 import apsis.jobs
@@ -12,7 +14,8 @@ def dump_yaml_file(obj, path):
         yaml.dump(obj, file)
 
 
-def test_name_error(tmp_path):
+@pytest.mark.asyncio
+async def test_name_error(tmp_path):
     """
     Tests that a job with an unknown param in an expansion is not loaded.
     """
@@ -36,7 +39,7 @@ def test_name_error(tmp_path):
 
     # The program's command has an invalid expansion 'name'.
     try:
-        apsis.jobs.load_jobs_dir(jobs_path)
+        await apsis.jobs.load_jobs_dir(jobs_path)
     except JobsDirErrors as exc:
         assert len(exc.errors) == 1
         assert "'name'" in str(exc.errors[0])
@@ -47,10 +50,11 @@ def test_name_error(tmp_path):
     job["params"].append("name")
     job["schedule"]["args"] = {"name": "bob"}
     dump_yaml_file(job, job_path)
-    apsis.jobs.load_jobs_dir(jobs_path)
+    await apsis.jobs.load_jobs_dir(jobs_path)
 
 
-def test_syntax_error(tmp_path):
+@pytest.mark.asyncio
+async def test_syntax_error(tmp_path):
     """
     Tests that a job with a syntax error inside an expanded expression is not
     loaded.
@@ -73,7 +77,7 @@ def test_syntax_error(tmp_path):
 
     # The program's command has an invalid expansion 'name'.
     try:
-        apsis.jobs.load_jobs_dir(jobs_path)
+        await apsis.jobs.load_jobs_dir(jobs_path)
     except JobsDirErrors as exc:
         assert len(exc.errors) == 1
         assert "expected token" in str(exc.errors[0])
@@ -83,10 +87,11 @@ def test_syntax_error(tmp_path):
     # Fix the command.  Now it should be fine.
     job["program"]["command"] = "today is {{ date }}"
     dump_yaml_file(job, job_path)
-    apsis.jobs.load_jobs_dir(jobs_path)
+    await apsis.jobs.load_jobs_dir(jobs_path)
 
 
-def test_misspelled_param(tmp_path):
+@pytest.mark.asyncio
+async def test_misspelled_param(tmp_path):
     """
     Tests that a job with a misspelled param name inside an expanded
     expression is not loaded.
@@ -119,7 +124,7 @@ def test_misspelled_param(tmp_path):
 
     # The program's command has an invalid expansion 'name'.
     try:
-        apsis.jobs.load_jobs_dir(jobs_path)
+        await apsis.jobs.load_jobs_dir(jobs_path)
     except JobsDirErrors as exc:
         for err in exc.errors:
             import traceback
@@ -133,10 +138,11 @@ def test_misspelled_param(tmp_path):
     # Fix the command.  Now it should be fine.
     job["condition"]["args"]["date"] = "{{ get_calendar('Mon-Fri').before(date) }}"
     dump_yaml_file(job, job_path)
-    apsis.jobs.load_jobs_dir(jobs_path)
+    await apsis.jobs.load_jobs_dir(jobs_path)
 
 
-def test_check_job_dependencies_scheduled(tmp_path):
+@pytest.mark.asyncio
+async def test_check_job_dependencies_scheduled(tmp_path):
     jobs_path = tmp_path
 
     dependent = {
@@ -155,15 +161,15 @@ def test_check_job_dependencies_scheduled(tmp_path):
     }
     dump_yaml_file(dependency, jobs_path / "dependency.yaml")
 
-    def check():
-        jobs_dir = apsis.jobs.load_jobs_dir(jobs_path)
+    async def check():
+        jobs_dir = await apsis.jobs.load_jobs_dir(jobs_path)
         return list(itr.chain(*(
             check_job_dependencies_scheduled(jobs_dir, j)
             for j in jobs_dir.get_jobs()
         )))
 
     # The dependent isn't scheduled, so no error.
-    errs = check()
+    errs = await check()
     assert len(errs) == 0
 
     # Schedule the dependent.  Now there are errors, because the dependency is
@@ -185,7 +191,7 @@ def test_check_job_dependencies_scheduled(tmp_path):
         },
     ]
     dump_yaml_file(dependent, jobs_path / "dependent.yaml")
-    errs = check()
+    errs = await check()
     assert any( "label=foo" in e for e in errs )
     assert any( "label=bar" in e for e in errs )
 
@@ -201,7 +207,7 @@ def test_check_job_dependencies_scheduled(tmp_path):
         },
     ]
     dump_yaml_file(dependency, jobs_path / "dependency.yaml")
-    errs = check()
+    errs = await check()
     assert any( "label=foo" in e for e in errs )
     assert not any( "label=bar" in e for e in errs )
 
@@ -216,7 +222,7 @@ def test_check_job_dependencies_scheduled(tmp_path):
         },
     )
     dump_yaml_file(dependency, jobs_path / "dependency.yaml")
-    errs = check()
+    errs = await check()
     assert len(errs) == 0
 
 

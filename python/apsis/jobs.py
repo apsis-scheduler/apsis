@@ -1,3 +1,5 @@
+import aiofiles
+import asyncio
 import logging
 import os
 from   pathlib import Path
@@ -141,16 +143,6 @@ def jso_to_job(jso, job_id):
     return Job.from_jso(jso, job_id)
 
 
-def load_yaml(file, job_id):
-    jso = yaml.load(file, Loader=yaml.SafeLoader)
-    return jso_to_job(jso, job_id)
-
-
-def load_yaml_file(path, job_id):
-    with open(path) as file:
-        return load_yaml(file, job_id)
-
-
 def dump_yaml(file, job):
     yaml.dump(job_to_jso(job), file)
 
@@ -229,7 +221,7 @@ class JobsDir:
 
 
 
-def load_jobs_dir(path):
+async def load_jobs_dir(path):
     """
     Attempts to loads jobs from a jobs dir.
 
@@ -249,13 +241,29 @@ def load_jobs_dir(path):
 
     jobs = {}
     errors = []
-    for path, job_id in list_yaml_files(jobs_path):
+
+    async def load_job(path, job_id):
         log.debug(f"loading: {path}")
         try:
-            jobs[job_id] = load_yaml_file(path, job_id)
+            async with aiofiles.open(path, mode='r') as file:
+                content = await file.read()
+            job_jso = yaml.safe_load(content)
+            job = Job.from_jso(job_jso, job_id)
+            return job_id, job, None
         except SchemaError as exc:
             log.debug(f"error: {path}: {exc}", exc_info=True)
             exc.job_id = job_id
+            return job_id, None, exc
+
+    load_coros = [
+        load_job(path, job_id)
+        for path, job_id in list_yaml_files(jobs_path)
+    ]
+    results = await asyncio.gather(*load_coros)
+    for job_id, job, exc in results:
+        if job is not None:
+            jobs[job_id] = job
+        if exc is not None:
             errors.append(exc)
 
     jobs_dir = JobsDir(jobs_path, jobs)

@@ -872,7 +872,7 @@ async def reload_jobs(apsis, *, dry_run=False):
 
     # Reload the contents of the jobs dir.
     log.info(f"reloading jobs from {jobs0.path}")
-    jobs1 = load_jobs_dir(jobs0.path)
+    jobs1 = await load_jobs_dir(jobs0.path)
 
     # Diff them.
     rem_ids, add_ids, chg_ids = diff_jobs_dirs(jobs0, jobs1)
