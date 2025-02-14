@@ -249,7 +249,7 @@ async def load_jobs_dir(path):
             try:
                 async with aiofiles.open(path, mode='r') as file:
                     content = await file.read()
-                job_jso = await asyncio.to_thread(yaml.safe_load, content)
+                job_jso = yaml.safe_load(content)
                 job = Job.from_jso(job_jso, job_id)
                 return job_id, job, None
             except SchemaError as exc:
