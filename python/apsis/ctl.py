@@ -4,7 +4,7 @@ Control CLI, for maintenance and running the service.
 
 # Configure GC as early as possible.
 import gc
-gc.set_threshold(100_000, 100, 10)
+gc.set_threshold(100_000, 100, 100)
 import apsis.lib.py
 apsis.lib.py.track_gc_stats(warn_time=0.5)
 
