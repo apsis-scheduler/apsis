@@ -131,8 +131,8 @@ class Apsis:
         self.scheduled = ScheduledRuns(
             db.clock_db, self.scheduler.get_scheduler_time, self._wait)
 
-        # Stats from the async check loop.
-        self.__check_async_stats = {}
+        # Values to build stats for the async check loop.
+        self._latency_values = []
 
         # False while starting, set to true once up and running.
         self.running_flag = asyncio.Event()
@@ -666,6 +666,7 @@ class Apsis:
     async def __check_async(self):
         """
         Monitors the async event loop.
+        Collects latency measurements.
         """
         while True:
             num_tasks = len(asyncio.all_tasks())
@@ -676,20 +677,25 @@ class Apsis:
             await asyncio.sleep(next_second - t)
             # See how late we are.
             latency = now() - next_second
+            self._latency_values.append(latency)
 
-            self.__check_async_stats = {
-                "latency"   : latency,
-                "num_tasks" : num_tasks,
-            }
 
 
     def get_stats(self):
         res = resource.getrusage(resource.RUSAGE_SELF)
         gc_stats = gc.get_stats()
+        latency_values = self._latency_values.copy()
+        self._latency_values.clear()        
         stats = {
             "start_time"            : str(self.__start_time),
             "time"                  : str(now()),
-            "async"                 : self.__check_async_stats,
+            "async": {
+                "latency_count"     : len(latency_values) if latency_values else 0,
+                "latency_min"       : min(latency_values) if latency_values else 0,
+                "latency_max"       : max(latency_values) if latency_values else 0,
+                "latency_avg"       : sum(latency_values) / len(latency_values) if latency_values else 0,
+                "num_tasks"         : len(asyncio.all_tasks()),
+            },
             "rusage_maxrss"         : res.ru_maxrss * 1024,
             "rusage_utime"          : res.ru_utime,
             "rusage_stime"          : res.ru_stime,

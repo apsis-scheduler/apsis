@@ -26,7 +26,7 @@ async def sleep_until(time):
         late = now() - time
         if late < -0.005:
             log.error(f"woke up early: {-late:.3f} s")
-        elif late > 0.1:
+        elif late > 1:
             log.error(f"woke up late: {late:.1f} s")
 
 
