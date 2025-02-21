@@ -8,6 +8,7 @@ gc.set_threshold(100_000, 100, 100)
 import apsis.lib.py
 apsis.lib.py.track_gc_stats(warn_time=0.5)
 
+import asyncio
 import logging
 import os
 from   pathlib import Path
@@ -71,7 +72,7 @@ def main():
         jobs_dir = None
 
         try:
-            jobs_dir = apsis.jobs.load_jobs_dir(args.path)
+            jobs_dir = asyncio.run(apsis.jobs.load_jobs_dir(args.path))
         except NotADirectoryError as exc:
             parser.error(exc)
         except JobsDirErrors as exc:
