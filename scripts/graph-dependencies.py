@@ -1,6 +1,7 @@
 # Requires graphviz and graphviz Python module.
 
 import argparse
+import asyncio
 import graphviz
 from   pathlib import Path
 
@@ -20,7 +21,8 @@ parser.add_argument(
 args = parser.parse_args()
 
 # Load all jobs.
-jobs = load_jobs_dir(args.path).get_jobs()
+jobs_dir = asyncio.run(load_jobs_dir(args.path))
+jobs = jobs_dir.get_jobs()
 
 dot = graphviz.Digraph(
     graph_attr={
