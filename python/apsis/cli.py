@@ -147,7 +147,7 @@ def main():
     #--- command: output ---------------------------------------------
 
     def cmd_output(client, args):
-        if args.follow or args.tail:
+        if args.follow or args.follow_new:
             async def follow():
                 async with client.get_output_data_updates(
                         args.run_id, "output",
