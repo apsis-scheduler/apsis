@@ -6,6 +6,7 @@ import apsis.lib.py
 apsis.lib.py.track_gc_stats(warn_time=0.5)
 
 import asyncio
+import gc
 import logging
 import os
 from   pathlib import Path
