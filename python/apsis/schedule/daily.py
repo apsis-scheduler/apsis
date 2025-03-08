@@ -82,15 +82,15 @@ class DailySchedule(Schedule):
                     "skipping nonexistent schedule time "
                     f"{sched_date} {daytime} {self.tz}"
                 )
-                continue
-            assert time >= start
-            args = {
-                "date": str(date),
-                "time": time,
-                "daytime": str(daytime),
-                **common_args,
-            }
-            yield time, args
+            else:
+                assert time >= start
+                args = {
+                    "date": str(date),
+                    "time": time,
+                    "daytime": str(daytime),
+                    **common_args,
+                }
+                yield time, args
 
             i += 1
             if i == len(self.daytimes):
