@@ -520,7 +520,7 @@ class RunStore:
                 )
             )
 
-        return now(), list(runs)
+        return now(), list(runs)[::-1]
 
 
     def get_stats(self):
