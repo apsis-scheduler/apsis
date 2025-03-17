@@ -532,6 +532,7 @@ async def websocket_summary(request, ws):
 
                 # Send summaries of all runs.
                 _, runs = apsis.run_store.query()
+                runs = runs[::-1]
                 run_msgs = ( messages.make_run_summary(r) for r in runs )
 
                 msgs = itertools.chain(job_msgs, conn_msgs, run_msgs)
