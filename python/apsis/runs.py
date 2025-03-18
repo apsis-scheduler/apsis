@@ -470,6 +470,9 @@ class RunStore:
             with_args   =None,
     ):
         """
+        We rely on this function returning queries in ascending order.
+        (See `apsis.service.api.websocket_summary` for example.)
+
         :param state:
           Limits results to runs in the specified state(s).
         :param args:

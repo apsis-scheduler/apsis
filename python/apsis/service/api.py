@@ -532,6 +532,9 @@ async def websocket_summary(request, ws):
 
                 # Send summaries of all runs.
                 _, runs = apsis.run_store.query()
+                # Reverse runs to have the latest runs first.
+                # This depends on 'apsis.run_store.query()' returning runs in ascending order.
+                runs = runs[::-1]
                 run_msgs = ( messages.make_run_summary(r) for r in runs )
 
                 msgs = itertools.chain(job_msgs, conn_msgs, run_msgs)

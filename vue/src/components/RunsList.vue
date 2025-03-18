@@ -108,11 +108,11 @@ div
       div
         .label Order:
         div
-          | Time &#8679;
+          | Time &#8681;
           Toggle.toggle(
             v-model="asc"
           )
-          | Time &#8681; &nbsp;
+          | Time &#8679; &nbsp;
           HelpButton
             p Time runs chronologically upward or downward.
         div &nbsp;
@@ -340,7 +340,7 @@ export default {
       OPERATIONS,
 
       args: null,        // no arg filters
-      asc: true,         // show time descending
+      asc: false,         // show time descending
       grouping: true,    // hide repeated runs
       keywords: null,    // no keyword filters
       labels: null,      // no label filters
