@@ -62,7 +62,7 @@ export default {
         grouping: url.ungroup !== null,
         show: url.show ? parseInt(url.show) : 50,
         time: url.time ? parseCompactUTCTime(url.time) : 'now',
-        asc: url.asc !== null,
+        asc: url.asc === 'true',
       }
     },
 
@@ -89,7 +89,7 @@ export default {
       set('ungroup', query.grouping ? undefined : null)
       set('show', query.show === 50 ? undefined : query.show)
       set('time', query.time === 'now' ? undefined : formatCompactUTCTime(query.time))
-      set('asc', query.asc ? undefined : null)
+      set('asc', query.asc ? 'true' : undefined)
       return url
     },
 
