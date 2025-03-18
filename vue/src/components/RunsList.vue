@@ -340,7 +340,7 @@ export default {
       OPERATIONS,
 
       args: null,        // no arg filters
-      asc: false,         // show time ascending
+      asc: false,         // show time descending
       grouping: true,    // hide repeated runs
       keywords: null,    // no keyword filters
       labels: null,      // no label filters
