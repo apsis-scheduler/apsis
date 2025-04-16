@@ -12,6 +12,7 @@ SLEEP_JOB = jso_to_job({
     "program": {
         "type": "procstar",
         "argv": ["/usr/bin/sleep", "{{ time }}"],
+        "group_id": "default",
     }
 }, "sleep")
 
@@ -21,6 +22,7 @@ IGNORE_TERM_JOB = jso_to_job({
     "program": {
         "type": "procstar",
         "argv": [IGNORE_TERM_PATH, "{{ time }}"],
+        "group_id": "default",
         "stop": {
             "grace_period": 2,
         },

@@ -35,6 +35,7 @@ def test_shell_command_program_jso():
         "type"      : "apsis.program.procstar.agent.ProcstarShellProgram",
         "command"   : "echo 'Hello, {{ name }}!'",
         "sudo_user" : "produser",
+        "group_id"  : "default",
     })
 
     # JSO round trip.

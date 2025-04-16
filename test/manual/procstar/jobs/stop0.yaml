@@ -11,5 +11,6 @@ schedule:
 
 program:
   type: procstar-shell
+  group_id: default
   command: sleep 30
 

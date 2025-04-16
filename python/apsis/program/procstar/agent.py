@@ -152,7 +152,7 @@ class _ProcstarProgram(base.Program):
 
     def __init__(
             self, *,
-            group_id    =procstar.proto.DEFAULT_GROUP,
+            group_id,
             sudo_user   =None,
             stop        =Stop(),
     ):
@@ -185,7 +185,7 @@ class _ProcstarProgram(base.Program):
     @staticmethod
     def _from_jso(pop):
         return dict(
-            group_id    =pop("group_id", default=procstar.proto.DEFAULT_GROUP),
+            group_id    =pop("group_id"),
             sudo_user   =pop("sudo_user", default=None),
             stop        =pop("stop", Stop.from_jso, Stop()),
         )
@@ -291,7 +291,7 @@ class BoundProcstarProgram(base.Program):
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
             argv        = pop("argv")
-            group_id    = pop("group_id", default=procstar.proto.DEFAULT_GROUP)
+            group_id    = pop("group_id")
             sudo_user   = pop("sudo_user", default=None)
             stop        = pop("stop", BoundStop.from_jso, BoundStop())
         return cls(argv, group_id=group_id, sudo_user=sudo_user, stop=stop)

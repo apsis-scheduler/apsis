@@ -2,5 +2,6 @@ params: [time]
 
 program:
   type: procstar-shell
+  group_id: default
   command: "echo this is $APSIS_RUN_ID"
 

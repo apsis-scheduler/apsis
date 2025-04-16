@@ -2,5 +2,6 @@ params: [time]
 
 program:
   type: procstar-shell
+  group_id: default
   command: "echo sleeping for {{ time }} sec; /usr/bin/sleep {{ time }}; echo done"
 

@@ -5,6 +5,7 @@ metadata:
 
 program:
   type: procstar
+  group_id: default
   argv:
     - "/usr/bin/python"
     - "-u"

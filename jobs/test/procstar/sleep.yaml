@@ -2,6 +2,7 @@ params: [time]
 
 program:
   type: procstar
+  group_id: default
   argv:
     - /usr/bin/sleep
     - "{{ time }}"

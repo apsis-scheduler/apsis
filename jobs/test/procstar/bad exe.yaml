@@ -1,5 +1,6 @@
 program:
   type: procstar
+  group_id: default
   argv:
     - /usr/bin/bogus
 
