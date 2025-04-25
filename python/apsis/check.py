@@ -121,40 +121,37 @@ def check_job_dependencies_scheduled(
     )
     dep_ivl = f"[{dep_start}, {dep_stop})"
 
-    # Cache schedule enumeration of dependents, as they are probably evaluated
-    # many times.
+    # Cache for dependent job schedules: job_id -> set of frozenset(argdict.items())
     dep_insts = {}
     def get_dep_insts(job):
         try:
             return dep_insts[job.job_id]
         except KeyError:
             insts = list(get_insts_to_schedule(job, dep_start, dep_stop))
-            dep_insts[job.job_id] = insts
-            return insts
+            dep_insts[job.job_id] = {
+                frozenset(inst.args.items()) for _, _, inst in insts
+            }
+            return dep_insts[job.job_id]
 
-    for schedule in job.schedules:
-        # Construct all instances that will be scheduled soon.
-        insts = get_insts_to_schedule(job, sched_start, sched_stop)
-        # Check each of scheduled instance.
-        for _, _, inst in insts:
-            run = Run(inst)
-            # Check each dependency.
-            for dep in deps:
-                # Bind the dependency to get the precise args that match.
-                dep = dep.bind(run, jobs)
+    # Construct all instances that will be scheduled soon.
+    insts = get_insts_to_schedule(job, sched_start, sched_stop)
 
-                # Look at scheduled runs of the dependency job.  Check if any
-                # matches the dependency args.
-                dep_job = jobs_dir.get_job(dep.job_id)
-                if not any(
-                        i.args == dep.args
-                        for _, _, i in get_dep_insts(dep_job)
-                ):
-                    # No matches.
-                    dep_inst = Instance(dep.job_id, dep.args)
-                    yield (
-                        f"scheduled run {inst}: "
-                        f"dependency {dep_inst} not scheduled in {dep_ivl}"
-                    )
+    for _, _, inst in insts:
+        run = Run(inst)
+        # Check each dependency.
+        for dep in deps:
+            # Bind the dependency to get the precise args that match.
+            dep = dep.bind(run, jobs)
+
+            # Look at scheduled runs of the dependency job.  Check if any
+            # matches the dependency args.
+            dep_job = jobs_dir.get_job(dep.job_id)
+            if frozenset(dep.args.items()) not in get_dep_insts(dep_job):
+                # No matches.
+                dep_inst = Instance(dep.job_id, dep.args)
+                yield (
+                    f"scheduled run {inst}: "
+                    f"dependency {dep_inst} not scheduled in {dep_ivl}"
+                )
 
 
