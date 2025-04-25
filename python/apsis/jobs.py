@@ -271,7 +271,7 @@ async def load_jobs_dir(path):
     for job in jobs_dir.get_jobs():
         log.info(f"checking: {job.job_id}")
         for err in check_job(jobs_dir, job):
-            errors.append(JobError(job_id, f"{job.job_id}: {err}"))
+            errors.append(JobError(job.job_id, str(err)))
 
     if len(errors) > 0:
         raise JobsDirErrors(f"errors loading jobs in {jobs_path}", errors)
