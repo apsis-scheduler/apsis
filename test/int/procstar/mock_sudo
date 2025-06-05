@@ -13,6 +13,7 @@ parser.add_argument("--preserve-env", "-E", default=False, action="store_true")
 parser.add_argument("--set-home", "-H", default=False, action="store_true")
 parser.add_argument("--non-interactive", "-n", default=False, action="store_true")
 parser.add_argument("--user", "-u")
+parser.add_argument("--chdir", "-D")
 parser.add_argument("argv", nargs="+")
 args = parser.parse_args()
 
