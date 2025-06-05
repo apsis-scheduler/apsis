@@ -3,6 +3,7 @@ import logging
 import procstar.spec
 from   procstar.agent.exc import NoConnectionError, NoOpenConnectionInGroup, ProcessUnknownError
 from   procstar.agent.proc import FdData, Interval, Result
+import pwd
 from   signal import Signals
 import uuid
 
@@ -35,6 +36,7 @@ def _sudo_wrap(cfg, argv, sudo_user):
         return [ str(a) for a in sudo_argv ] + [
             "--non-interactive",
             "--user", str(sudo_user),
+            "--chdir", pwd.getpwnam(sudo_user).pw_dir,
             "--"
         ] + list(argv)
 
