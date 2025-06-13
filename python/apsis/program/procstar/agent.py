@@ -13,7 +13,7 @@ from   apsis.lib.parse import nparse_duration
 from   apsis.lib.py import or_none, nstr, get_cfg
 from   apsis.procstar import get_agent_server
 from   apsis.program import base
-from   apsis.program.base import (ProgramSuccess, ProgramFailure, ProgramError)
+from   apsis.program.base import (ProgramSuccess, ProgramFailure, ProgramError, Timeout)
 from   apsis.program.process import Stop, BoundStop
 from   apsis.runs import join_args, template_expand
 
@@ -155,12 +155,13 @@ class _ProcstarProgram(base.Program):
             group_id    =procstar.proto.DEFAULT_GROUP,
             sudo_user   =None,
             stop        =Stop(),
+            timeout     =None,
     ):
         super().__init__()
         self.group_id   = str(group_id)
         self.sudo_user  = None if sudo_user is None else str(sudo_user)
         self.stop       = stop
-
+        self.timeout    = timeout
 
     def _bind(self, argv, args):
         return BoundProcstarProgram(
@@ -168,11 +169,12 @@ class _ProcstarProgram(base.Program):
             group_id    =ntemplate_expand(self.group_id, args),
             sudo_user   =ntemplate_expand(self.sudo_user, args),
             stop        =self.stop.bind(args),
+            timeout     = None if self.timeout is None else self.timeout.bind(args),
         )
 
 
     def to_jso(self):
-        return (
+        jso = (
             super().to_jso()
             | {
                 "group_id"  : self.group_id,
@@ -180,7 +182,9 @@ class _ProcstarProgram(base.Program):
             | if_not_none("sudo_user", self.sudo_user)
             | ifkey("stop", self.stop.to_jso(), {})
         )
-
+        if self.timeout is not None:
+            jso["timeout"] = self.timeout.to_jso()
+        return jso
 
     @staticmethod
     def _from_jso(pop):
@@ -188,6 +192,7 @@ class _ProcstarProgram(base.Program):
             group_id    =pop("group_id", default=procstar.proto.DEFAULT_GROUP),
             sudo_user   =pop("sudo_user", default=None),
             stop        =pop("stop", Stop.from_jso, Stop()),
+            timeout     =pop("timeout", Timeout.from_jso, None),
         )
 
 
@@ -264,19 +269,20 @@ class BoundProcstarProgram(base.Program):
             self, argv, *, group_id,
             sudo_user   =None,
             stop        =BoundStop(),
+            timeout     =None,
     ):
         self.argv = [ str(a) for a in argv ]
         self.group_id   = str(group_id)
         self.sudo_user  = nstr(sudo_user)
         self.stop       = stop
-
+        self.timeout    = timeout
 
     def __str__(self):
         return join_args(self.argv)
 
 
     def to_jso(self):
-        return (
+        jso = (
             super().to_jso()
             | {
                 "argv"      : self.argv,
@@ -285,7 +291,9 @@ class BoundProcstarProgram(base.Program):
             | if_not_none("sudo_user", self.sudo_user)
             | ifkey("stop", self.stop.to_jso(), {})
         )
-
+        if self.timeout is not None:
+            jso["timeout"] = self.timeout.to_jso()
+        return jso
 
     @classmethod
     def from_jso(cls, jso):
@@ -294,7 +302,8 @@ class BoundProcstarProgram(base.Program):
             group_id    = pop("group_id", default=procstar.proto.DEFAULT_GROUP)
             sudo_user   = pop("sudo_user", default=None)
             stop        = pop("stop", BoundStop.from_jso, BoundStop())
-        return cls(argv, group_id=group_id, sudo_user=sudo_user, stop=stop)
+            timeout     = pop("timeout", Timeout.from_jso, None)
+        return cls(argv, group_id=group_id, sudo_user=sudo_user, stop=stop, timeout=timeout)
 
 
     def run(self, run_id, cfg):
@@ -322,7 +331,7 @@ class RunningProcstarProgram(base.RunningProgram):
 
         self.proc           = None
         self.stopping       = False
-        self.stop_signals   = []
+        self.timed_out      = False
 
 
     @property
@@ -431,6 +440,17 @@ class RunningProcstarProgram(base.RunningProgram):
         try:
             tasks = asyn.TaskGroup()
 
+            if self.program.timeout is not None:
+                async def timeout_handler():
+                    await asyncio.sleep(self.program.timeout.duration)
+                    if not self.stopping and self.proc is not None:
+                        log.warning(f"Process {proc_id} timed out after {self.program.timeout.duration}s")
+                        self.timed_out = True
+                        signal_num = Signals[self.program.timeout.signal].value
+                        await self.proc.send_signal(signal_num)
+
+                tasks.add("timeout", timeout_handler())
+
             # Output collected so far.
             fd_data = None
 
@@ -506,9 +526,10 @@ class RunningProcstarProgram(base.RunningProgram):
                             log.debug("expected final FdData")
 
             outputs = await _make_outputs(fd_data)
-            meta["stop"] = {"signals": [ s.name for s in self.stop_signals ]}
+            meta = _make_metadata(proc_id, res)
+            meta["stop"] = {"timed_out": self.timed_out}
 
-            if res.status.exit_code == 0:
+            if res.status.exit_code == 0 and not self.timed_out:
                 # The process terminated successfully.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
             elif (
@@ -519,15 +540,11 @@ class RunningProcstarProgram(base.RunningProgram):
                 # The process stopped with the expected signal.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
             else:
-                # The process terminated unsuccessfully.
-                exit_code = res.status.exit_code
-                signal = res.status.signal
-                yield ProgramFailure(
-                    f"exit code {exit_code}" if signal is None
-                    else f"killed by {signal}",
-                    meta=meta,
-                    outputs=outputs
-                )
+                if self.timed_out:
+                    message = f"timed out after {self.program.timeout.duration}s"
+                else:
+                    message = f"exit code {res.status.exit_code}" if res.status.signal is None else f"killed by {res.status.signal}"
+                yield ProgramFailure(message, meta=meta, outputs=outputs)
 
         except asyncio.CancelledError:
             # Don't clean up the proc; we can reconnect.
