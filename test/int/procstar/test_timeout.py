@@ -1,4 +1,5 @@
 import pytest
+from time import sleep
 from pathlib import Path
 
 from procstar_instance import ApsisService
@@ -14,12 +15,12 @@ def test_timeout(job_name):
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True):
         client = svc.client
         # The program runs for 3 s, so these three runs will time out.
-        r0 = client.schedule(job_name, {"timeout": 0})["run_id"]
-        r1 = client.schedule(job_name, {"timeout": 1})["run_id"]
-        r2 = client.schedule(job_name, {"timeout": 2})["run_id"]
+        r0 = client.schedule(job_name, {"timeout": 0, "sleep_duration": 3})["run_id"]
+        r1 = client.schedule(job_name, {"timeout": 1, "sleep_duration": 3})["run_id"]
+        r2 = client.schedule(job_name, {"timeout": 2, "sleep_duration": 3})["run_id"]
         # These two runs will succeed.
-        r4 = client.schedule(job_name, {"timeout": 4})["run_id"]
-        r5 = client.schedule(job_name, {"timeout": 5})["run_id"]
+        r4 = client.schedule(job_name, {"timeout": 4, "sleep_duration": 3})["run_id"]
+        r5 = client.schedule(job_name, {"timeout": 5, "sleep_duration": 3})["run_id"]
 
         # Check that r2 is running initially
         res = client.get_run(r2)
@@ -74,10 +75,16 @@ def test_signal(signal):
 
 @pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
 def test_timeout_with_reconnect(job_name):
+    """
+    Tests that timeout is properly enforced after reconnection.
+    """
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True):
         client = svc.client
-        # Start a run that will timeout after restart
-        run_id = client.schedule(job_name, {"timeout": 2})["run_id"]
+        timeout = 4
+        sleep_duration = 12
+        run_id = client.schedule(
+            job_name, {"timeout": timeout, "sleep_duration": sleep_duration}
+        )["run_id"]
 
         # Wait for the run to start
         res = svc.wait_run(run_id, wait_states=("starting",))
@@ -87,7 +94,60 @@ def test_timeout_with_reconnect(job_name):
         svc.restart()
 
         # Wait for the run to timeout and fail
-        res = svc.wait_run(run_id, timeout=10)
+        res = svc.wait_run(run_id, timeout=sleep_duration + 1)
+
         assert res["state"] == "failure"
         assert res["meta"]["program"]["stop"]["signals"] == ["SIGTERM"]
-        assert res["program"]["timeout"]["duration"] == 2.0
+        assert res["program"]["timeout"]["duration"] == timeout
+
+        # Check that actual elapsed time is close to expected timeout
+        actual_elapsed = res["meta"]["elapsed"]
+
+        tolerance = 0.3
+        assert (
+            abs(actual_elapsed - timeout) <= tolerance
+        ), f"Elapsed time {actual_elapsed:.3f}s is too far from expected timeout {timeout:.3f}s (tolerance: {tolerance}s)"
+
+
+@pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
+def test_timeout_with_delayed_reconnect(job_name):
+    """
+    Tests that timeout is enforced when Apsis reconnects after being down
+    longer than the timeout duration. The run should be killed approximately
+    when Apsis comes back up, making the total elapsed time roughly equal
+    to the downtime.
+    """
+    with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True):
+        client = svc.client
+        timeout = 3
+        sleep_duration = 12
+        run_id = client.schedule(
+            job_name, {"timeout": timeout, "sleep_duration": sleep_duration}
+        )["run_id"]
+
+        # Start a run that will timeout after restart
+        res = svc.wait_run(run_id, wait_states=("starting",))
+        assert res["state"] == "running"
+
+        # Stop Apsis for longer than the timeout duration
+        svc.stop_serve()
+        downtime = 5  # (longer than 3s timeout)
+        sleep(downtime)
+        svc.start_serve()
+        svc.wait_for_serve()
+
+        # Wait for the run to timeout and fail
+        res = svc.wait_run(run_id, timeout=sleep_duration + 1)
+        assert res["state"] == "failure"
+        assert res["meta"]["program"]["stop"]["signals"] == ["SIGTERM"]
+        assert res["program"]["timeout"]["duration"] == timeout
+
+        # Check that actual elapsed time is roughly equal to the downtime
+        # Since Apsis was down for 5s, the job should be killed around that time
+        actual_elapsed = res["meta"]["elapsed"]
+
+        # needed because Apsis takes ~1s to restart and reconnect
+        tolerance = 1
+        assert (
+            abs(actual_elapsed - downtime) <= tolerance
+        ), f"Elapsed time {actual_elapsed:.3f}s should be close to downtime {downtime}s (tolerance: {tolerance}s). Run should have been killed shortly after Apsis reconnected."

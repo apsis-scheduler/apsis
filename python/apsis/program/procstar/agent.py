@@ -447,7 +447,13 @@ class RunningProcstarProgram(base.RunningProgram):
 
             if self.program.timeout is not None:
                 async def timeout_handler():
-                    await asyncio.sleep(self.program.timeout.duration)
+                    elapsed_so_far = ora.now() - start
+                    remaining = self.program.timeout.duration - elapsed_so_far
+                    sleep_duration = max(0, remaining)
+                    
+                    if sleep_duration > 0:
+                        await asyncio.sleep(sleep_duration)
+
                     if not self.stopping and self.proc is not None:
                         elapsed = ora.now() - start
                         log.info(f"{self.run_id}: timeout after {elapsed:.0f} s")
