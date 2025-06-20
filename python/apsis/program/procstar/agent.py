@@ -456,7 +456,7 @@ class RunningProcstarProgram(base.RunningProgram):
 
                     if not self.stopping and self.proc is not None:
                         elapsed = ora.now() - start
-                        log.info(f"{self.run_id}: timeout after {elapsed:.0f} s")
+                        log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
                         timeout_signal = Signals[self.program.timeout.signal]
                         self.stop_signals.append(timeout_signal)
