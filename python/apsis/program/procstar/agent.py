@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import ora
 import procstar.spec
 from   procstar.agent.exc import NoConnectionError, NoOpenConnectionInGroup, ProcessUnknownError
 from   procstar.agent.proc import FdData, Interval, Result
@@ -13,7 +14,7 @@ from   apsis.lib.parse import nparse_duration
 from   apsis.lib.py import or_none, nstr, get_cfg
 from   apsis.procstar import get_agent_server
 from   apsis.program import base
-from   apsis.program.base import (ProgramSuccess, ProgramFailure, ProgramError)
+from   apsis.program.base import (ProgramSuccess, ProgramFailure, ProgramError, Timeout)
 from   apsis.program.process import Stop, BoundStop
 from   apsis.runs import join_args, template_expand
 
@@ -155,12 +156,13 @@ class _ProcstarProgram(base.Program):
             group_id    =procstar.proto.DEFAULT_GROUP,
             sudo_user   =None,
             stop        =Stop(),
+            timeout     =None,
     ):
         super().__init__()
         self.group_id   = str(group_id)
         self.sudo_user  = None if sudo_user is None else str(sudo_user)
         self.stop       = stop
-
+        self.timeout    = timeout
 
     def _bind(self, argv, args):
         return BoundProcstarProgram(
@@ -168,11 +170,12 @@ class _ProcstarProgram(base.Program):
             group_id    =ntemplate_expand(self.group_id, args),
             sudo_user   =ntemplate_expand(self.sudo_user, args),
             stop        =self.stop.bind(args),
+            timeout     =None if self.timeout is None else self.timeout.bind(args),
         )
 
 
     def to_jso(self):
-        return (
+        jso = (
             super().to_jso()
             | {
                 "group_id"  : self.group_id,
@@ -180,7 +183,9 @@ class _ProcstarProgram(base.Program):
             | if_not_none("sudo_user", self.sudo_user)
             | ifkey("stop", self.stop.to_jso(), {})
         )
-
+        if self.timeout is not None:
+            jso["timeout"] = self.timeout.to_jso()
+        return jso
 
     @staticmethod
     def _from_jso(pop):
@@ -188,6 +193,7 @@ class _ProcstarProgram(base.Program):
             group_id    =pop("group_id", default=procstar.proto.DEFAULT_GROUP),
             sudo_user   =pop("sudo_user", default=None),
             stop        =pop("stop", Stop.from_jso, Stop()),
+            timeout     =pop("timeout", Timeout.from_jso, None),
         )
 
 
@@ -264,19 +270,20 @@ class BoundProcstarProgram(base.Program):
             self, argv, *, group_id,
             sudo_user   =None,
             stop        =BoundStop(),
+            timeout     =None,
     ):
         self.argv = [ str(a) for a in argv ]
         self.group_id   = str(group_id)
         self.sudo_user  = nstr(sudo_user)
         self.stop       = stop
-
+        self.timeout    = timeout
 
     def __str__(self):
         return join_args(self.argv)
 
 
     def to_jso(self):
-        return (
+        jso = (
             super().to_jso()
             | {
                 "argv"      : self.argv,
@@ -285,7 +292,9 @@ class BoundProcstarProgram(base.Program):
             | if_not_none("sudo_user", self.sudo_user)
             | ifkey("stop", self.stop.to_jso(), {})
         )
-
+        if self.timeout is not None:
+            jso["timeout"] = self.timeout.to_jso()
+        return jso
 
     @classmethod
     def from_jso(cls, jso):
@@ -294,7 +303,8 @@ class BoundProcstarProgram(base.Program):
             group_id    = pop("group_id", default=procstar.proto.DEFAULT_GROUP)
             sudo_user   = pop("sudo_user", default=None)
             stop        = pop("stop", BoundStop.from_jso, BoundStop())
-        return cls(argv, group_id=group_id, sudo_user=sudo_user, stop=stop)
+            timeout     = pop("timeout", Timeout.from_jso, None)
+        return cls(argv, group_id=group_id, sudo_user=sudo_user, stop=stop, timeout=timeout)
 
 
     def run(self, run_id, cfg):
@@ -323,6 +333,7 @@ class RunningProcstarProgram(base.RunningProgram):
         self.proc           = None
         self.stopping       = False
         self.stop_signals   = []
+        self.timed_out      = False
 
 
     @property
@@ -390,9 +401,11 @@ class RunningProcstarProgram(base.RunningProgram):
             conn_id = self.proc.conn_id
             log.info(f"started: {proc_id} on conn {conn_id}")
 
+            start = ora.now()
             self.run_state = {
                 "conn_id": conn_id,
                 "proc_id": proc_id,
+                "start": str(start),
             }
             yield base.ProgramRunning(
                 run_state   =self.run_state,
@@ -406,6 +419,7 @@ class RunningProcstarProgram(base.RunningProgram):
 
             conn_id = self.run_state["conn_id"]
             proc_id = self.run_state["proc_id"]
+            start = ora.Time(self.run_state["start"])
             log.info(f"reconnecting: {proc_id} on conn {conn_id}")
 
             try:
@@ -430,6 +444,25 @@ class RunningProcstarProgram(base.RunningProgram):
 
         try:
             tasks = asyn.TaskGroup()
+
+            if self.program.timeout is not None:
+                async def timeout_handler():
+                    elapsed_so_far = ora.now() - start
+                    remaining = self.program.timeout.duration - elapsed_so_far
+                    sleep_duration = max(0, remaining)
+                    
+                    if sleep_duration > 0:
+                        await asyncio.sleep(sleep_duration)
+
+                    if not self.stopping and self.proc is not None:
+                        elapsed = ora.now() - start
+                        log.info(f"{self.run_id}: timeout")
+                        self.timed_out = True
+                        timeout_signal = Signals[self.program.timeout.signal]
+                        self.stop_signals.append(timeout_signal)
+                        await self.proc.send_signal(timeout_signal)
+
+                tasks.add("timeout", timeout_handler())
 
             # Output collected so far.
             fd_data = None
@@ -508,7 +541,7 @@ class RunningProcstarProgram(base.RunningProgram):
             outputs = await _make_outputs(fd_data)
             meta["stop"] = {"signals": [ s.name for s in self.stop_signals ]}
 
-            if res.status.exit_code == 0:
+            if res.status.exit_code == 0 and not self.timed_out:
                 # The process terminated successfully.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
             elif (
@@ -519,15 +552,14 @@ class RunningProcstarProgram(base.RunningProgram):
                 # The process stopped with the expected signal.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
             else:
-                # The process terminated unsuccessfully.
-                exit_code = res.status.exit_code
-                signal = res.status.signal
-                yield ProgramFailure(
-                    f"exit code {exit_code}" if signal is None
-                    else f"killed by {signal}",
-                    meta=meta,
-                    outputs=outputs
+                message = (
+                    f"exit code {res.status.exit_code}" if res.status.signal is None
+                    else f"killed by {res.status.signal}"
                 )
+                if self.timed_out:
+                    elapsed = ora.now() - start
+                    message += f" (timeout after {elapsed:.0f} s)"
+                yield ProgramFailure(message, meta=meta, outputs=outputs)
 
         except asyncio.CancelledError:
             # Don't clean up the proc; we can reconnect.
