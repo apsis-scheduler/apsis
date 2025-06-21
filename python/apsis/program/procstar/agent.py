@@ -455,7 +455,6 @@ class RunningProcstarProgram(base.RunningProgram):
                         await asyncio.sleep(sleep_duration)
 
                     if not self.stopping and self.proc is not None:
-                        elapsed = ora.now() - start
                         log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
                         timeout_signal = Signals[self.program.timeout.signal]
