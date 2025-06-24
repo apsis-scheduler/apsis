@@ -3,7 +3,7 @@ import logging
 import ora
 import procstar.spec
 from   procstar.agent.exc import NoConnectionError, NoOpenConnectionInGroup, ProcessUnknownError
-from   procstar.agent.proc import FdData, Interval, Result
+from   procstar.agent.proc import FdData, Interval, Result, AgentMessageError
 from   signal import Signals
 import uuid
 
@@ -516,31 +516,35 @@ class RunningProcstarProgram(base.RunningProgram):
                     or fd_data.interval.stop < length
             ):
                 # Request any remaining output.
-                await self.proc.request_fd_data(
-                    "stdout",
-                    interval=Interval(
-                        0 if fd_data is None else fd_data.interval.stop,
-                        None
+                try:
+                    await self.proc.request_fd_data(
+                        "stdout",
+                        interval=Interval(
+                            0 if fd_data is None else fd_data.interval.stop,
+                            None
+                        )
                     )
-                )
-                # Wait for it.
-                async for update in self.proc.updates:
-                    match update:
-                        case FdData():
-                            fd_data = _combine_fd_data(fd_data, update)
-                            # Confirm that we've accumulated all the output as
-                            # specified in the result.
-                            assert fd_data.interval.start == 0
-                            assert fd_data.interval.stop == res.fds.stdout.length
-                            break
+                    # Wait for it.
+                    async for update in self.proc.updates:
+                        match update:
+                            case FdData():
+                                fd_data = _combine_fd_data(fd_data, update)
+                                # Confirm that we've accumulated all the output as
+                                # specified in the result.
+                                assert fd_data.interval.start == 0
+                                assert fd_data.interval.stop == res.fds.stdout.length
+                                break
 
-                        case _:
-                            log.debug("expected final FdData")
+                            case _:
+                                log.debug("expected final FdData")
+                except AgentMessageError as exc:
+                    if "no process" in str(exc):
+                        log.info(f"{self.run_id}: could not get final output; process already gone")
 
             outputs = await _make_outputs(fd_data)
             meta["stop"] = {"signals": [ s.name for s in self.stop_signals ]}
 
-            if res.status.exit_code == 0 and not self.timed_out:
+            if res.status.exit_code == 0 and res.status.signal is None:
                 # The process terminated successfully.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
             elif (
