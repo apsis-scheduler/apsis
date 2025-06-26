@@ -544,7 +544,7 @@ class RunningProcstarProgram(base.RunningProgram):
             outputs = await _make_outputs(fd_data)
             meta["stop"] = {"signals": [ s.name for s in self.stop_signals ]}
 
-            if res.status.exit_code == 0 and res.status.signal is None:
+            if res.status.exit_code == 0 and not self.timed_out:
                 # The process terminated successfully.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
             elif (
