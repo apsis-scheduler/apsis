@@ -17,6 +17,7 @@ from   apsis.program import base
 from   apsis.program.base import (ProgramSuccess, ProgramFailure, ProgramError, Timeout)
 from   apsis.program.process import Stop, BoundStop
 from   apsis.runs import join_args, template_expand
+import time
 
 log = logging.getLogger(__name__)
 
@@ -334,6 +335,7 @@ class RunningProcstarProgram(base.RunningProgram):
         self.stopping       = False
         self.stop_signals   = []
         self.timed_out      = False
+        self.health_check_task = None
 
 
     @property
@@ -437,13 +439,54 @@ class RunningProcstarProgram(base.RunningProgram):
             # Request a result immediately.
             await self.proc.request_result()
             res = None
-
-            log.info(f"reconnected: {proc_id} on conn {conn_id}")
+            
+            # Attempt to get the process status immediately after reconnection
+            try:
+                # Use asyncio.wait_for to add a timeout for the initial response
+                status_check_timeout = get_cfg(self.cfg, "connection.status_check_timeout", 5)  # 5 second default
+                initial_update = await asyncio.wait_for(
+                    anext(self.proc.updates),
+                    timeout=status_check_timeout
+                )
+                
+                if isinstance(initial_update, Result) and initial_update.state == "terminated":
+                    # Process has already terminated but Apsis didn't know
+                    log.info(f"reconnected to terminated process: {proc_id} on conn {conn_id}")
+                    res = initial_update
+                    # We'll handle this termination in the regular processing loop
+                else:
+                    log.info(f"reconnected: {proc_id} on conn {conn_id}")
+            except asyncio.TimeoutError:
+                # If we timeout, just continue with normal operation
+                log.info(f"reconnected, but status check timed out: {proc_id} on conn {conn_id}")
+            except ProcessUnknownError as exc:
+                # If the process is unknown, it likely terminated while we were disconnected
+                log.warning(f"Process unknown after reconnection: {proc_id} on conn {conn_id}: {exc}")
+                meta = {"errors": [f"Process unknown after reconnection: {exc}"]}
+                yield ProgramFailure(f"Process {proc_id} not found on reconnection", meta=meta)
+                return
 
         # We now have a proc running on the agent.
 
         try:
             tasks = asyn.TaskGroup()
+            
+            # Start a health check task that periodically checks process status
+            health_check_interval = get_cfg(self.cfg, "health_check.interval", 60)  # 60 seconds default
+            health_check_enabled = get_cfg(self.cfg, "health_check.enabled", True)
+            if health_check_enabled and health_check_interval > 0:
+                async def health_check_handler():
+                    while self.proc is not None and not self.stopping:
+                        try:
+                            await asyncio.sleep(health_check_interval)
+                            if self.proc is None:
+                                break
+                            # Request the current status
+                            await self.proc.request_result()
+                        except Exception as exc:
+                            log.warning(f"Health check for {self.run_id} failed: {exc}")
+                
+                tasks.add("health_check", health_check_handler())
 
             if self.program.timeout is not None:
                 async def timeout_handler():
@@ -565,9 +608,17 @@ class RunningProcstarProgram(base.RunningProgram):
             # Don't clean up the proc; we can reconnect.
             self.proc = None
 
-        except ProcessUnknownError:
-            # Don't ask to clean it up; it's already gone.
+        except ProcessUnknownError as exc:
+            # Process is already gone - handle this case gracefully
+            log.warning(f"Process unknown error for {self.run_id}: {exc}")
             self.proc = None
+            
+            # Return a failed state if we know the process is gone
+            if res is None:
+                yield ProgramFailure(
+                    f"Process {proc_id} not found on reconnection",
+                    meta={"errors": [f"Process unknown: {exc}"]}
+                )
 
         except Exception as exc:
             log.error("procstar", exc_info=True)
@@ -584,6 +635,9 @@ class RunningProcstarProgram(base.RunningProgram):
                 try:
                     # Request deletion.
                     await self.proc.delete()
+                except ProcessUnknownError as exc:
+                    # Process is already gone, which is fine
+                    log.info(f"Cannot delete {self.run_id} - process already gone: {exc}")
                 except Exception as exc:
                     # Just log this; for Apsis, the proc is done.
                     log.error(f"delete {self.proc.proc_id}: {exc}")
@@ -624,7 +678,11 @@ class RunningProcstarProgram(base.RunningProgram):
             log.warning("no more proc to signal")
             return
 
-        await self.proc.send_signal(int(signal))
+        try:
+            await self.proc.send_signal(int(signal))
+        except ProcessUnknownError as exc:
+            # Process is already gone, which is fine when trying to signal it
+            log.info(f"Cannot signal process {self.run_id} - process already gone: {exc}")
 
 
 
