@@ -2,12 +2,14 @@
  * WebSocket connection that receives JSON messages.
  */
 export class Socket {
-  constructor(url, onMessage, onConnect, onErr) {
+  constructor(url, onMessage, onConnect, onErr, onClose, { reconnect = true }) {
     this.url        = url
     this.websocket  = null
     this.onMessage  = onMessage
     this.onConnect  = onConnect
     this.onErr      = onErr
+    this.onClose    = onClose
+    this.reconnect  = reconnect
     this.isOpen     = false
   }
 
@@ -36,9 +38,10 @@ export class Socket {
 
     this.websocket.onclose = () => {
       console.log('websocket closed:', this.url.toString())
+      this.onClose()
       this.websocket = null
       // Retry the connection after a second.
-      if (this.isOpen)
+      if (this.isOpen && this.reconnect)
         setTimeout(() => this._connect(), 1000)
     }
   }
