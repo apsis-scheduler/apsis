@@ -231,6 +231,8 @@ export default {
         },
         () => {},
         err => { console.log(err) },
+        () => {},
+        { },
       )
       this.runUpdateSocket.open()
     },
@@ -287,6 +289,8 @@ export default {
         },
         () => {},
         err => { console.log(err) },
+        () => {},
+        { },
       )
       this.outputDataUpdateSocket.open()
     },
