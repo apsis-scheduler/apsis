@@ -1,6 +1,17 @@
-from   signal import Signals
+from signal import Signals
 
-from   apsis.program import Program
+import pytest
+
+import apsis.program.procstar.agent
+from test.unit.util import create_fddata, create_running_result, create_success_result
+from apsis.program import Program
+from apsis.program.procstar.agent import RunningProcstarProgram, ProcstarProgram
+from apsis.program.base import (
+    ProgramSuccess,
+    ProgramFailure,
+    ProgramError,
+    ProgramRunning,
+)
 
 #-------------------------------------------------------------------------------
 
@@ -55,3 +66,67 @@ def test_shell_command_program_jso():
     assert program.stop.grace_period == 60
 
 
+@pytest.mark.asyncio
+async def test_final_fddata_normal_case(mock_proc):
+    """
+    Test the normal case where final FdData arrives properly. This should complete
+    successfully with a ProgramSuccess result.
+    """
+    program = ProcstarProgram(argv=["/bin/echo", "test"])
+    running_program = RunningProcstarProgram(
+        run_id="test-run-123", program=program, cfg={}, run_state=None
+    )
+
+    mock_proc._inject_updates(
+        [
+            create_running_result(mock_proc, stdout_length=0),
+            create_success_result(mock_proc, stdout_length=1000),
+            create_fddata(1000),  # Final output data arrives
+        ]
+    )
+
+    assert isinstance(await anext(running_program.updates), ProgramRunning)
+
+    updates_received = []
+    async for update in running_program.updates:
+        updates_received.append(update)
+        if isinstance(update, (ProgramSuccess, ProgramFailure, ProgramError)):
+            break
+
+    final_result = updates_received[-1]
+    assert isinstance(final_result, ProgramSuccess)
+
+
+@pytest.mark.asyncio
+async def test_missing_final_fddata(mock_proc, monkeypatch):
+    """
+    Test that verifies the the program will eventually terminate even if no final
+    FdData is received.
+    """
+    # let's not wait 30s
+    monkeypatch.setattr(apsis.program.procstar.agent, "FD_DATA_TIMEOUT", 0.1)
+
+    program = ProcstarProgram(argv=["/bin/echo", "test"])
+    running_program = RunningProcstarProgram(
+        run_id="test-run-123", program=program, cfg={}, run_state=None
+    )
+
+    mock_proc._inject_updates(
+        [
+            create_running_result(mock_proc, stdout_length=0),
+            create_success_result(
+                mock_proc, stdout_length=1000
+            ),  # has output to collect, but no FdData will come
+        ]
+    )
+
+    # first update should be ProgramRunning
+    assert isinstance(await anext(running_program.updates), ProgramRunning)
+
+    # Third update should now be ProgramError (after timeout) instead of hanging
+    final_update = await anext(running_program.updates)
+    assert isinstance(
+        final_update, ProgramError
+    ), f"Expected ProgramError, got {type(final_update)}"
+    assert "Timeout waiting for final FdData" in final_update.message
+    assert "exit_code=0" in final_update.message
