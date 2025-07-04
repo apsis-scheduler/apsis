@@ -149,7 +149,8 @@ class ApsisService(instance.ApsisService):
 
 
     def agent(self, **kw_args):
-        return Agent(host="localhost", port=self.agent_port, **kw_args)
+        kw_args.setdefault("port", self.agent_port)
+        return Agent(host="localhost", **kw_args)
 
 
 
