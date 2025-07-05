@@ -321,12 +321,12 @@ class BoundProcstarProgram(base.Program):
 #-------------------------------------------------------------------------------
 
 async def collect_final_fd_data(
-    intitial_fd_data: FdData | None, proc: Process, expected_length: int
+    initial_fd_data: FdData | None, proc: Process, expected_length: int
 ) -> FdData | None:
     async for update in proc.updates:
         match update:
             case FdData():
-                fd_data_local = _combine_fd_data(intitial_fd_data, update)
+                fd_data_local = _combine_fd_data(initial_fd_data, update)
                 # Confirm that we've accumulated all the output as
                 # specified in the result.
                 assert fd_data_local.interval.start == 0
@@ -337,7 +337,7 @@ async def collect_final_fd_data(
                 log.debug("expected final FdData")
 
     # If we get here, the async iterator ended without FdData
-    return intitial_fd_data
+    return initial_fd_data
 
 
 class RunningProcstarProgram(base.RunningProgram):
