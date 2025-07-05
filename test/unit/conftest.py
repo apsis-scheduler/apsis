@@ -41,9 +41,6 @@ class MockProc:
     async def send_signal(self, *args, **kwargs):
         pass
 
-    async def send_signal(self, *args, **kwargs):
-        pass
-
     async def request_delete(self, *args, **kwargs):
         pass
 
