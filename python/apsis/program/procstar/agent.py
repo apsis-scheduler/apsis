@@ -3,7 +3,7 @@ import logging
 import ora
 import procstar.spec
 from   procstar.agent.exc import NoConnectionError, NoOpenConnectionInGroup, ProcessUnknownError
-from   procstar.agent.proc import FdData, Interval, Result
+from   procstar.agent.proc import FdData, Interval, Process, Result
 from   signal import Signals
 import uuid
 
@@ -25,6 +25,8 @@ ntemplate_expand = or_none(template_expand)
 #-------------------------------------------------------------------------------
 
 SUDO_ARGV_DEFAULT = ["/usr/bin/sudo", "--preserve-env", "--set-home"]
+
+FD_DATA_TIMEOUT = 60
 
 if_not_none = lambda k, v: {} if v is None else {k: v}
 
@@ -318,6 +320,26 @@ class BoundProcstarProgram(base.Program):
 
 #-------------------------------------------------------------------------------
 
+async def collect_final_fd_data(
+    initial_fd_data: FdData | None, proc: Process, expected_length: int
+) -> FdData | None:
+    async for update in proc.updates:
+        match update:
+            case FdData():
+                fd_data_local = _combine_fd_data(initial_fd_data, update)
+                # Confirm that we've accumulated all the output as
+                # specified in the result.
+                assert fd_data_local.interval.start == 0
+                assert fd_data_local.interval.stop == expected_length
+                return fd_data_local
+
+            case _:
+                log.debug("expected final FdData")
+
+    # If we get here, the async iterator ended without FdData
+    return initial_fd_data
+
+
 class RunningProcstarProgram(base.RunningProgram):
 
     def __init__(self, run_id, program, cfg, run_state=None):
@@ -450,7 +472,7 @@ class RunningProcstarProgram(base.RunningProgram):
                     elapsed_so_far = ora.now() - start
                     remaining = self.program.timeout.duration - elapsed_so_far
                     sleep_duration = max(0, remaining)
-                    
+
                     if sleep_duration > 0:
                         await asyncio.sleep(sleep_duration)
 
@@ -524,19 +546,23 @@ class RunningProcstarProgram(base.RunningProgram):
                         None
                     )
                 )
-                # Wait for it.
-                async for update in self.proc.updates:
-                    match update:
-                        case FdData():
-                            fd_data = _combine_fd_data(fd_data, update)
-                            # Confirm that we've accumulated all the output as
-                            # specified in the result.
-                            assert fd_data.interval.start == 0
-                            assert fd_data.interval.stop == res.fds.stdout.length
-                            break
-
-                        case _:
-                            log.debug("expected final FdData")
+                try:
+                    fd_data = await asyncio.wait_for(
+                        collect_final_fd_data(fd_data, self.proc, length),
+                        timeout=FD_DATA_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    error_msg = (
+                        f"Timeout waiting for final FdData after {FD_DATA_TIMEOUT}s."
+                        f"Run completed with exit_code={res.status.exit_code}."
+                    )
+                    log.error(error_msg)
+                    yield ProgramError(
+                        error_msg,
+                        meta=_make_metadata(proc_id, res),
+                        outputs=await _make_outputs(fd_data)
+                    )
+                    return
 
             outputs = await _make_outputs(fd_data)
             meta["stop"] = {"signals": [ s.name for s in self.stop_signals ]}
