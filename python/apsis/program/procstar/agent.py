@@ -26,7 +26,7 @@ ntemplate_expand = or_none(template_expand)
 
 SUDO_ARGV_DEFAULT = ["/usr/bin/sudo", "--preserve-env", "--set-home"]
 
-FD_DATA_TIMEOUT = 30.0
+FD_DATA_TIMEOUT = 60
 
 if_not_none = lambda k, v: {} if v is None else {k: v}
 
