@@ -7,7 +7,9 @@ from procstar_instance import ApsisService
 JOB_DIR = Path(__file__).parent / "jobs"
 
 
-@pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
+@pytest.mark.parametrize(
+    "job_name", ["timeout", "timeout-shell", "timeout-handle-sigterm"]
+)
 def test_timeout(job_name):
     """
     Tests agent program timeout.
