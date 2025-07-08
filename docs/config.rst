@@ -272,6 +272,19 @@ the argv list.
 
     procstar:
       agent:
+        resource_defaults:
+          mem_max_gb: 8.0
+
+This sets the default memory limit in gigabytes for Procstar programs when no
+explicit memory limit is specified in the program's ``resources`` parameter.
+The limit is enforced using systemd slice properties. If not specified, no
+default memory limit is applied.
+
+
+.. code:: yaml
+
+    procstar:
+      agent:
         run:
           update_interval: "1 min"
           output_interval" "15 sec"

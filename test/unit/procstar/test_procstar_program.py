@@ -21,6 +21,7 @@ def test_process_program_jso():
         "argv"      : ["/usr/bin/echo", "Hello, {{ name }}!"],
         "stop"      : {"signal": "SIGUSR1"},
         "group_id"  : "prod",
+        "resources": {"mem_max_gb": 1.5},
     })
 
     # JSO round trip.
@@ -30,6 +31,7 @@ def test_process_program_jso():
     assert program.sudo_user is None
     assert program.stop.signal == "SIGUSR1"
     assert program.stop.grace_period == "60"
+    assert program.resources.mem_max_gb == 1.5
 
     # Bind and do it again.
     program = program.bind({"name": "Bob"})
@@ -39,6 +41,7 @@ def test_process_program_jso():
     assert program.sudo_user is None
     assert program.stop.signal == Signals.SIGUSR1
     assert program.stop.grace_period == 60
+    assert program.resources.mem_max_gb == 1.5
 
 
 def test_shell_command_program_jso():
@@ -64,6 +67,27 @@ def test_shell_command_program_jso():
     assert program.sudo_user == "produser"
     assert program.stop.signal == Signals.SIGTERM
     assert program.stop.grace_period == 60
+
+
+def test_systemd_properties():
+    program = Program.from_jso({
+        "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+        "command": "/usr/bin/true",
+        "resources": {"mem_max_gb": 2},
+    })
+    running_program = program.bind({}).run("r123", {})
+    systemd = running_program._spec.to_jso()["systemd_properties"]
+    assert systemd["slice"]["memory_max"] == 2 * 10 ** 9
+    assert systemd["slice"]["memory_swap_max"] == 0
+
+    # test default
+    program = Program.from_jso({
+        "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+        "command": "/usr/bin/true",
+    })
+    running_program = program.bind({}).run("r123", {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 64}}}})
+    systemd = running_program._spec.to_jso()["systemd_properties"]
+    assert systemd["slice"]["memory_max"] == 64 * 10 ** 9
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 import asyncio
+from   dataclasses import dataclass
 import logging
 import ora
 import procstar.spec
@@ -40,6 +41,24 @@ def _sudo_wrap(cfg, argv, sudo_user):
             "--user", str(sudo_user),
             "--"
         ] + list(argv)
+
+
+def _make_systemd(cfg, *, resources) -> procstar.spec.Proc.SystemdProperties:
+    ngb_to_bytes = or_none(lambda bytes: bytes * 10**9)
+    memory_max = ngb_to_bytes(
+        get_cfg(cfg, "resource_defaults.mem_max_gb", None)
+        if resources.mem_max_gb is None
+        else resources.mem_max_gb
+    )
+    SystemdProperties = procstar.spec.Proc.SystemdProperties
+    return SystemdProperties(
+        slice=SystemdProperties.Slice(
+            tasks_accounting=True,
+            memory_accounting=True,
+            memory_max=memory_max,
+            memory_swap_max=0,
+        )
+    )
 
 
 def _make_metadata(proc_id, res: dict):
@@ -148,6 +167,46 @@ async def _make_outputs(fd_data):
 
 #-------------------------------------------------------------------------------
 
+@dataclass
+class Resources:
+    """
+    Specification for resource limits for a running job.
+    """
+
+    mem_max_gb: int | float | None = None
+
+    def to_jso(self):
+        return if_not_none("mem_max_gb", self.mem_max_gb)
+
+    @classmethod
+    def from_jso(cls, jso):
+        with check_schema(jso or {}) as pop:
+            mem_max_gb = pop("mem_max_gb", default=None)
+        return cls(mem_max_gb=mem_max_gb)
+
+    def bind(self, args):
+        return BoundResources(
+            mem_max_gb=self.mem_max_gb
+        )
+
+
+@dataclass
+class BoundResources:
+
+    mem_max_gb: int | float | None = None
+
+    def to_jso(self):
+        return if_not_none("mem_max_gb", self.mem_max_gb)
+
+    @classmethod
+    def from_jso(cls, jso):
+        with check_schema(jso or {}) as pop:
+            mem_max_gb = pop("mem_max_gb", default=None)
+        return cls(mem_max_gb=mem_max_gb)
+
+
+#-------------------------------------------------------------------------------
+
 class _ProcstarProgram(base.Program):
     """
     Base class for (unbound) Procstar program types.
@@ -159,12 +218,14 @@ class _ProcstarProgram(base.Program):
             sudo_user   =None,
             stop        =Stop(),
             timeout     =None,
+            resources   =Resources(),
     ):
         super().__init__()
         self.group_id   = str(group_id)
         self.sudo_user  = None if sudo_user is None else str(sudo_user)
         self.stop       = stop
         self.timeout    = timeout
+        self.resources  = resources
 
     def _bind(self, argv, args):
         return BoundProcstarProgram(
@@ -173,6 +234,7 @@ class _ProcstarProgram(base.Program):
             sudo_user   =ntemplate_expand(self.sudo_user, args),
             stop        =self.stop.bind(args),
             timeout     =None if self.timeout is None else self.timeout.bind(args),
+            resources   =self.resources.bind(args),
         )
 
 
@@ -184,6 +246,7 @@ class _ProcstarProgram(base.Program):
             }
             | if_not_none("sudo_user", self.sudo_user)
             | ifkey("stop", self.stop.to_jso(), {})
+            | ifkey("resources", self.resources.to_jso(), {})
         )
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
@@ -196,6 +259,7 @@ class _ProcstarProgram(base.Program):
             sudo_user   =pop("sudo_user", default=None),
             stop        =pop("stop", Stop.from_jso, Stop()),
             timeout     =pop("timeout", Timeout.from_jso, None),
+            resources   =pop("resources", Resources.from_jso, Resources()),
         )
 
 
@@ -273,12 +337,14 @@ class BoundProcstarProgram(base.Program):
             sudo_user   =None,
             stop        =BoundStop(),
             timeout     =None,
+            resources   =BoundResources(),
     ):
         self.argv = [ str(a) for a in argv ]
         self.group_id   = str(group_id)
         self.sudo_user  = nstr(sudo_user)
         self.stop       = stop
         self.timeout    = timeout
+        self.resources  = resources
 
     def __str__(self):
         return join_args(self.argv)
@@ -292,6 +358,7 @@ class BoundProcstarProgram(base.Program):
                 "group_id"  : self.group_id,
             }
             | if_not_none("sudo_user", self.sudo_user)
+            | ifkey("resources", self.resources.to_jso(), {})
             | ifkey("stop", self.stop.to_jso(), {})
         )
         if self.timeout is not None:
@@ -306,7 +373,15 @@ class BoundProcstarProgram(base.Program):
             sudo_user   = pop("sudo_user", default=None)
             stop        = pop("stop", BoundStop.from_jso, BoundStop())
             timeout     = pop("timeout", Timeout.from_jso, None)
-        return cls(argv, group_id=group_id, sudo_user=sudo_user, stop=stop, timeout=timeout)
+            resources   = pop("resources", BoundResources.from_jso, BoundResources())
+        return cls(
+            argv,
+            group_id=group_id,
+            sudo_user=sudo_user,
+            stop=stop,
+            timeout=timeout,
+            resources=resources,
+        )
 
 
     def run(self, run_id, cfg):
@@ -364,6 +439,7 @@ class RunningProcstarProgram(base.RunningProgram):
         Returns the procstar proc spec for the program.
         """
         argv = _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user)
+        systemd = _make_systemd(self.cfg, resources=self.program.resources)
         return procstar.spec.Proc(
             argv,
             env=procstar.spec.Proc.Env(
@@ -385,6 +461,7 @@ class RunningProcstarProgram(base.RunningProgram):
                 # Merge stderr into stdin.
                 "stderr": procstar.spec.Proc.Fd.Dup(1),
             },
+            systemd_properties=systemd,
         )
 
 
