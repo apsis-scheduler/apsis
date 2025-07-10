@@ -477,6 +477,9 @@ class RunningProcstarProgram(base.RunningProgram):
                         await asyncio.sleep(sleep_duration)
 
                     if not self.stopping and self.proc is not None:
+                        # Introduce a small delay to allow updates to arrive in case Apsis and Procstar just reconnected.
+                        # If the process already terminated, the timeout task will be cancelled.
+                        await asyncio.sleep(0.01)
                         log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
                         timeout_signal = Signals[self.program.timeout.signal]
@@ -522,6 +525,13 @@ class RunningProcstarProgram(base.RunningProgram):
                             yield base.ProgramUpdate(meta=meta)
                         else:
                             # Process terminated.
+                            if res.state == "terminated":
+                                try:
+                                    # cancel timeout task as soon as possible, if any
+                                    await tasks.cancel("timeout")
+                                    log.info(f"{self.run_id}: cancelled timeout task as process already terminated.")
+                                except KeyError:
+                                    pass
                             break
 
             else:
