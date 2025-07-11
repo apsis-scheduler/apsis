@@ -169,7 +169,7 @@ async def _process_updates(apsis, run):
         apsis.run_log.exc(run, "error: internal")
         tb = traceback.format_exc().encode()
         output = Output(OutputMetadata("traceback", length=len(tb)), tb)
-        apsis._update_output_data(run, {"outputs": output}, True)
+        apsis._update_output_data(run, {"output": output}, True)
         apsis._transition(run, State.error, force=True)
 
     finally:
