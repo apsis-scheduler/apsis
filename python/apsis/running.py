@@ -168,7 +168,14 @@ async def _process_updates(apsis, run):
         # Program raised some other exception.
         apsis.run_log.exc(run, "error: internal")
         tb = traceback.format_exc().encode()
-        output = Output(OutputMetadata("traceback", length=len(tb)), tb)
+        existing_output = None
+        try:
+            existing_output = apsis.outputs.get_output(run.run_id, "output")
+        except LookupError as e:
+            # no output yet
+            pass
+        data = (existing_output.data if existing_output else b"") + tb
+        output = Output(OutputMetadata("output", length=len(data)), data)
         apsis._update_output_data(run, {"output": output}, True)
         apsis._transition(run, State.error, force=True)
 
