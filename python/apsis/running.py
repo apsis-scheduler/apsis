@@ -175,7 +175,7 @@ async def _process_updates(apsis, run):
             # no output yet
             pass
         data = (existing_output.data if existing_output else b"") + tb
-        output = Output(OutputMetadata("output", length=len(data)), data)
+        output = Output(OutputMetadata("combined stdout & stderr", length=len(data)), data)
         apsis._update_output_data(run, {"output": output}, True)
         apsis._transition(run, State.error, force=True)
 
