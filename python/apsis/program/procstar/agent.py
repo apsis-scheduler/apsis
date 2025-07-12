@@ -44,7 +44,7 @@ def _sudo_wrap(cfg, argv, sudo_user):
 
 
 def _make_systemd(cfg, *, resources) -> procstar.spec.Proc.SystemdProperties:
-    ngb_to_bytes = or_none(lambda bytes: bytes * 10**9)
+    ngb_to_bytes = or_none(lambda gb: gb * 10**9)
     memory_max = ngb_to_bytes(
         get_cfg(cfg, "resource_defaults.mem_max_gb", None)
         if resources.mem_max_gb is None
