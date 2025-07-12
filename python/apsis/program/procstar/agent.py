@@ -179,8 +179,8 @@ class Resources:
         return if_not_none("mem_max_gb", self.mem_max_gb)
 
     @classmethod
-    def from_jso(cls, jso):
-        with check_schema(jso or {}) as pop:
+    def from_jso(cls, jso: dict):
+        with check_schema(jso) as pop:
             mem_max_gb = pop("mem_max_gb", default=None)
         return cls(mem_max_gb=mem_max_gb)
 
