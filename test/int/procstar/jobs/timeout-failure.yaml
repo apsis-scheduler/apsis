@@ -1,0 +1,8 @@
+params: ["timeout", "sleep_duration"]
+
+program:
+  type: procstar-shell
+  command: "/usr/bin/sleep {{ sleep_duration }} && wrong_cmd_to_make_it_fail"
+  timeout:
+    duration: "{{ timeout }}"
+    signal: "SIGTERM"

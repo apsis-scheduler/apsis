@@ -7,7 +7,9 @@ from procstar_instance import ApsisService
 JOB_DIR = Path(__file__).parent / "jobs"
 
 
-@pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
+@pytest.mark.parametrize(
+    "job_name", ["timeout", "timeout-shell", "timeout-handle-sigterm"]
+)
 def test_timeout(job_name):
     """
     Tests agent program timeout.
@@ -151,3 +153,45 @@ def test_timeout_with_delayed_reconnect(job_name):
         assert (
             abs(actual_elapsed - downtime) <= tolerance
         ), f"Elapsed time {actual_elapsed:.3f}s should be close to downtime {downtime}s (tolerance: {tolerance}s). Run should have been killed shortly after Apsis reconnected."
+
+
+@pytest.mark.parametrize(
+    "job_name,expected_state",
+    [
+        ("timeout", "success"),
+        ("timeout-shell", "success"),
+        ("timeout-failure", "failure"),
+    ],
+)
+def test_timeout_with_delayed_reconnect_process_terminated(job_name, expected_state):
+    """
+    Tests that the timeout signal is not sent if the process already terminated
+    while Apsis was restarting.
+    """
+    with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True):
+        client = svc.client
+        timeout = 1
+        sleep_duration = 2
+        run_id = client.schedule(
+            job_name, {"timeout": timeout, "sleep_duration": sleep_duration}
+        )["run_id"]
+
+        # Start a run that will terminate while Apsis is restarting
+        res = svc.wait_run(run_id, wait_states=("starting",))
+        assert res["state"] == "running"
+
+        # Stop Apsis for longer than the run duration
+        svc.stop_serve()
+        downtime = 3
+        sleep(downtime)
+        svc.start_serve()
+        svc.wait_for_serve()
+
+        res = svc.wait_run(run_id, wait_states="running", timeout=sleep_duration + 1)
+        assert res["state"] == expected_state
+
+        # ensure no stop signal was sent
+        assert res["meta"]["program"]["stop"]["signals"] == []
+
+        run_log = svc.client.get_run_log(run_id)
+        assert "timeout" not in run_log[-1]["message"]
