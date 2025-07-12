@@ -181,7 +181,9 @@ class Resources:
     @classmethod
     def from_jso(cls, jso: dict):
         with check_schema(jso) as pop:
-            mem_max_gb = pop("mem_max_gb", default=None)
+            mem_max_gb = pop("mem_max_gb", type=float, default=None)
+            if mem_max_gb is not None:
+                assert mem_max_gb > 0, "mem_max_gb must be postive"
         return cls(mem_max_gb=mem_max_gb)
 
     def bind(self, args):

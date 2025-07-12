@@ -4,6 +4,7 @@ import pytest
 
 import apsis.program.procstar.agent
 from test.unit.util import create_fddata, create_running_result, create_success_result
+from apsis.exc import SchemaError
 from apsis.program import Program
 from apsis.program.procstar.agent import RunningProcstarProgram, ProcstarProgram
 from apsis.program.base import (
@@ -88,6 +89,13 @@ def test_systemd_properties():
     running_program = program.bind({}).run("r123", {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 64}}}})
     systemd = running_program._spec.to_jso()["systemd_properties"]
     assert systemd["slice"]["memory_max"] == 64 * 10 ** 9
+
+    with pytest.raises(SchemaError):
+        program = Program.from_jso({
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "/usr/bin/true",
+            "resources": {"mem_max_gb": -1},
+        })
 
 
 @pytest.mark.asyncio
