@@ -90,7 +90,14 @@ def _make_metadata(proc_id, res: dict):
         "errors": res.errors,
     } | {
         k: dict(v.__dict__)
-        for k in ("status", "times", "rusage", "proc_stat", "proc_statm", )
+        for k in (
+            "status",
+            "times",
+            "rusage",
+            "proc_stat",
+            "proc_statm",
+            "cgroup_accounting",
+        )
         if (v := getattr(res, k, None)) is not None
     }
 
