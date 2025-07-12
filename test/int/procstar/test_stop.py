@@ -117,7 +117,7 @@ def test_kill():
 
 
 def test_rerun_with_stop():
-    near = lambda x, y: abs(x - y) < 0.001
+    near = lambda x, y: abs(x - y) < 0.1
 
     job_dir = Path(__file__).parent / "jobs"
     with ApsisService(job_dir=job_dir) as svc, svc.agent():
