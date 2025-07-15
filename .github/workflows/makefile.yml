@@ -27,7 +27,7 @@ jobs:
     - name: Install package
       # extra index-url is for using procstar repository as a pypi index via Github
       # Pages
-      run: pip3 install --index-url https://apsis-scheduler.github.io/procstar/simple/ -e .[dev]
+      run: pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple/ -e .[dev]
 
     - name: Run Python unit tests
       run: pytest test/unit -m "not local_ssh"

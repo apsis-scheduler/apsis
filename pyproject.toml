@@ -24,7 +24,7 @@ dependencies = [
     "jinja2",
     "ora <0.9.0",
     # wheels are only available on self-hosted Github pages pypi index, use:
-    #   pip install --index-url https://apsis-scheduler.github.io/procstar/simple .
+    #   pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple .
     "procstar >=0.7",
     "pyyaml",
     "requests",
