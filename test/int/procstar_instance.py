@@ -1,7 +1,7 @@
 import functools
 import logging
 import os
-from   procstar.testing.agent import get_procstar_path, TLS_CERT_PATH
+from   procstar.testing.agent import TLS_CERT_PATH
 import procstar.http.client
 import random
 import secrets
@@ -64,7 +64,7 @@ class Agent:
         assert self.proc is None, "already started"
 
         argv = [
-            get_procstar_path(),
+            "procstar",
             "--log-level", "trace",
             "--agent",
             "--agent-host", self.host,
