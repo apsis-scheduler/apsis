@@ -23,9 +23,9 @@ dependencies = [
     "httpx",
     "jinja2",
     "ora <0.9.0",
-    # temporarily specific release directly from Github main until procstar has
-    # automated releases to pypi
-    "procstar @ git+https://git@github.com/apsis-scheduler/procstar.git@v0.6.1",
+    # wheels are only available on self-hosted Github pages pypi index, use:
+    #   pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple .
+    "procstar >=0.7",
     "pyyaml",
     "requests",
     "rich",
@@ -33,7 +33,7 @@ dependencies = [
     "sanic-routing ==0.7.0",
     "sqlalchemy <2",
     "ujson",
-    "websockets ==10.*",
+    "websockets >=14",
 ]
 
 optional-dependencies = {dev = ["build", "pytest", "pytest-asyncio", "bump-my-version"], doc = ["sphinx", "readthedocs-sphinx-ext", "sphinx-rtd-theme"]}

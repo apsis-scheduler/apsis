@@ -25,10 +25,9 @@ jobs:
       run: pip3 install --upgrade pip 'setuptools>=61'
 
     - name: Install package
-      run: pip3 install -e .[dev]
-
-    - name: Install procstar
-      run: wget --quiet -ti https://github.com/apsis-scheduler/procstar/releases/download/v$(python -c 'import procstar; print(procstar.__version__)')/procstar && chmod +x procstar && mv procstar /usr/local/bin/
+      # extra index-url is for using procstar repository as a pypi index via Github
+      # Pages
+      run: pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple/ -e .[dev]
 
     - name: Run Python unit tests
       run: pytest test/unit -m "not local_ssh"
