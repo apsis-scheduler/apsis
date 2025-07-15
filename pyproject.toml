@@ -33,7 +33,7 @@ dependencies = [
     "sanic-routing ==0.7.0",
     "sqlalchemy <2",
     "ujson",
-    "websockets ==10.*",
+    "websockets >=14",
 ]
 
 optional-dependencies = {dev = ["build", "pytest", "pytest-asyncio", "bump-my-version"], doc = ["sphinx", "readthedocs-sphinx-ext", "sphinx-rtd-theme"]}
