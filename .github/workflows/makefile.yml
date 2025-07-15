@@ -25,12 +25,9 @@ jobs:
       run: pip3 install --upgrade pip 'setuptools>=61'
 
     - name: Install package
-      run: pip3 install -e .[dev]
-
-    - name: Install procstar from latest release
-      run: pip3 install $(gh release view --repo apsis-scheduler/procstar --json assets --jq '.assets[] | select(.name | endswith(".whl")) | .url')
-      env:
-        GH_TOKEN: ${{ github.token }}
+      # extra index-url is for using procstar repository as a pypi index via Github
+      # Pages
+      run: pip3 install --index-url https://apsis-scheduler.github.io/procstar/simple/ -e .[dev]
 
     - name: Run Python unit tests
       run: pytest test/unit -m "not local_ssh"
