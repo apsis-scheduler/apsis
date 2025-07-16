@@ -1,7 +1,7 @@
 import logging
 from   pathlib import Path
 import warnings
-import yaml
+from   ruamel.yaml import YAML
 
 from   .lib.json import to_array
 from   .lib.parse import nparse_duration
@@ -76,7 +76,7 @@ def load(path):
     else:
         path = Path(path)
         with open(path) as file:
-            cfg = yaml.load(file, Loader=yaml.SafeLoader)
+            cfg = YAML().load(file)
             if cfg is None:
                 # Empty config.
                 cfg = {}
