@@ -5,7 +5,8 @@ import os
 from   pathlib import Path
 import random
 import string
-import yaml
+from   ruamel.yaml import YAML
+from   ruamel.yaml.constructor import DuplicateKeyError
 
 from   .actions import Action
 from   .actions.schedule import successor_from_jso
@@ -144,7 +145,7 @@ def jso_to_job(jso, job_id):
 
 
 def dump_yaml(file, job):
-    yaml.dump(job_to_jso(job), file)
+    YAML().dump(job_to_jso(job), file)
 
 
 def list_yaml_files(dir_path):
@@ -247,9 +248,14 @@ async def load_jobs_dir(path):
         try:
             async with aiofiles.open(path, mode='r') as file:
                 content = await file.read()
-            job_jso = yaml.safe_load(content)
+            job_jso = YAML().load(content)
             job = Job.from_jso(job_jso, job_id)
             return job_id, job, None
+        except DuplicateKeyError as exc:
+            err_msg = exc.problem if exc.problem else str(exc)
+            schema_err = SchemaError(err_msg)
+            schema_err.job_id = job_id
+            return job_id, None, schema_err
         except SchemaError as exc:
             log.debug(f"error: {path}: {exc}", exc_info=True)
             exc.job_id = job_id
