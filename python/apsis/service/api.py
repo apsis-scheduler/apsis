@@ -556,7 +556,7 @@ async def websocket_summary(request, ws):
 
         except asyncio.CancelledError:
             # task is cancelled in the event of abnormal websocket closure, usually if
-            # websocket close due to a ping timeout can't complete successfull
+            # websocket close due to a ping timeout can't complete successfully
             log.warning(
                 f"{prefix} task cancelled after {time.monotonic() - connect_time:.2f}s"
             )
