@@ -229,7 +229,7 @@ div
             | {{ asc ? 'later' : 'earlier' }} rows not shown
             button(
               v-on:click="time = asc ? groups.laterTime : groups.earlierTime"
-            ) {{ asc ? 'Later' : 'Earler' }}
+            ) {{ asc ? 'Later' : 'Earlier' }}
 
 </template>
 
