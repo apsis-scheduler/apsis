@@ -21,7 +21,7 @@ async def test_duplicate_key_in_yaml(tmp_path):
     """
     Test that loading a job with a duplicate key raises the appropriate error.
     """
-    source_file = Path(__file__).parent / "jobs" / "duplicate command key.yaml"
+    source_file = Path(__file__).parent / "invalid_jobs" / "duplicate command key.yaml"
     dest_file = tmp_path / "duplicate command key.yaml"
     shutil.copy2(source_file, dest_file)
 
@@ -30,7 +30,6 @@ async def test_duplicate_key_in_yaml(tmp_path):
 
     errors = exc_info.value.errors
     assert len(errors) == 1, f"Expected 1 error, got {len(errors)}"
-    print(type(errors[0]))
     assert isinstance(errors[0], SchemaError)
     assert 'found duplicate key "command" with value' in str(errors[0]).lower()
 
