@@ -32,6 +32,6 @@ jobs:
     - name: Run Python unit tests
       run: pytest test/unit -m "not local_ssh"
 
-    - name: Run Python integration tets
+    - name: Run Python integration tests
       run: pytest test/int -m "not local_ssh"
 
