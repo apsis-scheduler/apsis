@@ -50,6 +50,10 @@ class Router(sanic.router.Router):
 app = sanic.Sanic("apsis", router=Router(), log_config=SANIC_LOG_CONFIG)
 app.config.LOGO = None
 
+# more forgiving for when slow browsers can't keep up with websocket messages
+app.config.WEBSOCKET_PING_TIMEOUT = 300
+app.config.WEBSOCKET_PING_INTERVAL = 100
+
 app.blueprint(api.API, url_prefix="/api/v1")
 app.blueprint(control.API, url_prefix="/api/control")
 app.blueprint(procstar.API, url_prefix="/api/procstar")
