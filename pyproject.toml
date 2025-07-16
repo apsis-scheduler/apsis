@@ -27,6 +27,7 @@ dependencies = [
     #   pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple .
     "procstar >=0.7",
     "pyyaml",
+    "ruamel.yaml",
     "requests",
     "rich",
     "sanic ==21.6",

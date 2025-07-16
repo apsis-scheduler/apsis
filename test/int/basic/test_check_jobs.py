@@ -1,9 +1,11 @@
 import yaml
 
+from   pathlib import Path
 import pytest
+import shutil
 
 from   apsis.check import check_job_dependencies_scheduled
-from   apsis.exc import JobsDirErrors
+from   apsis.exc import JobsDirErrors, SchemaError
 import apsis.jobs
 from   apsis.lib import itr
 
@@ -12,6 +14,25 @@ from   apsis.lib import itr
 def dump_yaml_file(obj, path):
     with path.open("w") as file:
         yaml.dump(obj, file)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_key_in_yaml(tmp_path):
+    """
+    Test that loading a job with a duplicate key raises the appropriate error.
+    """
+    source_file = Path(__file__).parent / "jobs" / "duplicate command key.yaml"
+    dest_file = tmp_path / "duplicate command key.yaml"
+    shutil.copy2(source_file, dest_file)
+
+    with pytest.raises(JobsDirErrors) as exc_info:
+        await apsis.jobs.load_jobs_dir(tmp_path)
+
+    errors = exc_info.value.errors
+    assert len(errors) == 1, f"Expected 1 error, got {len(errors)}"
+    print(type(errors[0]))
+    assert isinstance(errors[0], SchemaError)
+    assert 'found duplicate key "command" with value' in str(errors[0]).lower()
 
 
 @pytest.mark.asyncio
