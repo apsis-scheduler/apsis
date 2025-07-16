@@ -92,7 +92,6 @@ div.component
           button(
             :disabled="! scheduleReady"
             @click="scheduleRun"
-            :title="!scheduleReady ? 'Please fill in required arguments' : ''"
           ) Schedule
           span(v-if="scheduledRunId") Scheduled: &nbsp;
           Run(v-if="scheduledRunId" :runId="scheduledRunId")
@@ -279,14 +278,6 @@ export default {
 
     &:hover:not(:disabled) {
       background: #90e0a0;
-    }
-
-    &:disabled {
-      background: #e0e0e0;
-      color: #888;
-      border-color: #ccc;
-      cursor: not-allowed;
-      opacity: 0.6;
     }
   }
 
