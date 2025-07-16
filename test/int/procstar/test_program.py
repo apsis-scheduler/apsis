@@ -1,5 +1,8 @@
+import asyncio
 from   pathlib import Path
 import signal
+
+import pytest
 
 from   procstar_instance import ApsisService
 
@@ -106,6 +109,13 @@ def test_run_id_env():
         env_vars = dict( line.split("=", 1) for line in output.splitlines() )
         assert env_vars["APSIS_RUN_ID"] == run_id
 
+
+@pytest.mark.asyncio
+async def test_resources():
+    with ApsisService(job_dir=JOB_DIR) as svc, svc.agent():
+        run_id = svc.client.schedule("resources", args={})["run_id"]
+        res = await asyncio.wait_for(svc.async_wait_run(run_id), 1)
+        assert res["state"] == "success"
 
 # FIXME: procstar connection timeout and reconnect: use SIGHUP to pause agent,
 # wait for websocket timeout, then resume agent and watch it reconnect.
