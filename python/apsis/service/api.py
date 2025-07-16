@@ -4,6 +4,7 @@ import logging
 import ora
 import re
 import sanic
+import time
 import ujson
 from   urllib.parse import unquote, parse_qs
 import websockets
@@ -504,6 +505,8 @@ SUMMARY_MSG_TYPES = {
 
 @API.websocket("/summary")
 async def websocket_summary(request, ws):
+    connect_time = time.monotonic()
+
     # request.query_args doesn't work correctly for ws endpoints?
     init = "init" in request.query_string.split("&")
 
@@ -550,6 +553,14 @@ async def websocket_summary(request, ws):
 
         except websockets.ConnectionClosed:
             log.debug(f"{prefix} closed")
+
+        except asyncio.CancelledError:
+            # task is cancelled in the event of abnormal websocket closure, usually if
+            # websocket close due to a ping timeout can't complete successfull
+            log.warning(
+                f"{prefix} task cancelled after {time.monotonic() - connect_time:.2f}s"
+            )
+            raise
 
     log.debug(f"{prefix} done")
 
