@@ -5,6 +5,7 @@ httpx
 jinja2
 ora <0.9.0
 pyyaml
+ruamel.yaml
 requests
 rich
 sanic ==21.6
