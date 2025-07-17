@@ -1,11 +1,12 @@
 import itertools
 import ora
-from   ora import Date, Time, Daytime, UTC
+from ora import Date, Time, Daytime, UTC
 import pytest
 
-from   apsis.schedule import Schedule, DailySchedule, IntervalSchedule
+from apsis.schedule import Schedule, DailySchedule, IntervalSchedule
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_daily_schedule_shift():
     z = "America/New_York"
@@ -20,13 +21,13 @@ def test_daily_schedule_shift():
     nd = lambda t: next(sched(t))
 
     # Fri 00:00 -> Sun 09:30 for Mon.
-    st, a = nd(Time(2019, 1, 11,  0, 0, 0, z))
+    st, a = nd(Time(2019, 1, 11, 0, 0, 0, z))
     assert st == Time(2019, 1, 13, 9, 30, 0, z)
     assert a["date"] == "2019-01-14"
     assert a["foo"] == "bar"
 
     # Sat 05:00 -> Sun 09:30 for Mon.
-    st, a = nd(Time(2019, 1, 12,  5, 0, 0, z))
+    st, a = nd(Time(2019, 1, 12, 5, 0, 0, z))
     assert st == Time(2019, 1, 13, 9, 30, 0, z)
     assert a["date"] == "2019-01-14"
     assert a["foo"] == "bar"
@@ -94,16 +95,17 @@ def test_daily_schedule_cal_shift(date_shift, cal_shift, start_y):
     sched0 = DailySchedule(z, c, sched_y, args)
     # Generate a long piece of schedule.
     times0 = sched0(shift_date(start, -20))
-    times0 = [
-        t
-        for t, _ in itertools.islice(times0, n + 300)
-    ]
+    times0 = [t for t, _ in itertools.islice(times0, n + 300)]
 
     sched1 = DailySchedule(
-        z, c, sched_y, args,
-        date_shift=date_shift, cal_shift=cal_shift,
+        z,
+        c,
+        sched_y,
+        args,
+        date_shift=date_shift,
+        cal_shift=cal_shift,
     )
-    times1 = [ t for t, _ in itertools.islice(sched1(start), n) ]
+    times1 = [t for t, _ in itertools.islice(sched1(start), n)]
 
     def shift(t):
         try:
@@ -111,8 +113,8 @@ def test_daily_schedule_cal_shift(date_shift, cal_shift, start_y):
         except ora.NonexistentDateDaytime:
             return None
 
-    expected = [ shift(t) for t in times0 ]
-    expected = [ t for t in expected if t is not None and t >= start ][: n]
+    expected = [shift(t) for t in times0]
+    expected = [t for t in expected if t is not None and t >= start][:n]
     assert times1 == expected
 
 
@@ -145,18 +147,21 @@ def test_interval_schedule_phase_repeat():
     start = (date, Daytime(7, 33)) @ UTC
     times = iter(sched(start))
     for y in [
-            Daytime(7, 42),
-            Daytime(7, 52),
-            Daytime(8,  2),
-            Daytime(8, 12),
+        Daytime(7, 42),
+        Daytime(7, 52),
+        Daytime(8, 2),
+        Daytime(8, 12),
     ]:
         time = (date, y) @ UTC
-        assert next(times) == (time, {
-            **args,
-            "time": str(time),
-            "date": str(date),
-            "daytime": str(y),
-        })
+        assert next(times) == (
+            time,
+            {
+                **args,
+                "time": str(time),
+                "date": str(date),
+                "daytime": str(y),
+            },
+        )
 
 
 def test_daily_schedule_eq():
@@ -213,13 +218,15 @@ def test_interval_schedule_eq():
 
 
 def test_jso_daily():
-    sched = Schedule.from_jso({
-        "type": "daily",
-        "tz": "America/New_York",
-        "calendar": "Mon-Thu",
-        "daytime": "12:00:00",
-        "args": {},
-    })
+    sched = Schedule.from_jso(
+        {
+            "type": "daily",
+            "tz": "America/New_York",
+            "calendar": "Mon-Thu",
+            "daytime": "12:00:00",
+            "args": {},
+        }
+    )
     assert isinstance(sched, DailySchedule)
     assert sched.enabled
     assert list(sched.daytimes) == [Daytime(12, 0, 0)]
@@ -236,12 +243,14 @@ def test_jso_daily():
 
 
 def test_jso_interval():
-    sched = Schedule.from_jso({
-        "type": "interval",
-        "interval": "2h",
-        "args": {"color": "orange"},
-        "enabled": False,
-    })
+    sched = Schedule.from_jso(
+        {
+            "type": "interval",
+            "interval": "2h",
+            "args": {"color": "orange"},
+            "enabled": False,
+        }
+    )
     assert isinstance(sched, IntervalSchedule)
     assert not sched.enabled
     assert sched.interval == 7200
@@ -257,5 +266,3 @@ def test_jso_interval():
     assert not rt.enabled
     assert rt.interval == 7200
     assert rt.args == {"color": "orange"}
-
-

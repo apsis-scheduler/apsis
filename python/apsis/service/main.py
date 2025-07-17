@@ -1,23 +1,23 @@
 import asyncio
 import logging
-from   pathlib import Path
+from pathlib import Path
 import sanic
 import sanic.response
 import sanic.router
 import signal
 
-from   apsis import __version__
-from   apsis.apsis import Apsis
-from   apsis.exc import JobsDirErrors
-from   apsis.jobs import load_jobs_dir
-from   apsis.lib.asyn import cancel_task
-from   apsis.sqlite import SqliteDB
-from   . import api, control, procstar
-from   . import DEFAULT_PORT
+from apsis import __version__
+from apsis.apsis import Apsis
+from apsis.exc import JobsDirErrors
+from apsis.jobs import load_jobs_dir
+from apsis.lib.asyn import cancel_task
+from apsis.sqlite import SqliteDB
+from . import api, control, procstar
+from . import DEFAULT_PORT
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 SANIC_LOG_CONFIG = {
     **sanic.log.LOGGING_CONFIG_DEFAULTS,
@@ -32,6 +32,7 @@ SANIC_LOG_CONFIG = {
 }
 SANIC_LOG_CONFIG["loggers"]["sanic.access"]["propagate"] = False
 
+
 class Router(sanic.router.Router):
     """
     Extended router that supports a catch-all path for missing pages.
@@ -44,7 +45,6 @@ class Router(sanic.router.Router):
             return super().get(path, method, host)
         except sanic.router.NotFound:
             return self._get(self.CATCH_ALL_PATH, method, "")
-
 
 
 app = sanic.Sanic("apsis", router=Router(), log_config=SANIC_LOG_CONFIG)
@@ -66,7 +66,8 @@ app.static("/index.html", str(vue_dir / "index.html"))
 # Web assets.
 app.static("/static", str(vue_dir / "static"))
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def build_apsis(cfg):
     db_cfg = cfg["database"]
@@ -110,9 +111,9 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
     # Set up the HTTP server.
     log.info("starting HTTP service")
     server = app.create_server(
-        host        =host,
-        port        =port,
-        debug       =debug,
+        host=host,
+        port=port,
+        debug=debug,
         return_asyncio_server=True,
     )
     server_task = asyncio.ensure_future(server)
@@ -147,7 +148,7 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
         asyncio.ensure_future(stop())
 
     log.info("setting signal handlers")
-    signal.signal(signal.SIGINT , on_shutdown)  # instead of KeyboardInterrupt
+    signal.signal(signal.SIGINT, on_shutdown)  # instead of KeyboardInterrupt
     signal.signal(signal.SIGTERM, on_shutdown)
 
     log.info("service ready to run")
@@ -160,5 +161,3 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
     log.info("service done")
 
     return app.restart
-
-

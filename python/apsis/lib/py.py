@@ -1,4 +1,4 @@
-from   collections.abc import Mapping
+from collections.abc import Mapping
 import functools
 import gc
 import inspect
@@ -10,24 +10,25 @@ import types
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # Inject some missing internal types into the 'types' module.
 types.MethodWrapperType = type("".__eq__)
 
 METHOD_TYPES = (
-    types.MethodType, 
-    types.MethodWrapperType, 
+    types.MethodType,
+    types.MethodWrapperType,
     types.BuiltinMethodType,
 )
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Tokens
 
 DEFAULT = object()
 NO_DEFAULT = object()
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def idem(obj):
     """
@@ -62,6 +63,7 @@ def or_none(fn):
       >>> myfunc(None)
 
     """
+
     @functools.wraps(fn)
     def wrapped(arg, *args, **kw_args):
         return None if arg is None else fn(arg, *args, **kw_args)
@@ -69,10 +71,10 @@ def or_none(fn):
     return wrapped
 
 
-nstr    = or_none(str)
-nint    = or_none(int)
-nfloat  = or_none(float)
-nbool   = or_none(bool)
+nstr = or_none(str)
+nint = or_none(int)
+nfloat = or_none(float)
+nbool = or_none(bool)
 
 
 def is_seq(obj):
@@ -104,12 +106,12 @@ def iterize(obj):
 
     """
     if isinstance(obj, str):
-        return iter((obj, ))
+        return iter((obj,))
     else:
         try:
             return iter(obj)
         except TypeError:
-            return iter((obj, ))
+            return iter((obj,))
 
 
 def tupleize(obj):
@@ -140,12 +142,12 @@ def tupleize(obj):
       `tuple`.
     """
     if isinstance(obj, str):
-        return (obj, )
+        return (obj,)
     else:
         try:
             return tuple(obj)
         except:
-            return (obj, )
+            return (obj,)
 
 
 def to_front(items, order):
@@ -167,7 +169,7 @@ def to_front(items, order):
             rest.append(item)
         else:
             front[i] = item
-    return [ f for f in front if f is not MISSING ] + rest
+    return [f for f in front if f is not MISSING] + rest
 
 
 def merge_mappings(res, /, *mappings):
@@ -187,10 +189,7 @@ def merge_mappings(res, /, *mappings):
                     # Replace non-mapping with mapping.
                     res[key] = dict(val1)
                 else:
-                    res[key] = (
-                        merge_mappings(val0, val1) if isinstance(val0, Mapping)
-                        else val1
-                    )
+                    res[key] = merge_mappings(val0, val1) if isinstance(val0, Mapping) else val1
             else:
                 res[key] = val1
     return res
@@ -212,8 +211,8 @@ def format_call(__fn, *args, **kw_args):
         name = __fn.__name__
     except AttributeError:
         name = str(__fn)
-    args = [ repr(a) for a in args ]
-    args.extend( n + "=" + repr(v) for n, v in kw_args.items() )
+    args = [repr(a) for a in args]
+    args.extend(n + "=" + repr(v) for n, v in kw_args.items())
     return "{}({})".format(name, ", ".join(args))
 
 
@@ -222,7 +221,7 @@ def format_ctor(obj, *args, **kw_args):
 
 
 def format_repr(obj):
-    attrs = { a: getattr(obj, a) for a in dir(obj) if not a.startswith("_") }
+    attrs = {a: getattr(obj, a) for a in dir(obj) if not a.startswith("_")}
     return format_ctor(obj, **attrs)
 
 
@@ -296,7 +295,7 @@ def import_look_up(name):
     # Try to import as much of the name as possible.
     # FIXME: Import left to right as much as possible.
     for i in range(len(parts) + 1, 0, -1):
-        module_name = ".".join(parts[: i])
+        module_name = ".".join(parts[:i])
         try:
             obj = import_(module_name)
         except ImportError:
@@ -313,7 +312,7 @@ def import_look_up(name):
                 return obj
     else:
         raise NameError(name)
-    
+
 
 def export(obj):
     """
@@ -357,17 +356,18 @@ def export(obj):
 
 # FIXME: This doesn't work for values.  Add one that takes a name, or something.
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def dump_attrs(obj):
     width = shutil.get_terminal_size().columns
     for name in sorted(dir(obj)):
         attr = getattr(obj, name)
         if not isinstance(attr, METHOD_TYPES):
-            is_getset = isinstance(
-                getattr(type(obj), name, None), types.GetSetDescriptorType)
+            is_getset = isinstance(getattr(type(obj), name, None), types.GetSetDescriptorType)
             line = "{:24s} {} {}".format(
-                name, "\u2192" if is_getset else "=", repr(repr(attr))[1 : -1])
+                name, "\u2192" if is_getset else "=", repr(repr(attr))[1:-1]
+            )
             if len(line) > width:
                 line = line[: width - 1] + "\u2026"
             print(line)
@@ -378,16 +378,17 @@ def dump_methods(obj):
     for name in sorted(dir(obj)):
         attr = getattr(obj, name)
         if isinstance(attr, types.MethodType):
-            line = attr.__name__ + str(inspect.signature(attr)) 
+            line = attr.__name__ + str(inspect.signature(attr))
             if len(line) > width:
                 line = line[: width - 1] + "\u2026"
             print(line)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
-more_gc_stats = [ {"elapsed": 0, "elapsed_max": 0} for _ in range(3) ]
+more_gc_stats = [{"elapsed": 0, "elapsed_max": 0} for _ in range(3)]
 _gc_start_time = None
+
 
 def track_gc_stats(*, warn_time=None):
     def on_gc(phase, info):
@@ -407,5 +408,3 @@ def track_gc_stats(*, warn_time=None):
                 log.warning(f"GC gen {gen} took {elapsed:.3f} s")
 
     gc.callbacks.append(on_gc)
-
-

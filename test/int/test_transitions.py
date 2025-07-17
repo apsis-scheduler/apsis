@@ -3,18 +3,19 @@ Tests basic transitions by running an Apsis service and interacting with it
 via the HTTP client.
 """
 
-from   collections import Counter
-from   contextlib import closing
+from collections import Counter
+from contextlib import closing
 import ora
-from   pathlib import Path
+from pathlib import Path
 import pytest
 import time
 
-from   instance import ApsisService
+from instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -139,34 +140,25 @@ def test_max_running_terminate(inst):
     inst.wait_for_run_to_start(run_id0)
 
     # Schedule additional runs with the same (adhoc) job.
-    run_ids = {
-        client.schedule(job_id, {}, "now")["run_id"]
-        for _ in range(10)
-    }
+    run_ids = {client.schedule(job_id, {}, "now")["run_id"] for _ in range(10)}
 
     # The first job should be running.
     assert client.get_run(run_id0)["state"] == "running"
     # The rest should be waiting.
-    assert all( client.get_run(r)["state"] == "waiting" for r in run_ids )
+    assert all(client.get_run(r)["state"] == "waiting" for r in run_ids)
 
     # Terminate the running run.
     client.signal(run_id0, "SIGTERM")
     res = inst.wait_run(run_id0)
     assert res["state"] == "failure"
     # One other run should be running.
-    assert sum(
-        client.get_run(r)["state"] in {"starting", "running"}
-        for r in run_ids
-    ) == 1
+    assert sum(client.get_run(r)["state"] in {"starting", "running"} for r in run_ids) == 1
 
     # Repeat for remaining runs.
     while len(run_ids) > 0:
-        running = [
-            r for r in run_ids
-            if client.get_run(r)["state"] in {"starting", "running"}
-        ]
+        running = [r for r in run_ids if client.get_run(r)["state"] in {"starting", "running"}]
         assert len(running) == 1
-        run_id, = running
+        (run_id,) = running
         inst.wait_for_run_to_start(run_id)
         client.signal(run_id, "SIGTERM")
         res = inst.wait_run(run_id)
@@ -174,25 +166,20 @@ def test_max_running_terminate(inst):
         run_ids.remove(run_id)
 
 
-@pytest.mark.parametrize("N", ( 2**i for i in range(1, 8) ))
+@pytest.mark.parametrize("N", (2**i for i in range(1, 8)))
 def test_skip_duplicate_race(inst, N):
     client = inst.client
 
     # Start a bunch of runs that all have the same dependency, followed by a
     # skip_duplicate condition.
-    run_ids = [
-        client.schedule("skip duplicate race", {})["run_id"]
-        for _ in range(N)
-    ]
-    assert all( client.get_run(r)["state"] == "waiting" for r in run_ids )
+    run_ids = [client.schedule("skip duplicate race", {})["run_id"] for _ in range(N)]
+    assert all(client.get_run(r)["state"] == "waiting" for r in run_ids)
 
     # Run the dependency.  All the waiting runs should move past the dependency
     # and evaluate the skip duplicates condition at around the same time.
     client.schedule("dep", {})
 
     # Exactly one should have run, the rest skipped.
-    states = Counter( inst.wait_run(r)["state"] for r in run_ids )
+    states = Counter(inst.wait_run(r)["state"] for r in run_ids)
     assert states["success"] == 1
     assert states["skipped"] == N - 1
-
-

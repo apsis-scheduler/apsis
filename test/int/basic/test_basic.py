@@ -1,11 +1,12 @@
-from   contextlib import closing
-from   pathlib import Path
+from contextlib import closing
+from pathlib import Path
 import pytest
 import sqlite3
 
-from   instance import ApsisService, run_apsisctl
+from instance import ApsisService, run_apsisctl
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def inst():
@@ -25,7 +26,7 @@ def test_create_db(tmpdir):
     with sqlite3.connect(db_path) as db:
         with closing(db.cursor()) as cursor:
             cursor.execute("SELECT * FROM runs")
-            names = { d[0] for d in cursor.description }
+            names = {d[0] for d in cursor.description}
             assert "run_id" in names
             assert len(list(cursor)) == 0
 
@@ -34,7 +35,7 @@ def test_jobs(inst):
     jobs = inst.run_apsis_json("jobs")
     assert len(jobs) > 0
 
-    job_ids = { j["job_id"] for j in jobs }
+    job_ids = {j["job_id"] for j in jobs}
     assert "job1" in job_ids
 
 
@@ -51,5 +52,3 @@ def test_jobs_exact_match(inst):
 def test_stop_serve(inst):
     ret = inst.stop_serve()
     assert ret == 0
-
-

@@ -1,18 +1,17 @@
 import ora
 
-from   apsis.cond.dependency import Dependency
-from   apsis.jobs import Jobs
-from   apsis.runs import Instance, Run, validate_args, bind
-from   apsis.scheduler import get_insts_to_schedule
+from apsis.cond.dependency import Dependency
+from apsis.jobs import Jobs
+from apsis.runs import Instance, Run, validate_args, bind
+from apsis.scheduler import get_insts_to_schedule
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 # FIXME: Use normal protocols for this, not random APIs that need mocks.
 class MockJobDb:
-
     def get(self, job_id):
         raise LookupError(job_id)
-
 
 
 def check_job(jobs_dir, job):
@@ -33,7 +32,7 @@ def check_job(jobs_dir, job):
             _, args = next(schedule(now))
         except StopIteration:
             continue
-        args = { a: str(v) for a, v in args.items() if a in job.params }
+        args = {a: str(v) for a, v in args.items() if a in job.params}
         run = Run(Instance(job.job_id, args))
         checked_run = True
         try:
@@ -44,6 +43,7 @@ def check_job(jobs_dir, job):
             continue
 
     if not checked_run:
+
         def check_associated_run(obj, context):
             try:
                 associated_job_id = obj.job_id
@@ -82,11 +82,11 @@ def check_job(jobs_dir, job):
 
 
 def check_job_dependencies_scheduled(
-        jobs_dir,
-        job,
-        *,
-        sched_times=None,
-        dep_times=None,
+    jobs_dir,
+    job,
+    *,
+    sched_times=None,
+    dep_times=None,
 ):
     """
     Attempts to check that dependencies are scheduled.
@@ -104,33 +104,26 @@ def check_job_dependencies_scheduled(
     :return:
       Generator of errors indicating apparently unscheduled dependencies.
     """
-    deps = [ c for c in job.conds if isinstance(c, Dependency) ]
+    deps = [c for c in job.conds if isinstance(c, Dependency)]
     if len(deps) == 0:
         return
 
     jobs = Jobs(jobs_dir, MockJobDb())
     time = ora.now()
 
-    sched_start, sched_stop = (
-        sched_times if sched_times is not None
-        else (time, time + 86400)
-    )
-    dep_start, dep_stop = (
-        dep_times if dep_times is not None
-        else (time - 86400, time + 86400)
-    )
+    sched_start, sched_stop = sched_times if sched_times is not None else (time, time + 86400)
+    dep_start, dep_stop = dep_times if dep_times is not None else (time - 86400, time + 86400)
     dep_ivl = f"[{dep_start}, {dep_stop})"
 
     # Cache for dependent job schedules: job_id -> set of frozenset(argdict.items())
     dep_insts = {}
+
     def get_dep_insts(job):
         try:
             return dep_insts[job.job_id]
         except KeyError:
             insts = list(get_insts_to_schedule(job, dep_start, dep_stop))
-            dep_insts[job.job_id] = {
-                frozenset(inst.args.items()) for _, _, inst in insts
-            }
+            dep_insts[job.job_id] = {frozenset(inst.args.items()) for _, _, inst in insts}
             return dep_insts[job.job_id]
 
     # Construct all instances that will be scheduled soon.
@@ -149,9 +142,4 @@ def check_job_dependencies_scheduled(
             if frozenset(dep.args.items()) not in get_dep_insts(dep_job):
                 # No matches.
                 dep_inst = Instance(dep.job_id, dep.args)
-                yield (
-                    f"scheduled run {inst}: "
-                    f"dependency {dep_inst} not scheduled in {dep_ivl}"
-                )
-
-
+                yield (f"scheduled run {inst}: dependency {dep_inst} not scheduled in {dep_ivl}")

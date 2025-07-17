@@ -4,19 +4,20 @@ import functools
 import gzip
 import logging
 import os
-from   pathlib import Path
+from pathlib import Path
 import sanic
 import socket
 import traceback
 import ujson
 import zlib
 
-from   apsis.lib.sys import get_username, to_signal
-from   .processes import NoSuchProcessError
+from apsis.lib.sys import get_username, to_signal
+from .processes import NoSuchProcessError
 
 log = logging.getLogger("api")
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def response(jso, status=200):
     jso["status"] = status
@@ -43,33 +44,26 @@ def exc_error(exc, status, log=None):
 
 
 def rusage_to_jso(rusage):
-    usage = {
-        n: getattr(rusage, n)
-        for n in dir(rusage)
-        if n.startswith("ru_")
-    }
+    usage = {n: getattr(rusage, n) for n in dir(rusage) if n.startswith("ru_")}
     # Round times to ns, to avoid silly rounding issues.
-    return {
-        n: round(v, 9) if isinstance(v, float) else v
-        for n, v in usage.items()
-    }
+    return {n: round(v, 9) if isinstance(v, float) else v for n, v in usage.items()}
 
 
 def proc_to_jso(proc):
     return {
-        "proc_id"   : proc.proc_id,
-        "state"     : proc.state,
-        "program"   : proc.program,
-        "pid"       : proc.pid,
-        "exception" : str(proc.exception),
-        "status"    : proc.status,
+        "proc_id": proc.proc_id,
+        "state": proc.state,
+        "program": proc.program,
+        "pid": proc.pid,
+        "exception": str(proc.exception),
+        "status": proc.status,
         "return_code": proc.return_code,
-        "signal"    : proc.signal,
-        "rusage"    : None if proc.rusage is None else rusage_to_jso(proc.rusage),
+        "signal": proc.signal,
+        "rusage": None if proc.rusage is None else rusage_to_jso(proc.rusage),
         "start_time": None if proc.start_time is None else str(proc.start_time),
-        "end_time"  : None if proc.end_time is None else str(proc.end_time),
-        "hostname"  : socket.gethostname(),
-        "username"  : get_username(),
+        "end_time": None if proc.end_time is None else str(proc.end_time),
+        "hostname": socket.gethostname(),
+        "username": get_username(),
     }
 
 
@@ -97,9 +91,10 @@ def build_env(inherit, vars, *, base=None):
     return env
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 API = sanic.Blueprint("v1")
+
 
 def auth(handler):
     """
@@ -107,6 +102,7 @@ def auth(handler):
 
     Checks x-auth-token in the request header.
     """
+
     @functools.wraps(handler)
     def wrapped(req, *args, **kw_args):
         token = req.headers.get("x-auth-token", None)
@@ -143,22 +139,22 @@ async def process_running(req):
 @auth
 async def processes_get(req):
     procs = req.app.ctx.processes
-    return response({"processes": [ proc_to_jso(p) for p in procs ]})
+    return response({"processes": [proc_to_jso(p) for p in procs]})
 
 
 @API.route("/processes", methods={"POST"})
 @auth
 async def processes_post(req):
-    prog    = req.json["program"]
-    argv    = prog["argv"]
-    cwd     = Path(prog.get("cwd", "/")).absolute()
-    env     = prog.get("env", {})
-    stdin   = prog.get("stdin", None)
+    prog = req.json["program"]
+    argv = prog["argv"]
+    cwd = Path(prog.get("cwd", "/")).absolute()
+    env = prog.get("env", {})
+    stdin = prog.get("stdin", None)
 
     # Build the environment.
     inherit = env.get("inherit", True)
-    vars    = env.get("vars", {})
-    env     = build_env(inherit, vars)
+    vars = env.get("vars", {})
+    env = build_env(inherit, vars)
 
     # We can only run procs for our own user.  Confirm that the request's
     # username matches.
@@ -180,7 +176,7 @@ async def process_get(req, proc_id):
 @auth
 async def process_get_output(req, proc_id):
     try:
-        compression, = req.args["compression"]
+        (compression,) = req.args["compression"]
     except KeyError:
         compression = None
     else:
@@ -248,7 +244,8 @@ async def process_stop(req):
     return response({"stop": stop})
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def _stop(app):
     # Remove the pid file first, so new clients won't try to connect while
@@ -260,6 +257,7 @@ def _stop(app):
 
 
 _auto_stop_task = None
+
 
 def _schedule_auto_stop(app, delay):
     """
@@ -285,5 +283,3 @@ def _schedule_auto_stop(app, delay):
             _stop(app)
 
     _auto_stop_task = asyncio.ensure_future(_stop())
-
-

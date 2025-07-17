@@ -1,5 +1,6 @@
 from procstar.agent.proc import FdData, Interval, Result
 
+
 def create_running_result(proc, stdout_length=0):
     """Helper to create a running process result."""
     return Result(

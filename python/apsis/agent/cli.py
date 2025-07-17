@@ -12,9 +12,10 @@ import logging
 import sys
 
 import apsis.lib.asyn
-from   apsis.agent.client import Agent
+from apsis.agent.client import Agent
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 async def _main():
     logging.basicConfig(
@@ -25,28 +26,43 @@ async def _main():
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--log-level", metavar="LEVEL", default=None,
+        "--log-level",
+        metavar="LEVEL",
+        default=None,
         choices={"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"},
-        help="log at LEVEL [def: INFO]")
+        help="log at LEVEL [def: INFO]",
+    )
 
     commands = parser.add_subparsers(title="commands")
     parser.set_defaults(cmd=None)
 
     parser.add_argument(
-        "--host", metavar="HOST", default=None,
-        help="run agent on remote HOST [def: local]")
+        "--host",
+        metavar="HOST",
+        default=None,
+        help="run agent on remote HOST [def: local]",
+    )
     parser.add_argument(
-        "--user", metavar="USER", default=None,
-        help="run agent as USER [def: this user]")
+        "--user",
+        metavar="USER",
+        default=None,
+        help="run agent as USER [def: this user]",
+    )
 
     parser.set_defaults(connect=None)
     excl = parser.add_mutually_exclusive_group()
     excl.add_argument(
-        "--no-connect", action="store_false", dest="connect",
-        help="start only; fail if already running")
+        "--no-connect",
+        action="store_false",
+        dest="connect",
+        help="start only; fail if already running",
+    )
     excl.add_argument(
-        "--connect", action="store_true", dest="connect",
-        help="reconnect only; fail if not running")
+        "--connect",
+        action="store_true",
+        dest="connect",
+        help="reconnect only; fail if not running",
+    )
 
     cmd = commands.add_parser("start")
     cmd.set_defaults(cmd="start")
@@ -103,10 +119,10 @@ async def _main():
             result = await agent.stop()
 
         elif args.cmd == "clean":
+
             async def clean(agent):
                 processes = await agent.get_processes()
-                return await asyncio.gather(*(
-                    agent.del_process(p["proc_id"]) for p in processes ))
+                return await asyncio.gather(*(agent.del_process(p["proc_id"]) for p in processes))
 
             result = await clean(agent)
 
@@ -125,8 +141,7 @@ def main():
     asyncio.run(_main())
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
-

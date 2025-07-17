@@ -2,16 +2,17 @@
 Tests conditions.
 """
 
-from   contextlib import closing
-from   pathlib import Path
+from contextlib import closing
+from pathlib import Path
 import pytest
 import time
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 job_dir = Path(__file__).absolute().parent / "jobs"
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -139,7 +140,7 @@ def test_to_error(client):
     # Mark both failure/error runs as success.
     res = client.mark(red1, "success")
     res = client.mark(red2, "success")
- 
+
     # A red run should go again.
     res = client.schedule("to error", {"color": "red"})
     red3 = res["run_id"]
@@ -153,7 +154,7 @@ def test_thread_cond(inst):
     # Each run has a single condition, which is checked twice, each with a 0.5 s
     # sleep.  The poll interval is short.  If the condition checks were serial,
     # these runs' conditions will take 20 s to complete.
-    run_ids = [ client.schedule("thread poll", {})["run_id"] for _ in range(20) ]
+    run_ids = [client.schedule("thread poll", {})["run_id"] for _ in range(20)]
     for run_id in run_ids:
         assert client.get_run(run_id)["state"] == "waiting"
     time.sleep(1.5)
@@ -164,7 +165,7 @@ def test_thread_cond(inst):
 def test_thread_cond_skip(inst):
     client = inst.client
 
-    run_ids = [ client.schedule("thread poll", {})["run_id"] for _ in range(20) ]
+    run_ids = [client.schedule("thread poll", {})["run_id"] for _ in range(20)]
     for run_id in run_ids:
         assert client.get_run(run_id)["state"] == "waiting"
     for run_id in run_ids:
@@ -176,12 +177,10 @@ def test_thread_cond_skip(inst):
 def test_thread_cond_start(inst):
     client = inst.client
 
-    run_ids = [ client.schedule("thread poll", {})["run_id"] for _ in range(20) ]
+    run_ids = [client.schedule("thread poll", {})["run_id"] for _ in range(20)]
     for run_id in run_ids:
         assert client.get_run(run_id)["state"] == "waiting"
     for run_id in run_ids:
         client.start(run_id)
     for run_id in run_ids:
         assert client.get_run(run_id)["state"] == "success"
-
-

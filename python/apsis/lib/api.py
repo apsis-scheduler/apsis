@@ -4,17 +4,20 @@ import logging
 import sanic
 import zlib
 
-from   apsis.cond.dependency import Dependency
-from   apsis.schedule import schedule_to_jso
+from apsis.cond.dependency import Dependency
+from apsis.schedule import schedule_to_jso
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def response_json(jso, status=200):
     return sanic.response.json(
         jso,
-        status=status, indent=0, escape_forward_slashes=False,
+        status=status,
+        indent=0,
+        escape_forward_slashes=False,
     )
 
 
@@ -68,7 +71,7 @@ def encode_response(headers, data, compression):
     """
     accept = headers.get("Accept-Encoding", "*")
     # Split fields, and drop quality values.
-    accept = { p.strip().split(";")[0] for p in accept.split(",") }
+    accept = {p.strip().split(";")[0] for p in accept.split(",")}
 
     if "*" in accept or compression in accept:
         # The current compression is accepted.
@@ -82,37 +85,39 @@ def encode_response(headers, data, compression):
     return {"Content-Encoding": encoding}, data
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def _to_jso(obj):
-    return None if obj is None else {
-        **obj.to_jso(),
-        "str": str(obj),
-    }
+    return (
+        None
+        if obj is None
+        else {
+            **obj.to_jso(),
+            "str": str(obj),
+        }
+    )
 
 
 def _to_jsos(objs):
-    return [] if objs is None else [ _to_jso(o) for o in objs ]
+    return [] if objs is None else [_to_jso(o) for o in objs]
 
 
 def job_to_jso(job):
     def sched_to_jso(s):
         jso = schedule_to_jso(s)
-        jso["str"] = (
-            str(s) if s.stop_schedule is None
-            else f"{s}, {s.stop_schedule}"
-        )
+        jso["str"] = str(s) if s.stop_schedule is None else f"{s}, {s.stop_schedule}"
         return jso
 
     return {
-        "job_id"        : job.job_id,
-        "params"        : list(sorted(job.params)),
-        "schedule"      : [ sched_to_jso(s) for s in job.schedules ],
-        "program"       : _to_jso(job.program),
-        "condition"     : [ _to_jso(c) for c in job.conds ],
-        "action"        : [ _to_jso(a) for a in job.actions ],
-        "metadata"      : job.meta,
-        "ad_hoc"        : job.ad_hoc,
+        "job_id": job.job_id,
+        "params": list(sorted(job.params)),
+        "schedule": [sched_to_jso(s) for s in job.schedules],
+        "program": _to_jso(job.program),
+        "condition": [_to_jso(c) for c in job.conds],
+        "action": [_to_jso(a) for a in job.actions],
+        "metadata": job.meta,
+        "ad_hoc": job.ad_hoc,
     }
 
 
@@ -123,22 +128,18 @@ def run_to_summary_jso(run):
         return jso
 
     jso = {
-        "job_id"        : run.inst.job_id,
-        "args"          : run.inst.args,
-        "run_id"        : run.run_id,
-        "state"         : run.state.name,
-        "times"         : { n: time_to_jso(t) for n, t in run.times.items() },
-        "labels"        : run.meta.get("job", {}).get("labels", []),
+        "job_id": run.inst.job_id,
+        "args": run.inst.args,
+        "run_id": run.run_id,
+        "state": run.state.name,
+        "times": {n: time_to_jso(t) for n, t in run.times.items()},
+        "labels": run.meta.get("job", {}).get("labels", []),
     }
     if run.expected:
         jso["expected"] = run.expected
 
     if run.conds is not None:
-        deps = [
-            [c.job_id, c.args]
-            for c in run.conds
-            if isinstance(c, Dependency)
-        ]
+        deps = [[c.job_id, c.args] for c in run.conds if isinstance(c, Dependency)]
         if len(deps) > 0:
             jso["dependencies"] = deps
 
@@ -171,19 +172,19 @@ def run_to_jso(app, run, summary=False):
 def runs_to_jso(app, when, runs, summary=False):
     return {
         "when": time_to_jso(when),
-        "runs": { r.run_id: run_to_jso(app, r, summary) for r in runs },
+        "runs": {r.run_id: run_to_jso(app, r, summary) for r in runs},
     }
 
 
 def run_log_record_to_jso(rec):
     return {
-        "timestamp" : time_to_jso(rec["timestamp"]),
-        "message"   : rec["message"],
+        "timestamp": time_to_jso(rec["timestamp"]),
+        "message": rec["message"],
     }
 
 
 def run_log_to_jso(recs):
-    return [ run_log_record_to_jso(r) for r in recs ]
+    return [run_log_record_to_jso(r) for r in recs]
 
 
 # FIXME: Get rid of this and the whole endpoint, which is silly.
@@ -207,12 +208,16 @@ def output_to_http_message(output, *, interval=(0, None)) -> bytes:
     if output.compression is not None:
         raise ValueError("output is compressed")
 
-    return "\r\n".join([
-        f"Content-Type: {output.metadata.content_type}",
-        # f"Content-Encoding: {output.compression}",
-        f"Content-Range: bytes={start}-{stop - 1}/{length}",
-        f"Content-Length: {str(stop - start)}",
-        "", ""
-    ]).encode("ascii") + output.data[start : stop]
-
-
+    return (
+        "\r\n".join(
+            [
+                f"Content-Type: {output.metadata.content_type}",
+                # f"Content-Encoding: {output.compression}",
+                f"Content-Range: bytes={start}-{stop - 1}/{length}",
+                f"Content-Length: {str(stop - start)}",
+                "",
+                "",
+            ]
+        ).encode("ascii")
+        + output.data[start:stop]
+    )

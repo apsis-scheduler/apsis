@@ -1,13 +1,14 @@
 import asyncio
 import heapq
 import logging
-from   ora import now, Time
+from ora import now, Time
 
-from   .runs import Run
+from .runs import Run
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 async def sleep_until(time):
     """
@@ -54,7 +55,6 @@ class ScheduledRuns:
     # entries for which scheduled==True.
 
     class Entry:
-
         def __init__(self, time, run):
             self.time = time
             self.run = run
@@ -69,8 +69,6 @@ class ScheduledRuns:
         def __lt__(self, other):
             return self.time < other.time
 
-
-
     def __init__(self, clock_db, get_scheduler_time, start_run):
         """
         :param clock_db:
@@ -78,35 +76,31 @@ class ScheduledRuns:
         :param start_run:
           Async function that starts a run.
         """
-        self.__clock_db             = clock_db
-        self.__get_scheduler_time   = get_scheduler_time
-        self.__start_run            = start_run
+        self.__clock_db = clock_db
+        self.__get_scheduler_time = get_scheduler_time
+        self.__start_run = start_run
 
         # Heap of Entry, ordered by schedule time.  The top entry is the next
         # scheduled run.
-        self.__heap                 = []
+        self.__heap = []
 
         # Mapping from Run to Entry.  Values satisfy entry.scheduled==True.
-        self.__scheduled            = {}
-
+        self.__scheduled = {}
 
     def __len__(self):
         return len(self.__heap)
 
-
     def get_stats(self):
         return {
-            "num_heap"    : len(self.__heap),
-            "num_entries" : len(self.__scheduled),
+            "num_heap": len(self.__heap),
+            "num_entries": len(self.__scheduled),
         }
-
 
     def get_scheduled_time(self):
         """
         Returns the time through which scheduled runs have been started.
         """
         return self.__clock_db.get_time()
-
 
     async def loop(self):
         # The start loop sleeps until the time to start the next scheduled job,
@@ -159,7 +153,6 @@ class ScheduledRuns:
             log.critical("scheduled loop failed", exc_info=True)
             raise SystemExit(1)
 
-
     def schedule_at(self, time: Time, run: Run):
         """
         Schedules `run` to start at `time`.
@@ -168,7 +161,6 @@ class ScheduledRuns:
         entry = self.Entry(time, run)
         heapq.heappush(self.__heap, entry)
         self.__scheduled[run] = entry
-
 
     async def schedule(self, time: Time, run: Run):
         """
@@ -183,7 +175,6 @@ class ScheduledRuns:
             self.__start_run(run)
         else:
             self.schedule_at(time, run)
-
 
     def unschedule(self, run: Run) -> bool:
         """
@@ -207,6 +198,3 @@ class ScheduledRuns:
             assert entry.scheduled
             entry.scheduled = False
             return True
- 
-
-

@@ -1,12 +1,13 @@
 import logging
 
-from   ..base import _InternalProgram, ProgramRunning, ProgramSuccess
-from   apsis.lib.json import check_schema
-from   apsis.lib.timing import Timer
+from ..base import _InternalProgram, ProgramRunning, ProgramSuccess
+from apsis.lib.json import check_schema
+from apsis.lib.timing import Timer
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class VacuumProgram(_InternalProgram):
     """
@@ -19,16 +20,11 @@ class VacuumProgram(_InternalProgram):
     def __str__(self):
         return "vacuum database"
 
-
     def bind(self, args):
         return self
 
-
     def to_jso(self):
-        return {
-            **super().to_jso()
-        }
-
+        return {**super().to_jso()}
 
     @classmethod
     def from_jso(cls, jso):
@@ -36,10 +32,8 @@ class VacuumProgram(_InternalProgram):
             pass
         return cls()
 
-
     async def start(self, run_id, apsis):
         return ProgramRunning({}), self.wait(apsis)
-
 
     async def wait(self, apsis):
         # FIXME: Private attributes.
@@ -52,6 +46,3 @@ class VacuumProgram(_InternalProgram):
             "time": timer.elapsed,
         }
         return ProgramSuccess(meta=meta)
-
-
-

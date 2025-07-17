@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from   logging import log, debug, info, warning, error, critical
+from logging import log, debug, info, warning, error, critical
 import logging.handlers
 import ora
 import rich.highlighter
@@ -10,7 +10,8 @@ import threading
 
 import apsis.cmdline
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def set_log_levels():
     # Quiet some noisy stuff.
@@ -20,20 +21,17 @@ def set_log_levels():
     logging.getLogger("websockets.protocol").setLevel(logging.INFO)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class Formatter(logging.Formatter):
-
     def formatMessage(self, rec):
         time = ora.UNIX_EPOCH + rec.created
         level = rec.levelname
-        return (
-            f"{time:%Y-%m-%dT%.3C} {rec.name:24s} {level[0]} {rec.message}"
-        )
+        return f"{time:%Y-%m-%dT%.3C} {rec.name:24s} {level[0]} {rec.message}"
 
 
 class AccessFormatter(logging.Formatter):
-
     def formatMessage(self, record):
         time = ora.UNIX_EPOCH + record.created
         level = record.levelname
@@ -57,34 +55,28 @@ def configure(*, level="WARNING"):
     set_log_levels()
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 LEVEL_STYLES = {
-    "DEBUG"     : "color(249)",
-    "INFO"      : "color(243)",
-    "WARNING"   : "color(100)",
-    "ERROR"     : "color(125)",
-    "CRITICAL"  : "color(196) bold",
+    "DEBUG": "color(249)",
+    "INFO": "color(243)",
+    "WARNING": "color(100)",
+    "ERROR": "color(125)",
+    "CRITICAL": "color(196) bold",
 }
 
-class RichFormatter(logging.Formatter):
 
+class RichFormatter(logging.Formatter):
     def formatMessage(self, record):
         time = ora.UNIX_EPOCH + record.created
         level = record.levelname
         level = f"[{LEVEL_STYLES[level]}]{level[0]}[/]"
-        return (
-            f"{time:%.3C} [color(24)]{record.name:24s}[/] {level} "
-            f"{record.message}"
-        )
-
+        return f"{time:%.3C} [color(24)]{record.name:24s}[/] {level} {record.message}"
 
 
 class RichHandler(rich.logging.RichHandler):
-
     def render(self, *, record, traceback, message_renderable):
         return rich.text.Text.from_markup(str(message_renderable))
-
 
 
 def rich_configure(*, level="WARNING"):
@@ -101,5 +93,3 @@ def rich_configure(*, level="WARNING"):
     logging.getLogger().handlers[0].formatter = RichFormatter()
 
     set_log_levels()
-
-

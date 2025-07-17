@@ -1,12 +1,13 @@
-from   contextlib import closing
-from   pathlib import Path
+from contextlib import closing
+from pathlib import Path
 import pytest
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 job_dir = Path(__file__).absolute().parent / "jobs"
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -65,5 +66,3 @@ def test_signal(inst):
     res = inst.wait_run(r2)
     assert res["state"] == "failure"
     assert res["meta"]["program"]["signal"] == "SIGUSR2"
-
-

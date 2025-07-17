@@ -4,14 +4,16 @@ import subprocess
 
 import apsis.lib.asyn
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_communicate_notimeout():
     argv = ["/bin/bash", "-c", "echo foo; echo bar >&2; sleep 0.1"]
 
     proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     out, err = await apsis.lib.asyn.communicate(proc, 0.5)
     assert out == b"foo\n"
     assert err == b"bar\n"
@@ -22,7 +24,8 @@ async def test_communicate_timeout():
     argv = ["/bin/bash", "-c", "echo foo; echo bar >&2; sleep 0.25"]
 
     proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     try:
         await apsis.lib.asyn.communicate(proc, 0.1)
     except asyncio.TimeoutError as exc:
@@ -39,9 +42,9 @@ async def test_publisher():
     pub = apsis.lib.asyn.Publisher()
 
     with (
-            pub.subscription() as sub_all,
-            pub.subscription(predicate=lambda n: n % 2 == 0) as sub_even,
-            pub.subscription(predicate=lambda n: n % 10 == 0) as sub_tens,
+        pub.subscription() as sub_all,
+        pub.subscription(predicate=lambda n: n % 2 == 0) as sub_even,
+        pub.subscription(predicate=lambda n: n % 10 == 0) as sub_tens,
     ):
         assert pub.num_subs == 3
 
@@ -54,12 +57,12 @@ async def test_publisher():
 
         for i in range(1, 11):
             pub.publish(i)
-        assert [ await anext(sub_even) for _ in range(5) ] == [2, 4, 6, 8, 10]
+        assert [await anext(sub_even) for _ in range(5)] == [2, 4, 6, 8, 10]
         fut = asyncio.ensure_future(anext(sub_tens))
         assert await fut == 10
         fut = asyncio.ensure_future(anext(sub_tens))
         assert not fut.done()
-        assert [ await anext(sub_all) for _ in range(10) ] == list(range(1, 11))
+        assert [await anext(sub_all) for _ in range(10)] == list(range(1, 11))
         pub.publish(20)
         assert await fut == 20
         assert await anext(sub_all) == 20
@@ -129,5 +132,3 @@ async def test_task_group():
     assert len(group) == 2
     await group.cancel_all()
     assert len(group) == 0
-
-

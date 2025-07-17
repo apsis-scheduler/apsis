@@ -1,17 +1,16 @@
 import json
-from   pathlib import Path
+from pathlib import Path
 
-from   apsis.lib.json import expand_dotted_keys
-from   apsis.program.procstar.agent import SUDO_ARGV_DEFAULT
-from   procstar_instance import ApsisService
+from apsis.lib.json import expand_dotted_keys
+from apsis.program.procstar.agent import SUDO_ARGV_DEFAULT
+from procstar_instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # Tell Apsis to use our mock sudo instead of the real one.
 MOCK_SUDO = Path(__file__).parent / "mock_sudo"
-CFG = expand_dotted_keys({
-    "procstar.agent.sudo.argv": [str(MOCK_SUDO)] + SUDO_ARGV_DEFAULT[1 :]
-})
+CFG = expand_dotted_keys({"procstar.agent.sudo.argv": [str(MOCK_SUDO)] + SUDO_ARGV_DEFAULT[1:]})
+
 
 def test_sudo_program():
     """
@@ -28,7 +27,7 @@ def test_sudo_program():
                     "argv": ARGV,
                     "sudo_user": "testuser",
                 }
-            }
+            },
         )["run_id"]
         res = svc.wait_run(run_id)
         out = svc.client.get_output(run_id, "output")
@@ -56,7 +55,7 @@ def test_sudo_shell_program():
                     "command": COMMAND,
                     "sudo_user": "usermock",
                 }
-            }
+            },
         )["run_id"]
         res = svc.wait_run(run_id)
         out = svc.client.get_output(run_id, "output")
@@ -67,5 +66,3 @@ def test_sudo_shell_program():
         assert out["non_interactive"] is True
         assert out["user"] == "usermock"
         assert out["argv"] == ["/usr/bin/bash", "-c", COMMAND]
-
-

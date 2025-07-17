@@ -1,12 +1,13 @@
-from   contextlib import closing
-from   pathlib import Path
+from contextlib import closing
+from pathlib import Path
 import pytest
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 job_dir = Path(__file__).absolute().parent / "jobs"
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -25,10 +26,10 @@ def test_run_action(inst):
 
     # There should be a log line with the run ID.
     token = f"run ID: {run_id}"
-    assert any( token in l for l in log )
+    assert any(token in l for l in log)
 
     # There should be a log line with the output.
-    assert any( "output: Hello, world!" in l for l in log )
+    assert any("output: Hello, world!" in l for l in log)
 
 
 def test_check_label_action(inst):
@@ -38,7 +39,7 @@ def test_check_label_action(inst):
     # Logs should show that the action started and raised.
     with inst.get_log() as log:
         log = list(log)
-    assert not any( "RuntimeError: run missing label" in l for l in log )
+    assert not any("RuntimeError: run missing label" in l for l in log)
 
 
 def test_check_label_error_action(inst):
@@ -48,6 +49,4 @@ def test_check_label_error_action(inst):
     # Logs should show that the action started and raised.
     with inst.get_log() as log:
         log = list(log)
-    assert any( "RuntimeError: run missing label: foo" in l for l in log )
-
-
+    assert any("RuntimeError: run missing label: foo" in l for l in log)

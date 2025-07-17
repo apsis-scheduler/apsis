@@ -1,6 +1,7 @@
-from   apsis.lib import memo
+from apsis.lib import memo
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_property():
     class C:
@@ -18,7 +19,6 @@ def test_property():
         def y(self):
             C.count += 1
             return 17
-
 
     c0 = C(42)
     assert C.count == 0
@@ -50,5 +50,3 @@ def test_property():
     assert C.count == 4
     assert c0.x == 42
     assert C.count == 4
-
-

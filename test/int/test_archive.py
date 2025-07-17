@@ -1,22 +1,25 @@
-from   contextlib import closing
+from contextlib import closing
 import pytest
 import sqlite3
 import time
 
-from   apsis.service.client import APIError
-from   instance import ApsisService
+from apsis.service.client import APIError
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_archive(tmp_path):
     path = tmp_path / "archive.db"
     job_dir = tmp_path / "jobs"
     job_dir.mkdir()
 
-    with closing(ApsisService(
+    with closing(
+        ApsisService(
             cfg={"schedule": {"horizon": 1}},
             job_dir=job_dir,
-    )) as inst:
+        )
+    ) as inst:
         inst.create_db()
         inst.write_cfg()
         inst.start_serve()
@@ -35,7 +38,7 @@ def test_archive(tmp_path):
                     "type": "shell",
                     "command": "echo 'Hello, world!'",
                 }
-            }
+            },
         )
         run_id1 = res["run_id"]
 
@@ -45,14 +48,17 @@ def test_archive(tmp_path):
         run_id2 = res["run_id"]
 
         # Archive, with a max age of 2 s and up to 1 run.
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.archive.ArchiveProgram",
-                "age": 2,
-                "count": 1,
-                "path": str(path),
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.archive.ArchiveProgram",
+                    "age": 2,
+                    "count": 1,
+                    "path": str(path),
+                },
             },
-        })
+        )
         res = inst.wait_run(res["run_id"])
         # The first run has been archived.
         assert res["meta"]["program"]["run count"] == 1
@@ -66,14 +72,17 @@ def test_archive(tmp_path):
 
         # Archive, with a max age of 2 s.
         time.sleep(0.5)
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.archive.ArchiveProgram",
-                "age": 2,
-                "count": 10,
-                "path": str(path),
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.archive.ArchiveProgram",
+                    "age": 2,
+                    "count": 10,
+                    "path": str(path),
+                },
             },
-        })
+        )
         # The second run was archived, but the third isn't old enough yet.
         res = inst.wait_run(res["run_id"])
         assert res["meta"]["program"]["run count"] == 1
@@ -92,8 +101,7 @@ def test_archive(tmp_path):
                 (run_id1, "success"),
             ]
 
-            rows = list(db.execute(
-                "SELECT message FROM run_history WHERE run_id = ?", (run_id0, )))
+            rows = list(db.execute("SELECT message FROM run_history WHERE run_id = ?", (run_id0,)))
             assert "scheduled: now" in rows[0][0]
             assert "success" in rows[-1][0]
 
@@ -108,10 +116,12 @@ def test_archive_chunks(tmp_path):
     job_dir = tmp_path / "jobs"
     job_dir.mkdir()
 
-    with closing(ApsisService(
+    with closing(
+        ApsisService(
             cfg={"schedule": {"horizon": 1}},
             job_dir=job_dir,
-    )) as inst:
+        )
+    ) as inst:
         inst.create_db()
         inst.write_cfg()
         inst.start_serve()
@@ -120,38 +130,40 @@ def test_archive_chunks(tmp_path):
         client = inst.client
 
         # Run 100 runs.
-        res = client.schedule_adhoc(
-            "now", {"program": {"type": "no-op"}}, count=100)
-        run_ids = { r["run_id"] for r in res }
+        res = client.schedule_adhoc("now", {"program": {"type": "no-op"}}, count=100)
+        run_ids = {r["run_id"] for r in res}
         for run_id in run_ids:
             inst.wait_run(run_id)
 
         time.sleep(1)
 
         # Archive, with a max age of 1 s and up to 80 runs, chunked by 10.
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.archive.ArchiveProgram",
-                "age": 1,
-                "count": 80,
-                "chunk_size": 10,
-                "chunk_sleep": 0.1,
-                "path": str(path),
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.archive.ArchiveProgram",
+                    "age": 1,
+                    "count": 80,
+                    "chunk_size": 10,
+                    "chunk_sleep": 0.1,
+                    "path": str(path),
+                },
             },
-        })
+        )
         res = inst.wait_run(res["run_id"])
         # Runs have been archived.
         meta = res["meta"]["program"]
         assert meta["run count"] == 80
         assert len(meta["run_ids"]) == 8
-        assert all( len(c) == 10 for c in meta["run_ids"] )
-        assert all( r in run_ids for c in meta["run_ids"] for r in c )
+        assert all(len(c) == 10 for c in meta["run_ids"])
+        assert all(r in run_ids for c in meta["run_ids"] for r in c)
 
         # Check the archive file.
         with closing(sqlite3.connect(path)) as db:
             rows = set(db.execute("SELECT run_id, state FROM runs"))
             assert len(rows) == 80
-            assert all( r[0] in run_ids and r[1] == "success" for r in rows )
+            assert all(r[0] in run_ids and r[1] == "success" for r in rows)
 
 
 def test_clean_up_jobs(tmp_path):
@@ -159,10 +171,12 @@ def test_clean_up_jobs(tmp_path):
     job_dir = tmp_path / "jobs"
     job_dir.mkdir()
 
-    with closing(ApsisService(
+    with closing(
+        ApsisService(
             cfg={"schedule": {"horizon": 1}},
             job_dir=job_dir,
-    )) as inst:
+        )
+    ) as inst:
         inst.create_db()
         inst.write_cfg()
         inst.start_serve()
@@ -189,21 +203,24 @@ def test_clean_up_jobs(tmp_path):
 
         # Check the DB.
         with closing(sqlite3.connect(inst.db_path)) as db:
-            job_ids = { j for j, in db.execute("SELECT job_id FROM jobs") }
+            job_ids = {j for (j,) in db.execute("SELECT job_id FROM jobs")}
         assert job_ids == {job_id0, job_id1, job_id2}
 
         inst.start_serve()
         inst.wait_for_serve()
 
         # Archive with a max age of 2 s.
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.archive.ArchiveProgram",
-                "age": 2,
-                "count": 10,
-                "path": str(path),
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.archive.ArchiveProgram",
+                    "age": 2,
+                    "count": 10,
+                    "path": str(path),
+                },
             },
-        })
+        )
         res = inst.wait_run(res["run_id"])
         archive_job_id = res["job_id"]
         # The first two runs have been archived.
@@ -215,7 +232,7 @@ def test_clean_up_jobs(tmp_path):
     # Check the DB.  Only the third job ID should remain, plus the job ID from
     # the archive job.
     with closing(sqlite3.connect(inst.db_path)) as db:
-        job_ids = { j for j, in db.execute("SELECT job_id FROM jobs") }
+        job_ids = {j for (j,) in db.execute("SELECT job_id FROM jobs")}
     assert job_ids == {job_id2, archive_job_id}
 
 
@@ -228,14 +245,15 @@ def test_vacuum():
 
         client = inst.client
 
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.vacuum.VacuumProgram",
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.vacuum.VacuumProgram",
+                },
             },
-        })
+        )
         res = inst.wait_run(res["run_id"])
         assert res["state"] == "success"
         meta = res["meta"]["program"]
         assert meta["time"] > 0
-
-

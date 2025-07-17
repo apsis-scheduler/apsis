@@ -3,7 +3,8 @@ import pathlib
 import pwd
 import tempfile
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def get_default_state_dir():
     uid = os.getuid()
@@ -12,5 +13,3 @@ def get_default_state_dir():
     except KeyError:
         user = f"#{uid}"
     return pathlib.Path(tempfile.gettempdir()) / f"apsis-agent-{user}"
-
-
