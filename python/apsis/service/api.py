@@ -6,23 +6,31 @@ import re
 import sanic
 import time
 import ujson
-from   urllib.parse import unquote, parse_qs
+from urllib.parse import unquote, parse_qs
 import websockets
 
-from   . import messages
-from   apsis import procstar
-from   apsis.lib import asyn
-from   apsis.lib.api import (
-    response_json, error, time_to_jso, to_bool, encode_response,
-    runs_to_jso, run_to_summary_jso, job_to_jso,
-    output_metadata_to_jso, run_log_to_jso, output_to_http_message
+from . import messages
+from apsis import procstar
+from apsis.lib import asyn
+from apsis.lib.api import (
+    response_json,
+    error,
+    time_to_jso,
+    to_bool,
+    encode_response,
+    runs_to_jso,
+    run_to_summary_jso,
+    job_to_jso,
+    output_metadata_to_jso,
+    run_log_to_jso,
+    output_to_http_message,
 )
 import apsis.lib.itr
-from   apsis.lib.parse import parse_duration
-from   apsis.lib.sys import to_signal
-from   apsis.states import to_state
-from   ..jobs import jso_to_job
-from   ..runs import Instance, RunError
+from apsis.lib.parse import parse_duration
+from apsis.lib.sys import to_signal
+from apsis.states import to_state
+from ..jobs import jso_to_job
+from ..runs import Instance, RunError
 
 log = logging.getLogger(__name__)
 
@@ -33,14 +41,16 @@ WS_CHUNK = 4096
 # Time to sleep between websocket messages.
 WS_CHUNK_SLEEP = 0.001
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def parse_query(query):
     parts = parse_qs(query, keep_blank_values=True)
-    return { n: v[0] for n, v in parts.items() }
+    return {n: v[0] for n, v in parts.items()}
 
 
 API = sanic.Blueprint("v1")
+
 
 @API.exception(RunError)
 def no_such_process_error(request, exception):
@@ -66,8 +76,9 @@ async def stats(request):
     return response_json(stats)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Jobs
+
 
 class JobLookupError(LookupError):
     pass
@@ -107,12 +118,9 @@ def match(choices, target):
 
     def match(choice):
         choice_words = words(choice)
-        return all(
-            any( cw.startswith(sw) for cw in choice_words )
-            for sw in target_words
-        )
+        return all(any(cw.startswith(sw) for cw in choice_words) for sw in target_words)
 
-    choices = { c for c in choices if match(c) }
+    choices = {c for c in choices if match(c)}
 
     if len(choices) == 0:
         raise JobLookupError("no job id match: " + target)
@@ -120,7 +128,7 @@ def match(choices, target):
         return next(iter(choices))
     else:
         if len(choices) > 8:
-            choices = ", ".join(list(choices)[: 8]) + " …"
+            choices = ", ".join(list(choices)[:8]) + " …"
         else:
             choices = ", ".join(choices)
         raise AmbiguousJobError("ambiguous job id: " + choices)
@@ -139,9 +147,9 @@ def match_job_id(jobs, job_id):
         return job_id
 
     # FIXME: Cache job ids (or word split job ids) to make this efficient.
-    job_ids = [ j.job_id for j in jobs.get_jobs(ad_hoc=False) ]
+    job_ids = [j.job_id for j in jobs.get_jobs(ad_hoc=False)]
     return match(job_ids, job_id)
- 
+
 
 @API.route("/jobs/<job_id:path>")
 async def job(request, job_id):
@@ -167,9 +175,9 @@ async def jobs(request):
     """
     Returns (non ad-hoc) jobs.
     """
-    args    = request.args
+    args = request.args
     try:
-        label, = args["label"]
+        (label,) = args["label"]
     except KeyError:
         label = None
 
@@ -181,8 +189,9 @@ async def jobs(request):
     return response_json(jso)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Runs
+
 
 @API.route("/runs/<run_id>", methods={"GET"})
 async def run(request, run_id):
@@ -202,16 +211,18 @@ async def run_log(request, run_id):
     except KeyError:
         return error(f"unknown run {run_id}", 404)
 
-    return response_json({
-        "run_log": [
-            {
-                "run_id"    : r["run_id"],
-                "timestamp" : time_to_jso(r["timestamp"]),
-                "message"   : r["message"],
-            }
-            for r in sorted(run_log, key=lambda r: r["timestamp"])
-        ]
-    })
+    return response_json(
+        {
+            "run_log": [
+                {
+                    "run_id": r["run_id"],
+                    "timestamp": time_to_jso(r["timestamp"]),
+                    "message": r["message"],
+                }
+                for r in sorted(run_log, key=lambda r: r["timestamp"])
+            ]
+        }
+    )
 
 
 @API.websocket("/runs/<run_id>/updates")
@@ -246,12 +257,16 @@ async def websocket_run_updates(request, ws, run_id):
                 outputs = apsis.outputs.get_metadata(run_id)
             except KeyError:
                 outputs = {}
-            await ws.send(ujson.dumps({
-                "run"       : run_to_summary_jso(run),
-                "meta"      : run.meta,
-                "run_log"   : run_log_to_jso(run_log),
-                "outputs"   : { n: o.to_jso() for n, o in outputs.items() },
-            }))
+            await ws.send(
+                ujson.dumps(
+                    {
+                        "run": run_to_summary_jso(run),
+                        "meta": run.meta,
+                        "run_log": run_log_to_jso(run_log),
+                        "outputs": {n: o.to_jso() for n, o in outputs.items()},
+                    }
+                )
+            )
 
         async for msg in subscription:
             await ws.send(ujson.dumps(msg))
@@ -276,8 +291,7 @@ async def run_output(request, run_id, output_id):
     except LookupError as exc:
         return error(exc, 404)
     else:
-        headers, data = encode_response(
-            request.headers, output.data, output.compression)
+        headers, data = encode_response(request.headers, output.data, output.compression)
         headers["Content-Type"] = output.metadata.content_type
         return sanic.response.raw(data, headers=headers)
 
@@ -428,15 +442,11 @@ async def run_dependencies(request, run_id):
     from apsis.cond.dependency import Dependency
 
     # Collect dependency job instances.
-    dep_instances = [
-        (c.job_id, c.args)
-        for c in (run.conds or [])
-        if isinstance(c, Dependency)
-    ]
+    dep_instances = [(c.job_id, c.args) for c in (run.conds or []) if isinstance(c, Dependency)]
 
     def get_run_ids(job_id, args):
         _, runs = apsis.run_store.query(job_id=job_id, args=args)
-        return [ r.run_id for r in runs ]
+        return [r.run_id for r in runs]
 
     # Query matching runs and package up.
     deps = [
@@ -456,26 +466,26 @@ async def runs(request):
     apsis = request.app.apsis
 
     # Get runs from the selected interval.
-    args        = request.args
-    summary,    = args.pop("summary", ("False", ))
-    summary     = to_bool(summary)
-    run_id      = args.pop("run_id", None)
-    job_id,     = args.pop("job_id", (None, ))
+    args = request.args
+    (summary,) = args.pop("summary", ("False",))
+    summary = to_bool(summary)
+    run_id = args.pop("run_id", None)
+    (job_id,) = args.pop("job_id", (None,))
     if job_id is not None:
-        job_id  = match_job_id(apsis.jobs, job_id)
-    state,      = args.pop("state", (None, ))
-    since,      = args.pop("since", (None, ))
+        job_id = match_job_id(apsis.jobs, job_id)
+    (state,) = args.pop("state", (None,))
+    (since,) = args.pop("since", (None,))
 
     # Remainders are args to match, though strip off leading underscores, where
     # were added to avoid collision with fixed args.
-    args = { n[1 :] if n.startswith("_") else n: a[-1] for n, a in args.items() }
+    args = {n[1:] if n.startswith("_") else n: a[-1] for n, a in args.items()}
 
     when, runs = apsis.run_store.query(
-        run_ids     =run_id,
-        job_id      =job_id,
-        state       =None if state is None else to_state(state),
-        since       =since,
-        with_args   =args,
+        run_ids=run_id,
+        job_id=job_id,
+        state=None if state is None else to_state(state),
+        since=since,
+        with_args=args,
     )
 
     return response_json(runs_to_jso(request.app, when, runs, summary=summary))
@@ -503,6 +513,7 @@ SUMMARY_MSG_TYPES = {
     "run_transition",
 }
 
+
 @API.websocket("/summary")
 async def websocket_summary(request, ws):
     connect_time = time.monotonic()
@@ -524,21 +535,18 @@ async def websocket_summary(request, ws):
 
                 # Send all jobs.
                 jobs = apsis.jobs.get_jobs(ad_hoc=False)
-                job_msgs = ( messages.make_job(j) for j in jobs )
+                job_msgs = (messages.make_job(j) for j in jobs)
 
                 # Send all procstar agent conns.
                 agent_server = procstar.get_agent_server()
-                conn_msgs = (
-                    messages.make_agent_conn(c)
-                    for c in agent_server.connections.values()
-                )
+                conn_msgs = (messages.make_agent_conn(c) for c in agent_server.connections.values())
 
                 # Send summaries of all runs.
                 _, runs = apsis.run_store.query()
                 # Reverse runs to have the latest runs first.
                 # This depends on 'apsis.run_store.query()' returning runs in ascending order.
                 runs = runs[::-1]
-                run_msgs = ( messages.make_run_summary(r) for r in runs )
+                run_msgs = (messages.make_run_summary(r) for r in runs)
 
                 msgs = itertools.chain(job_msgs, conn_msgs, run_msgs)
                 await _send_chunked(msgs, ws, prefix)
@@ -557,9 +565,7 @@ async def websocket_summary(request, ws):
         except asyncio.CancelledError:
             # task is cancelled in the event of abnormal websocket closure, usually if
             # websocket close due to a ping timeout can't complete successfully
-            log.warning(
-                f"{prefix} task cancelled after {time.monotonic() - connect_time:.2f}s"
-            )
+            log.warning(f"{prefix} task cancelled after {time.monotonic() - connect_time:.2f}s")
             raise
 
     log.debug(f"{prefix} done")
@@ -611,12 +617,7 @@ async def run_post(request):
             else:
                 stop_time = (ora.now() if time == "now" else time) + duration
 
-    runs = (
-        apsis.schedule(time, inst, stop_time=stop_time)
-        for _ in range(count)
-    )
+    runs = (apsis.schedule(time, inst, stop_time=stop_time) for _ in range(count))
     runs = await asyncio.gather(*runs)
     jso = runs_to_jso(request.app, ora.now(), runs)
     return response_json(jso)
-
-

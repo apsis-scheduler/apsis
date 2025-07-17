@@ -1,20 +1,21 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 #
 # Copied from Itertools in Python 2.6 alpha, with modifications.
 #
 # Copyright 2001-2015 Python Software Foundation.
 # https://docs.python.org/3.6/license.html
 #
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 """
 Includes [recipes in itertools
 docs](https://docs.python.org/3/library/itertools.html#itertools-recipes)
 """
 
-from  itertools import *
+from itertools import *
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def take(n, iterable):
     """
@@ -151,7 +152,7 @@ def powerset(iterable):
     powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)
     """
     s = list(iterable)
-    return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+    return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
 
 def unique_everseen(iterable, key=None):
@@ -201,7 +202,7 @@ def iter_except(func, exception, first=None):
     """
     try:
         if first is not None:
-            yield first()            # For database APIs needing an initial cast to db.first()
+            yield first()  # For database APIs needing an initial cast to db.first()
         while 1:
             yield func()
     except exception:
@@ -257,5 +258,3 @@ def random_combination_with_replacement(iterable, r):
     n = len(pool)
     indices = sorted(random.randrange(n) for i in range(r))
     return tuple(pool[i] for i in indices)
-
-

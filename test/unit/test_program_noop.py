@@ -3,7 +3,8 @@ import pytest
 
 import apsis.program
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_duration():
@@ -19,5 +20,3 @@ async def test_duration():
         pass
     elapsed = time.monotonic() - start
     assert elapsed > 0.7
-
-

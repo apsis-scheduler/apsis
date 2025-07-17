@@ -1,8 +1,8 @@
 import argparse
-from   contextlib import suppress
+from contextlib import suppress
 import logging
 import os
-from   pathlib import Path
+from pathlib import Path
 import pwd
 import sanic
 import sanic.response
@@ -12,19 +12,18 @@ import socket
 import ssl
 import sys
 
-from   . import SSL_CERT, SSL_KEY
-from   ..lib.daemon import daemonize
-from   ..lib.pidfile import PidFile
-from   .api import API
-from   .base import get_default_state_dir
-from   .processes import Processes
+from . import SSL_CERT, SSL_KEY
+from ..lib.daemon import daemonize
+from ..lib.pidfile import PidFile
+from .api import API
+from .base import get_default_state_dir
+from .processes import Processes
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 SANIC_LOG_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
-
     "loggers": {
         "root": {
             "level": "INFO",
@@ -46,9 +45,8 @@ SANIC_LOG_CONFIG = {
             "handlers": ["access_console"],
             "propagate": False,
             "qualname": "sanic.access",
-        }
+        },
     },
-
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
@@ -66,7 +64,6 @@ SANIC_LOG_CONFIG = {
             "stream": sys.stderr,
         },
     },
-
     "formatters": {
         "generic": {
             "class": "apsis.lib.logging.Formatter",
@@ -75,10 +72,10 @@ SANIC_LOG_CONFIG = {
             "class": "apsis.lib.logging.AccessFormatter",
         },
     },
-
 }
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def make_state_dir(path):
     """
@@ -92,7 +89,8 @@ def make_state_dir(path):
     return path
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def make_server_socket(host):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -115,36 +113,61 @@ def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)-18s [%(levelname)-7s] %(message)s",
-        datefmt="%H:%M:%S"
+        datefmt="%H:%M:%S",
     )
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--log-level", metavar="LEVEL", default=None,
+        "--log-level",
+        metavar="LEVEL",
+        default=None,
         choices={"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"},
-        help="log at LEVEL [def: INFO]")
+        help="log at LEVEL [def: INFO]",
+    )
     parser.add_argument(
-        "--bind", metavar="ADDR", default="0.0.0.0",
-        help="bind server to interface ADDR [def: all]")
+        "--bind",
+        metavar="ADDR",
+        default="0.0.0.0",
+        help="bind server to interface ADDR [def: all]",
+    )
     excl = parser.add_mutually_exclusive_group()
     excl.add_argument(
-        "--no-connect", action="store_true", default=False,
-        help="start only; fail if already running")
+        "--no-connect",
+        action="store_true",
+        default=False,
+        help="start only; fail if already running",
+    )
     excl.add_argument(
-        "--connect", action="store_true", default=False,
-        help="reconnect only; fail if not running")
+        "--connect",
+        action="store_true",
+        default=False,
+        help="reconnect only; fail if not running",
+    )
     parser.add_argument(
-        "--no-daemon", action="store_true", default=False,
-        help="don't daemonize; run in foreground")
+        "--no-daemon",
+        action="store_true",
+        default=False,
+        help="don't daemonize; run in foreground",
+    )
     parser.add_argument(
-        "--no-stop", action="store_true", default=False,
-        help="don't stop automatically after last process")
+        "--no-stop",
+        action="store_true",
+        default=False,
+        help="don't stop automatically after last process",
+    )
     parser.add_argument(
-        "--state-dir", metavar="DIR", type=Path, default=None,
-        help="write state file in DIR")
+        "--state-dir",
+        metavar="DIR",
+        type=Path,
+        default=None,
+        help="write state file in DIR",
+    )
     parser.add_argument(
-        "--stop-time", metavar="SECS", default=300,
-        help="wait SECS after last process before stopping [def: 300]")
+        "--stop-time",
+        metavar="SECS",
+        default=300,
+        help="wait SECS after last process before stopping [def: 300]",
+    )
     args = parser.parse_args()
 
     if args.log_level is not None:
@@ -171,7 +194,8 @@ def main():
         euid = pwd.getpwuid(os.geteuid())
         print(
             f"uid={uid.pw_uid}/{uid.pw_name} euid={euid.pw_uid}/{euid.pw_name}",
-            file=sys.stderr)
+            file=sys.stderr,
+        )
 
         port, sock = make_server_socket(args.bind)
         token = secrets.token_urlsafe()
@@ -207,15 +231,11 @@ def main():
         app.ctx.remove_pid_file = remove_pid_file
 
         # SSL certificates are stored in this directory.
-        ssl_context = ssl.create_default_context(
-            purpose=ssl.Purpose.CLIENT_AUTH)
+        ssl_context = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)
         ssl_context.load_cert_chain(SSL_CERT, keyfile=SSL_KEY)
 
         if not args.no_daemon:
-            daemonize(
-                state_dir / "log",
-                keep_fds=[pid_file.file.fileno(), sock.fileno()]
-            )
+            daemonize(state_dir / "log", keep_fds=[pid_file.file.fileno(), sock.fileno()])
 
         logging.info(f"pid={os.getpid()}")
         uid = pwd.getpwuid(os.getuid())
@@ -225,11 +245,11 @@ def main():
         # FIXME: auto_reload added to sanic after 0.7.
         logging.info("running app")
         app.run(
-            sock        =sock,
-            ssl         =ssl_context,
+            sock=sock,
+            ssl=ssl_context,
             # FIXME: Debug seems to be completely broken?
             # debug     =args.debug,
-            auto_reload =False,
+            auto_reload=False,
         )
 
     else:
@@ -240,9 +260,7 @@ def main():
         print(f"existing agent: port={port}", file=sys.stderr)
 
         if args.no_connect:
-            print(
-                f"agent already running; port {port}",
-                file=sys.stderr)
+            print(f"agent already running; port {port}", file=sys.stderr)
             raise SystemExit(1)
 
         # Print the pid and token for the client to grab.

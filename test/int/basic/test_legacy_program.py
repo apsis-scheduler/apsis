@@ -1,6 +1,7 @@
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_reconnect_legacy_program():
     job = {
@@ -22,5 +23,3 @@ def test_reconnect_legacy_program():
 
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
-
-

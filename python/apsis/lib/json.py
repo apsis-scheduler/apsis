@@ -1,12 +1,13 @@
 import contextlib
-from   typing import Mapping
+from typing import Mapping
 
-from   apsis.exc import SchemaError
-from   .imp import import_fqname, get_type_fqname
+from apsis.exc import SchemaError
+from .imp import import_fqname, get_type_fqname
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 NO_DEFAULT = object()
+
 
 def to_array(obj):
     return obj if isinstance(obj, list) else [obj]
@@ -126,7 +127,8 @@ def ifkey(name, value, default):
     return {} if value == default else {name: value}
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class TypedJso:
     """
@@ -154,7 +156,7 @@ class TypedJso:
                     # serialize...
                 }
 
-    The concrete subtype is encoded as a "type" field in the JSO, using the 
+    The concrete subtype is encoded as a "type" field in the JSO, using the
     fully-qualified type name.  Provide shorter type aliases with,
 
         Base.TYPE_NAMES.set(Subtype, "short_name")
@@ -162,16 +164,13 @@ class TypedJso:
     """
 
     class TypeNames:
-
         def __init__(self):
             self.__by_name = {}
             self.__by_type = {}
 
-
         def set(self, type, name):
             self.__by_name[name] = type
             self.__by_type[type] = name
-
 
         def get_type(self, name):
             try:
@@ -182,14 +181,11 @@ class TypedJso:
                 except ImportError as exc:
                     raise LookupError(exc)
 
-
         def get_name(self, type):
             try:
                 return self.__by_type[type]
             except KeyError:
                 return get_type_fqname(type)
-
-
 
     @classmethod
     def from_jso(cls, jso):
@@ -210,15 +206,10 @@ class TypedJso:
 
         return type.from_jso(jso)
 
-
     def to_jso(self):
         return {
             "type": self.TYPE_NAMES.get_name(type(self)),
         }
 
-
     def __eq__(self, other):
         return type(other) == type(self) and other.to_jso() == self.to_jso()
-
-
-

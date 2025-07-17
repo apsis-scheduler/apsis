@@ -4,7 +4,8 @@ import resource
 
 log = logging.getLogger("daemon")
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def get_max_fds():
     _, limit = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -43,5 +44,3 @@ def daemonize(log_path, *, keep_fds=[]):
     os.setsid()
     if os.fork() > 0:
         os._exit(0)
-
-

@@ -1,14 +1,15 @@
 import asyncio
 import itertools
 import logging
-from   ora import Time, now
+from ora import Time, now
 
-from   .runs import Instance
-from   apsis.lib.parse import parse_duration
+from .runs import Instance
+from apsis.lib.parse import parse_duration
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def get_insts_to_schedule(job, start, stop):
     """
@@ -22,14 +23,9 @@ def get_insts_to_schedule(job, start, stop):
             times = itertools.takewhile(lambda t: t[0] < stop, schedule(start))
             for sched_time, args in times:
                 args = {**args, "schedule_time": sched_time}
-                args = {
-                    a: str(v)
-                    for a, v in args.items()
-                    if a in job.params
-                }
+                args = {a: str(v) for a, v in args.items() if a in job.params}
                 stop_time = (
-                    None if schedule.stop_schedule is None
-                    else schedule.stop_schedule(sched_time)
+                    None if schedule.stop_schedule is None else schedule.stop_schedule(sched_time)
                 )
                 # FIXME: Store additional args for later expansion.
                 yield sched_time, stop_time, Instance(job.job_id, args)
@@ -73,20 +69,17 @@ class Scheduler:
         self.__horizon = horizon
         self.__max_age = max_age
 
-
     def set_jobs(self, jobs):
         """
         Replaces the jobs object.
         """
         self.__jobs = jobs
 
-
     def get_scheduler_time(self):
         """
         Returns the time up to which runs have been scheduled.
         """
         return self.__stop
-
 
     async def schedule(self, stop):
         """
@@ -104,7 +97,6 @@ class Scheduler:
 
         self.__stop = stop
 
-
     async def loop(self):
         """
         Infinite loop that periodically schedules runs.
@@ -115,12 +107,8 @@ class Scheduler:
                 time = now()
                 log.debug(f"scheduler loop: {time}")
 
-                if (
-                        self.__max_age is not None
-                        and self.__max_age < time - self.stop
-                ):
-                    raise RuntimeError(
-                        f"last scheduled more than {self.__max_age} s ago")
+                if self.__max_age is not None and self.__max_age < time - self.stop:
+                    raise RuntimeError(f"last scheduled more than {self.__max_age} s ago")
 
                 await self.schedule(time + self.__horizon)
                 await asyncio.sleep(60)
@@ -131,6 +119,3 @@ class Scheduler:
         except Exception:
             log.critical("scheduler loop failed", exc_info=True)
             raise SystemExit(1)
-
-
-

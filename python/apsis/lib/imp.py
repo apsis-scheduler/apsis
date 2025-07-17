@@ -4,14 +4,11 @@ Import-related functions.
 
 import sys
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def join(part0, part1):
-    return (
-        part0 if not part1
-        else part1 if not part0
-        else part0 + "." + part1
-    )
+    return part0 if not part1 else part1 if not part0 else part0 + "." + part1
 
 
 def import_module(name):
@@ -79,5 +76,3 @@ def get_type_fqname(type):
     Returns the fully qualified name of a type.
     """
     return join(type.__module__, type.__qualname__)
-
-

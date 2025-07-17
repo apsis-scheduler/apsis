@@ -2,18 +2,19 @@
 Tests dependency conditions.
 """
 
-from   contextlib import closing
+from contextlib import closing
 import ora
-from   pathlib import Path
+from pathlib import Path
 import pytest
 import random
 import time
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 job_dir = Path(__file__).absolute().parent / "jobs"
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -85,7 +86,7 @@ def test_many_deps(inst, direction):
     client = inst.client
 
     # Create a job with many dependencies.
-    vals = [ format(i, "03d") for i in range(200) ]
+    vals = [format(i, "03d") for i in range(200)]
     job = {
         "program": {"type": "no-op"},
         "condition": [
@@ -95,7 +96,7 @@ def test_many_deps(inst, direction):
                 "args": {"val": v},
             }
             for v in vals
-        ]
+        ],
     }
 
     res = client.schedule_adhoc("now", job)
@@ -107,14 +108,14 @@ def test_many_deps(inst, direction):
         case "forward":
             pass
         case "backward":
-            vals = vals[:: -1]
+            vals = vals[::-1]
         case "shuffle":
             random.shuffle(vals)
         case _:
             assert False
 
     # All dependencies but one.
-    for v in vals[: -1]:
+    for v in vals[:-1]:
         client.schedule("many dep", {"val": v})
 
     time.sleep(1)
@@ -244,7 +245,9 @@ def test_alarm_error(inst):
 
     # Schedule the dependent for now, and an alarm for 1 sec in the future.
     now = ora.now()
-    depd_run_id = client.schedule("dependent", {"date": DATE, "color": "purple"}, time=str(now))["run_id"]
+    depd_run_id = client.schedule("dependent", {"date": DATE, "color": "purple"}, time=str(now))[
+        "run_id"
+    ]
     alrm_run_id = client.schedule("alarm", {"date": DATE}, time=str(now + 1))["run_id"]
 
     # The alarm errors, because the dependent never left waiting.
@@ -265,7 +268,9 @@ def test_alarm_success(inst):
 
     # Schedule the dependent for now, and an alarm for 1 sec in the future.
     now = ora.now()
-    depd_run_id = client.schedule("dependent", {"date": DATE, "color": "purple"}, time=str(now))["run_id"]
+    depd_run_id = client.schedule("dependent", {"date": DATE, "color": "purple"}, time=str(now))[
+        "run_id"
+    ]
     alrm_run_id = client.schedule("alarm", {"date": DATE}, time=str(now + 1))["run_id"]
     # Run necessary dependencies.
     client.schedule("dependency", {"date": DATE, "flavor": "vanilla"})
@@ -296,8 +301,7 @@ def test_api_dependencies():
         inst.wait_for_serve()
         client = inst.client
 
-        res = client.schedule(
-            "dependent", {"date": "2024-10-22", "color": "blue"})
+        res = client.schedule("dependent", {"date": "2024-10-22", "color": "blue"})
         run_id = res["run_id"]
 
         deps = client.get_run_dependencies(run_id)
@@ -319,8 +323,7 @@ def test_api_dependencies():
             "run_ids": [],
         }
 
-        res = client.schedule(
-            "dependency", {"date": "2024-10-22", "flavor": "chocolate"})
+        res = client.schedule("dependency", {"date": "2024-10-22", "flavor": "chocolate"})
         dep_run_id0 = res["run_id"]
         res = inst.wait_run(dep_run_id0)
         assert res["state"] == "success"
@@ -330,11 +333,9 @@ def test_api_dependencies():
         assert deps[0]["run_ids"] == []
         assert deps[1]["run_ids"] == [dep_run_id0]
 
-        res = client.schedule(
-            "dependency", {"date": "2024-10-22", "flavor": "vanilla"})
+        res = client.schedule("dependency", {"date": "2024-10-22", "flavor": "vanilla"})
         dep_run_id1 = res["run_id"]
-        res = client.schedule(
-            "dependency", {"date": "2024-10-22", "flavor": "chocolate"})
+        res = client.schedule("dependency", {"date": "2024-10-22", "flavor": "chocolate"})
         dep_run_id2 = res["run_id"]
         res = inst.wait_run(dep_run_id1)
         assert res["state"] == "success"
@@ -345,5 +346,3 @@ def test_api_dependencies():
         assert len(deps) == 2
         assert deps[0]["run_ids"] == [dep_run_id1]
         assert set(deps[1]["run_ids"]) == {dep_run_id0, dep_run_id2}
-
-

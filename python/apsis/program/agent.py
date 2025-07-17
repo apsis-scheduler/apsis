@@ -4,26 +4,33 @@ import httpx
 import logging
 import ora
 import os
-from   signal import Signals
+from signal import Signals
 import socket
 
-from   .base import (
-    Program, ProgramRunning, ProgramSuccess, ProgramFailure, ProgramError,
-    program_outputs, Timeout, RunningProgram,
+from .base import (
+    Program,
+    ProgramRunning,
+    ProgramSuccess,
+    ProgramFailure,
+    ProgramError,
+    program_outputs,
+    Timeout,
+    RunningProgram,
 )
-from   .process import Stop, BoundStop
-from   apsis.agent.client import Agent, NoSuchProcessError
-from   apsis.host_group import expand_host
-from   apsis.lib import memo
-from   apsis.lib.cmpr import compress_async
-from   apsis.lib.json import check_schema, ifkey
-from   apsis.lib.py import or_none, nstr
-from   apsis.lib.sys import get_username
-from   apsis.runs import template_expand, join_args
+from .process import Stop, BoundStop
+from apsis.agent.client import Agent, NoSuchProcessError
+from apsis.host_group import expand_host
+from apsis.lib import memo
+from apsis.lib.cmpr import compress_async
+from apsis.lib.json import check_schema, ifkey
+from apsis.lib.py import or_none, nstr
+from apsis.lib.sys import get_username
+from apsis.runs import template_expand, join_args
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @functools.cache
 def _get_agent(host, user):
@@ -31,31 +38,29 @@ def _get_agent(host, user):
 
 
 class AgentProgram(Program):
-
     def __init__(
-            self,
-            argv, *,
-            host    =None,
-            user    =None,
-            timeout =None,
-            stop    =Stop(),
+        self,
+        argv,
+        *,
+        host=None,
+        user=None,
+        timeout=None,
+        stop=Stop(),
     ):
-        self.argv       = tuple( str(a) for a in argv )
-        self.host       = nstr(host)
-        self.user       = nstr(user)
-        self.timeout    = timeout
-        self.stop       = stop
-
+        self.argv = tuple(str(a) for a in argv)
+        self.host = nstr(host)
+        self.user = nstr(user)
+        self.timeout = timeout
+        self.stop = stop
 
     def __str__(self):
         return join_args(self.argv)
 
-
     def to_jso(self):
         jso = (
             {
                 **super().to_jso(),
-                "argv"  : list(self.argv),
+                "argv": list(self.argv),
             }
             | ifkey("host", self.host, None)
             | ifkey("user", self.user, None)
@@ -64,61 +69,56 @@ class AgentProgram(Program):
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
         return jso
-
 
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
-            argv    = pop("argv")
-            host    = pop("host", nstr, None)
-            user    = pop("user", nstr, None)
+            argv = pop("argv")
+            host = pop("host", nstr, None)
+            user = pop("user", nstr, None)
             timeout = pop("timeout", Timeout.from_jso, None)
-            stop    = pop("stop", Stop.from_jso, default=Stop())
+            stop = pop("stop", Stop.from_jso, default=Stop())
         return cls(argv, host=host, user=user, timeout=timeout, stop=stop)
 
-
     def bind(self, args):
-        argv    = tuple( template_expand(a, args) for a in self.argv )
-        host    = or_none(template_expand)(self.host, args)
-        user    = or_none(template_expand)(self.user, args)
+        argv = tuple(template_expand(a, args) for a in self.argv)
+        host = or_none(template_expand)(self.host, args)
+        user = or_none(template_expand)(self.user, args)
         timeout = None if self.timeout is None else self.timeout.bind(args)
-        stop    = self.stop.bind(args)
+        stop = self.stop.bind(args)
         return BoundAgentProgram(
             argv,
-            host    =host,
-            user    =user,
-            timeout =timeout,
-            stop    =stop,
+            host=host,
+            user=user,
+            timeout=timeout,
+            stop=stop,
         )
 
 
-
 class AgentShellProgram(Program):
-
     def __init__(
-            self,
-            command, *,
-            host    =None,
-            user    =None,
-            timeout =None,
-            stop    =Stop(),
+        self,
+        command,
+        *,
+        host=None,
+        user=None,
+        timeout=None,
+        stop=Stop(),
     ):
-        self.command    = str(command)
-        self.host       = nstr(host)
-        self.user       = nstr(user)
-        self.timeout    = timeout
-        self.stop       = stop
-
+        self.command = str(command)
+        self.host = nstr(host)
+        self.user = nstr(user)
+        self.timeout = timeout
+        self.stop = stop
 
     def __str__(self):
         return self.command
-
 
     def to_jso(self):
         jso = (
             {
                 **super().to_jso(),
-                "command"   : self.command,
+                "command": self.command,
             }
             | ifkey("host", self.host, None)
             | ifkey("user", self.user, None)
@@ -127,108 +127,98 @@ class AgentShellProgram(Program):
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
         return jso
-
 
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
             command = pop("command", str)
-            host    = pop("host", nstr, None)
-            user    = pop("user", nstr, None)
+            host = pop("host", nstr, None)
+            user = pop("user", nstr, None)
             timeout = pop("timeout", Timeout.from_jso, None)
-            stop    = pop("stop", Stop.from_jso, Stop())
+            stop = pop("stop", Stop.from_jso, Stop())
         return cls(command, host=host, user=user, timeout=timeout, stop=stop)
-
 
     def bind(self, args):
         command = template_expand(self.command, args)
-        host    = or_none(template_expand)(self.host, args)
-        user    = or_none(template_expand)(self.user, args)
+        host = or_none(template_expand)(self.host, args)
+        user = or_none(template_expand)(self.user, args)
         timeout = None if self.timeout is None else self.timeout.bind(args)
-        stop    = self.stop.bind(args)
-        argv    = ["/bin/bash", "-c", command]
+        stop = self.stop.bind(args)
+        argv = ["/bin/bash", "-c", command]
         return BoundAgentProgram(
             argv,
-            host    =host,
-            user    =user,
-            timeout =timeout,
-            stop    =stop,
+            host=host,
+            user=user,
+            timeout=timeout,
+            stop=stop,
         )
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class BoundAgentProgram(Program):
-
     def __init__(
-            self,
-            argv, *,
-            host    =None,
-            user    =None,
-            timeout =None,
-            stop    =BoundStop(),
+        self,
+        argv,
+        *,
+        host=None,
+        user=None,
+        timeout=None,
+        stop=BoundStop(),
     ):
-        self.argv       = tuple( str(a) for a in argv )
-        self.host       = nstr(host)
-        self.user       = nstr(user)
-        self.timeout    = timeout
-        self.stop       = stop
-
+        self.argv = tuple(str(a) for a in argv)
+        self.host = nstr(host)
+        self.user = nstr(user)
+        self.timeout = timeout
+        self.stop = stop
 
     def __str__(self):
         return join_args(self.argv)
 
-
     def to_jso(self):
         jso = {
             **super().to_jso(),
-            "argv"  : list(self.argv),
-            "host"  : self.host,
-            "user"  : self.user,
+            "argv": list(self.argv),
+            "host": self.host,
+            "user": self.user,
         } | ifkey("stop", self.stop.to_jso(), {})
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
         return jso
 
-
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
-            argv    = pop("argv")
-            host    = pop("host", nstr, None)
-            user    = pop("user", nstr, None)
+            argv = pop("argv")
+            host = pop("host", nstr, None)
+            user = pop("user", nstr, None)
             timeout = pop("timeout", Timeout.from_jso, None)
-            stop    = pop("stop", BoundStop.from_jso, BoundStop())
+            stop = pop("stop", BoundStop.from_jso, BoundStop())
         return cls(argv, host=host, user=user, timeout=timeout, stop=stop)
-
 
     def run(self, run_id, cfg):
         return RunningAgentProgram(run_id, self, cfg)
-
 
     def connect(self, run_id, run_state, cfg):
         return RunningAgentProgram(run_id, self, cfg, run_state)
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class RunningAgentProgram(RunningProgram):
-
     def __init__(self, run_id, program, cfg, run_state=None):
         super().__init__(run_id)
-        self.program    = program
-        self.cfg        = cfg
-        self.run_state  = run_state
+        self.program = program
+        self.cfg = cfg
+        self.run_state = run_state
 
-        self.stopping   = False
-
+        self.stopping = False
 
     def __get_agent(self, host):
         host = None if host is None else socket.getfqdn(host)
         return _get_agent(host, self.program.user)
-
 
     @memo.property
     async def updates(self):
@@ -249,8 +239,8 @@ class RunningAgentProgram(RunningProgram):
             }
 
             meta = {
-                "apsis_hostname"  : socket.gethostname(),
-                "apsis_username"  : get_username(),
+                "apsis_hostname": socket.gethostname(),
+                "apsis_username": get_username(),
             }
 
             agent = self.__get_agent(host)
@@ -262,10 +252,10 @@ class RunningAgentProgram(RunningProgram):
                 start = ora.now()
                 proc_id = proc["proc_id"]
                 self.run_state = {
-                    "host"          : host,
-                    "proc_id"       : proc_id,
-                    "pid"           : proc["pid"],
-                    "start"         : str(start),
+                    "host": host,
+                    "proc_id": proc_id,
+                    "pid": proc["pid"],
+                    "start": str(start),
                 }
                 meta.update(self.run_state)
                 # FIXME: Propagate times from agent.
@@ -286,11 +276,11 @@ class RunningAgentProgram(RunningProgram):
         else:
             # Poll an existing proc.
             proc_id = self.run_state["proc_id"]
-            host    = self.run_state["host"]
-            start   = ora.Time(self.run_state["start"])
-            agent   = self.__get_agent(host)
+            host = self.run_state["host"]
+            start = ora.Time(self.run_state["start"])
+            agent = self.__get_agent(host)
 
-        #------------
+        # ------------
 
         explanation = ""
 
@@ -340,8 +330,7 @@ class RunningAgentProgram(RunningProgram):
                 except RuntimeError as exc:
                     log.error(f"{exc}; not compressing")
 
-            outputs = program_outputs(
-                output, length=length, compression=compression)
+            outputs = program_outputs(output, length=length, compression=compression)
             log.debug(f"got output: {length} bytes, {compression or 'uncompressed'}")
 
             try:
@@ -349,9 +338,9 @@ class RunningAgentProgram(RunningProgram):
                     yield ProgramSuccess(meta=proc, outputs=outputs)
 
                 elif (
-                            self.stopping
-                        and os.WIFSIGNALED(status)
-                        and Signals(os.WTERMSIG(status)) == self.program.stop.signal
+                    self.stopping
+                    and os.WIFSIGNALED(status)
+                    and Signals(os.WTERMSIG(status)) == self.program.stop.signal
                 ):
                     # Program stopped as expected.
                     log.info("EXPECTED SIGTERM WHEN STOPPING")
@@ -365,7 +354,6 @@ class RunningAgentProgram(RunningProgram):
                 # Clean up the process from the agent.
                 await agent.del_process(proc_id, client=client)
 
-
     async def signal(self, signal):
         """
         :type signal:
@@ -378,7 +366,6 @@ class RunningAgentProgram(RunningProgram):
         proc_id = self.run_state["proc_id"]
         agent = self.__get_agent(self.run_state["host"])
         await agent.signal(proc_id, signal)
-
 
     async def stop(self):
         stop = self.program.stop
@@ -402,5 +389,3 @@ class RunningAgentProgram(RunningProgram):
                 except ValueError:
                     # Proc is gone; that's OK.
                     pass
-
-

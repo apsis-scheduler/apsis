@@ -1,9 +1,10 @@
 import os
-from   pathlib import Path
+from pathlib import Path
 
-from   apsis.lib.pidfile import PidFile
+from apsis.lib.pidfile import PidFile
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_lock_data(tmpdir):
     path = Path(tmpdir) / "pidfile"
@@ -25,5 +26,3 @@ def test_lock_data(tmpdir):
     pf0.unlock()
     assert pf1.lock() is None
     pf1.unlock()
-
-

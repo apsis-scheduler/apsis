@@ -1,16 +1,17 @@
-from   apsis.cond import Condition
-from   apsis.cond.dependency import Dependency
-from   apsis.cond.skip_duplicate import SkipDuplicate
-from   apsis.jobs import Job
-from   apsis.runs import Run, Instance
-from   apsis.states import State
+from apsis.cond import Condition
+from apsis.cond.dependency import Dependency
+from apsis.cond.skip_duplicate import SkipDuplicate
+from apsis.jobs import Job
+from apsis.runs import Run, Instance
+from apsis.states import State
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 JOBS = {
     "testjob0": Job("testjob0", {"foo"}, (), None),
     "testjob1": Job("testjob1", {"foo", "bar"}, (), None),
 }
+
 
 def test_bind0():
     # testjob1 depends on testjob0 with explicit arg.
@@ -77,5 +78,3 @@ def test_skip_duplicate_jso():
     assert cond.inst.job_id == "my job"
     assert cond.inst.args == {"foo": "orange"}
     assert cond.run_id == "r12345"
-
-

@@ -1,10 +1,11 @@
-from   dataclasses import dataclass
+from dataclasses import dataclass
 import ora
 
-from   apsis.lib.json import TypedJso, check_schema, nkey
-from   .stop import StopSchedule
+from apsis.lib.json import TypedJso, check_schema, nkey
+from .stop import StopSchedule
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @dataclass(kw_only=True, order=True)
 class DaytimeSpec:
@@ -16,9 +17,9 @@ class DaytimeSpec:
     """
 
     # Order of attributes is important for dataclass(order=True).
-    cal_shift   : int = 0
-    date_shift  : int = 0
-    daytime     : ora.Daytime
+    cal_shift: int = 0
+    date_shift: int = 0
+    daytime: ora.Daytime
 
     def __str__(self):
         return (
@@ -26,7 +27,6 @@ class DaytimeSpec:
             + ("" if self.cal_shift == 0 else f" {self.cal_shift:+d} cal days")
             + ("" if self.date_shift == 0 else f" {self.date_shift:+d} days")
         )
-
 
     @classmethod
     def ensure(cls, obj):
@@ -42,7 +42,6 @@ class DaytimeSpec:
 
         raise TypeError(f"not a {cls.__name__}: {obj!r}")
 
-
     def get_start_date(self, time, tz, cal):
         date, _ = time @ tz
         date -= self.date_shift
@@ -50,7 +49,6 @@ class DaytimeSpec:
             date = cal.after(date)
         date = cal.shift(date, -self.cal_shift)
         return date
-
 
     def to_local(self, date, tz, cal):
         """
@@ -63,28 +61,25 @@ class DaytimeSpec:
         date = cal.shift(date, self.cal_shift) + self.date_shift
         return (date, self.daytime) @ tz
 
-
     def to_jso(self):
         if self.date_shift == 0 and self.cal_shift == 0:
             # Simple form: just a daytime.
             return str(self.daytime)
         else:
             return {
-                "daytime"   : str(self.daytime),
+                "daytime": str(self.daytime),
                 "date_shift": self.date_shift,
-                "cal_shift" : self.cal_shift,
+                "cal_shift": self.cal_shift,
             }
-
 
     @classmethod
     def from_jso(cls, jso):
         if isinstance(jso, dict):
             with check_schema(jso) as pop:
-                daytime     = pop("daytime", ora.Daytime)
-                date_shift  = pop("date_shift", int, default=0)
-                cal_shift   = pop("cal_shift", int, default=0)
-                return cls(
-                    daytime=daytime, date_shift=date_shift, cal_shift=cal_shift)
+                daytime = pop("daytime", ora.Daytime)
+                date_shift = pop("date_shift", int, default=0)
+                cal_shift = pop("cal_shift", int, default=0)
+                return cls(daytime=daytime, date_shift=date_shift, cal_shift=cal_shift)
 
         else:
             # Simple form: just a daytime.
@@ -92,8 +87,8 @@ class DaytimeSpec:
             return cls(daytime=daytime)
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class Schedule(TypedJso):
     # Note: `stop_schedule` is not included in the JSO representation.
@@ -104,28 +99,25 @@ class Schedule(TypedJso):
         self.enabled = bool(enabled)
         self.stop_schedule = None
 
-
     def to_jso(self):
         return super().to_jso() | nkey("enabled", self.enabled)
-
 
     @classmethod
     def _from_jso(cls, pop):
         return dict(enabled=pop("enabled", bool, default=True))
 
-
     def __call__(self, start: ora.Time):
         raise NotImplementedError("Schedule.__call__")
-
 
 
 def schedule_to_jso(schedule):
     jso = schedule.to_jso()
     return (
-        jso if schedule.stop_schedule is None
+        jso
+        if schedule.stop_schedule is None
         else {
-            "start" : jso,
-            "stop"  : schedule.stop_schedule.to_jso(),
+            "start": jso,
+            "stop": schedule.stop_schedule.to_jso(),
         }
     )
 
@@ -141,5 +133,3 @@ def schedule_from_jso(jso):
     else:
         # Only a start schedule.
         return Schedule.from_jso(jso)
-
-

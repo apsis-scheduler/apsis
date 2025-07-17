@@ -1,9 +1,10 @@
-from   contextlib import suppress
+from contextlib import suppress
 import os
 import pwd
 import signal
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def get_username():
     """

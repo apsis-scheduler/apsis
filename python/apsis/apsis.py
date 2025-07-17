@@ -1,40 +1,41 @@
 import asyncio
-from   functools import partial
+from functools import partial
 import gc
 import logging
 import math
-from   mmap import PAGESIZE
-from   ora import now, Time
+from mmap import PAGESIZE
+from ora import now, Time
 import resource
 import sys
 import traceback
 
-from   . import procstar
-from   .actions import Action
-from   .cond.base import PolledCondition, RunStoreCondition, NonmonotonicRunStoreCondition
-from   .host_group import config_host_groups
-from   .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
-from   .lib.api import run_to_summary_jso
-from   .lib.asyn import TaskGroup, Publisher, KeyPublisher
-from   .lib.py import more_gc_stats
-from   .lib.sys import to_signal
-from   .output import OutputStore
-from   .program.base import _InternalProgram
-from   .program.base import Output, OutputMetadata
-from   . import runs
-from   .run_log import RunLog
-from   .run_snapshot import snapshot_run
-from   .running import _process_updates
-from   .runs import Run, RunStore, RunError, MissingArgumentError, ExtraArgumentError
-from   .runs import validate_args, bind
-from   .scheduled import ScheduledRuns
-from   .scheduler import Scheduler, get_insts_to_schedule
-from   .service import messages
-from   .states import State
+from . import procstar
+from .actions import Action
+from .cond.base import PolledCondition, RunStoreCondition, NonmonotonicRunStoreCondition
+from .host_group import config_host_groups
+from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
+from .lib.api import run_to_summary_jso
+from .lib.asyn import TaskGroup, Publisher, KeyPublisher
+from .lib.py import more_gc_stats
+from .lib.sys import to_signal
+from .output import OutputStore
+from .program.base import _InternalProgram
+from .program.base import Output, OutputMetadata
+from . import runs
+from .run_log import RunLog
+from .run_snapshot import snapshot_run
+from .running import _process_updates
+from .runs import Run, RunStore, RunError, MissingArgumentError, ExtraArgumentError
+from .runs import validate_args, bind
+from .scheduled import ScheduledRuns
+from .scheduler import Scheduler, get_insts_to_schedule
+from .service import messages
+from .states import State
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class Apsis:
     """
@@ -89,7 +90,7 @@ class Apsis:
         self.jobs = Jobs(jobs, db.job_db)
 
         # Actions applied to all runs.
-        self.__actions = [ Action.from_jso(o) for o in cfg["actions"] ]
+        self.__actions = [Action.from_jso(o) for o in cfg["actions"]]
 
         # Calculate how far back we should load runs into the run store.
         try:
@@ -125,18 +126,16 @@ class Apsis:
             self.jobs,
             # All runs scheduled by the scheduler are expected.
             partial(self.schedule, expected=True),
-            stop_time
+            stop_time,
         )
 
-        self.scheduled = ScheduledRuns(
-            db.clock_db, self.scheduler.get_scheduler_time, self._wait)
+        self.scheduled = ScheduledRuns(db.clock_db, self.scheduler.get_scheduler_time, self._wait)
 
         # Values to build stats for the async check loop.
         self._latency_values = []
 
         # False while starting, set to true once up and running.
         self.running_flag = asyncio.Event()
-
 
     async def restore(self):
         """
@@ -182,7 +181,6 @@ class Apsis:
             log.critical("restore failed", exc_info=True)
             raise SystemExit(1)
 
-
     # FIXME: Rename to start?
     def start_loops(self):
         # Start a loop to monitor the async event loop.
@@ -210,7 +208,6 @@ class Apsis:
         # We're running now.
         self.running_flag.set()
 
-
     def _wait(self, run):
         """
         Starts waiting for `run`.
@@ -230,7 +227,6 @@ class Apsis:
         # Start the waiting task.
         self.__wait_tasks.add(run.run_id, _wait_loop(self, run, timeout))
 
-
     def _start(self, run):
         """
         Starts a run.
@@ -249,7 +245,6 @@ class Apsis:
         # Start a task to process updates from the program.
         run_task = _process_updates(self, run)
         self.__run_tasks.add(run.run_id, run_task)
-
 
     def __reconnect(self, run):
         """
@@ -272,7 +267,6 @@ class Apsis:
         run_task = _process_updates(self, run)
         self.__run_tasks.add(run.run_id, run_task)
 
-
     def __start_actions(self, run):
         """
         Starts configured actions on `run` as tasks.
@@ -283,10 +277,7 @@ class Apsis:
         actions += self.__actions
 
         # Check conditions on actions.
-        actions = [
-            a for a in actions
-            if a.condition is None or a.condition(run)
-        ]
+        actions = [a for a in actions if a.condition is None or a.condition(run)]
 
         if len(actions) == 0:
             # Nothing to do.
@@ -312,7 +303,6 @@ class Apsis:
             key = (id(action), run.run_id, run.state)
             self.__action_tasks.add(key, wrap(run, snapshot, action))
 
-
     # --- Internal API ---------------------------------------------------------
 
     def _run_exc(self, run, *, message=None):
@@ -332,16 +322,12 @@ class Apsis:
                 msg = str(exc).encode()
             else:
                 msg = traceback.format_exc().encode()
-            output = Output(
-                OutputMetadata("output", len(msg), content_type="text/plain"),
-                msg
-            )
+            output = Output(OutputMetadata("output", len(msg), content_type="text/plain"), msg)
             # FIXME: For now, use the name "output" as this is the only one
             # the UIs render.  In the future, change to "traceback".
             self._update_output_data(run, {"output": output}, persist=True)
 
         self._transition(run, State.error, force=True, times={"error": now()})
-
 
     # FIXME: persist is a hack.
     def _update_metadata(self, run, meta):
@@ -359,7 +345,6 @@ class Apsis:
         # Publish to run update subscribers.
         self.run_update_publisher.publish(run.run_id, {"meta": run.meta})
 
-
     def _update_output_data(self, run, outputs, persist):
         """
         Updates output data, without transitioning.
@@ -376,14 +361,13 @@ class Apsis:
 
         # Publish to run update subscribers.
         if run_id in self.run_update_publisher:
-            msg = { i: o.metadata.to_jso() for i, o in outputs.items() }
+            msg = {i: o.metadata.to_jso() for i, o in outputs.items()}
             self.run_update_publisher.publish(run_id, {"outputs": msg})
 
         # Publish to output update subscribers.
         if run_id in self.output_update_publisher:
             for output_id, output in outputs.items():
                 self.output_update_publisher.publish(run_id, output)
-
 
     def _transition(self, run, state, *, meta={}, **kw_args):
         """
@@ -420,7 +404,6 @@ class Apsis:
 
         self.__start_actions(run)
 
-
     def _validate_run(self, run):
         """
         :raise RuntimeError:
@@ -439,13 +422,11 @@ class Apsis:
 
         return job
 
-
     # FIXME: Why is this here?
     def _propagate_args(self, old_args, inst):
         job = self.jobs.get_job(inst.job_id)
         args = runs.propagate_args(old_args, job, inst.args)
         return runs.Instance(inst.job_id, args)
-
 
     # --- API ------------------------------------------------------------------
 
@@ -511,7 +492,6 @@ class Apsis:
 
         return run
 
-
     async def skip(self, run):
         """
         Skips a scheduled or waiting run.
@@ -530,7 +510,6 @@ class Apsis:
 
         self.run_log.info(run, "skipped")
         self._transition(run, State.skipped)
-
 
     async def start(self, run):
         """
@@ -551,7 +530,6 @@ class Apsis:
         else:
             raise RunError(f"can't start {run.run_id} in state {run.state.name}")
 
-
     async def mark(self, run, state):
         """
         Transitions a run to a different finished `state`.
@@ -571,7 +549,6 @@ class Apsis:
             self._transition(run, state, force=True)
             self.run_log.info(run, f"marked as {state.name}")
 
-
     def get_run_log(self, run_id):
         """
         Returns the run log for a run.
@@ -579,7 +556,6 @@ class Apsis:
         # Make sure the run ID is valid.
         self.run_store.get(run_id)
         return self.__db.run_log_db.query(run_id=run_id)
-
 
     async def rerun(self, run, *, time=None):
         """
@@ -591,11 +567,9 @@ class Apsis:
         """
         # Create the new run.
         log.info(f"rerun: {run.run_id} at {time or 'now'}")
-        new_run = await self.schedule(
-            time, run.inst, stop_time=run.times.get("stop", None))
+        new_run = await self.schedule(time, run.inst, stop_time=run.times.get("stop", None))
         self.run_log.info(new_run, f"scheduled as rerun of {run.run_id}")
         return new_run
-
 
     async def stop_run(self, run):
         """
@@ -613,15 +587,11 @@ class Apsis:
             return
 
         if run.state != State.running:
-            raise RuntimeError(
-                f"can't stop run {run.run_id}: run is {run.state.name}")
+            raise RuntimeError(f"can't stop run {run.run_id}: run is {run.state.name}")
 
         # Transition to stopping.
         self.run_log.record(run, "stopping")
-        self._transition(
-            run, State.stopping,
-            run_state=run.run_state | {"stopping": True}
-        )
+        self._transition(run, State.stopping, run_state=run.run_state | {"stopping": True})
 
         # Ask the run to stop.
         async def stop():
@@ -631,7 +601,6 @@ class Apsis:
                 log.info("program.stop() exception", exc_info=True)
 
         self.__stopping_tasks.add(run.run_id, stop())
-
 
     async def send_signal(self, run, signal):
         """
@@ -651,7 +620,6 @@ class Apsis:
             self.run_log.exc(run, f"sending {signal.name} failed")
             raise RuntimeError(f"sending {signal.name} failed")
 
-
     async def shut_down(self):
         log.info("shutting down Apsis")
         gc.disable()
@@ -661,7 +629,6 @@ class Apsis:
         await self.__stopping_tasks.cancel_all()
         await self.__tasks.cancel_all()
         log.info("Apsis shut down")
-
 
     async def __check_async(self):
         """
@@ -679,41 +646,36 @@ class Apsis:
             latency = now() - next_second
             self._latency_values.append(latency)
 
-
-
     def get_stats(self):
         res = resource.getrusage(resource.RUSAGE_SELF)
         gc_stats = gc.get_stats()
         latency_values = self._latency_values.copy()
-        self._latency_values.clear()        
+        self._latency_values.clear()
         stats = {
-            "start_time"            : str(self.__start_time),
-            "time"                  : str(now()),
+            "start_time": str(self.__start_time),
+            "time": str(now()),
             "async": {
-                "latency_count"     : len(latency_values) if latency_values else 0,
-                "latency_min"       : min(latency_values) if latency_values else 0,
-                "latency_max"       : max(latency_values) if latency_values else 0,
-                "latency_avg"       : sum(latency_values) / len(latency_values) if latency_values else 0,
-                "num_tasks"         : len(asyncio.all_tasks()),
+                "latency_count": len(latency_values) if latency_values else 0,
+                "latency_min": min(latency_values) if latency_values else 0,
+                "latency_max": max(latency_values) if latency_values else 0,
+                "latency_avg": sum(latency_values) / len(latency_values) if latency_values else 0,
+                "num_tasks": len(asyncio.all_tasks()),
             },
-            "rusage_maxrss"         : res.ru_maxrss * 1024,
-            "rusage_utime"          : res.ru_utime,
-            "rusage_stime"          : res.ru_stime,
+            "rusage_maxrss": res.ru_maxrss * 1024,
+            "rusage_utime": res.ru_utime,
+            "rusage_stime": res.ru_stime,
             "tasks": {
-                "num_waiting"       : len(self.__wait_tasks),
-                "num_running"       : len(self.__run_tasks),
-                "num_stopping"      : len(self.__stopping_tasks),
-                "num_action"        : len(self.__action_tasks),
+                "num_waiting": len(self.__wait_tasks),
+                "num_running": len(self.__run_tasks),
+                "num_stopping": len(self.__stopping_tasks),
+                "num_action": len(self.__action_tasks),
             },
-            "len_runlogdb_cache"    : len(self.__db.run_log_db._RunLogDB__cache),
-            "scheduled"             : self.scheduled.get_stats(),
-            "run_store"             : self.run_store.get_stats(),
-            "outputs"               : self.outputs.get_stats(),
-            "summary_publisher"     : self.summary_publisher.get_stats(),
-            "gc"                    : [
-                s0 | s1
-                for s0, s1 in zip(gc_stats, more_gc_stats)
-            ]
+            "len_runlogdb_cache": len(self.__db.run_log_db._RunLogDB__cache),
+            "scheduled": self.scheduled.get_stats(),
+            "run_store": self.run_store.get_stats(),
+            "outputs": self.outputs.get_stats(),
+            "summary_publisher": self.summary_publisher.get_stats(),
+            "gc": [s0 | s1 for s0, s1 in zip(gc_stats, more_gc_stats)],
         }
 
         try:
@@ -722,16 +684,18 @@ class Apsis:
         except FileNotFoundError:
             pass
         else:
-            stats.update({
-                "statm_size"        : statm[0] * PAGESIZE,
-                "statm_resident"    : statm[1] * PAGESIZE,
-            })
+            stats.update(
+                {
+                    "statm_size": statm[0] * PAGESIZE,
+                    "statm_resident": statm[1] * PAGESIZE,
+                }
+            )
 
         return stats
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 async def _wait_loop(apsis, run, timeout):
     """
@@ -757,7 +721,6 @@ async def _wait_loop(apsis, run, timeout):
                 # Subtract time we have already waited from the timeout.
                 waiting_timeout = timeout - (now() - waiting_time)
         return asyncio.wait_for(cond_wait, waiting_timeout)
-
 
     if len(conds) > 0:
         apsis.run_log.record(run, f"waiting until: {conds[0]}")
@@ -829,7 +792,7 @@ def _unschedule_runs(apsis, job_id):
     Deletes all scheduled expected runs of `job_id`.
     """
     _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled)
-    runs = [ r for r in runs if r.expected ]
+    runs = [r for r in runs if r.expected]
 
     for run in runs:
         log.info(f"removing: {run.run_id}")
@@ -873,8 +836,8 @@ async def reload_jobs(apsis, *, dry_run=False):
       that have changed.
     """
     # FIXME: Refactor to avoid using private attributes and methods.
-    jobs0       = apsis.jobs._Jobs__jobs_dir
-    job_db      = apsis.jobs._Jobs__job_db
+    jobs0 = apsis.jobs._Jobs__jobs_dir
+    job_db = apsis.jobs._Jobs__job_db
 
     # Reload the contents of the jobs dir.
     log.info(f"reloading jobs from {jobs0.path}")
@@ -935,5 +898,3 @@ async def _retire_loop(apsis):
             return
 
         await asyncio.sleep(60)
-
-

@@ -1,19 +1,18 @@
-from   dataclasses import dataclass
+from dataclasses import dataclass
 
-from   apsis.lib import memo
-from   apsis.lib.api import decompress
-from   apsis.lib.json import TypedJso, check_schema
-from   apsis.lib.parse import parse_duration
-from   apsis.lib.py import format_repr
-from   apsis.lib.sys import to_signal
-from   apsis.runs import template_expand
+from apsis.lib import memo
+from apsis.lib.api import decompress
+from apsis.lib.json import TypedJso, check_schema
+from apsis.lib.parse import parse_duration
+from apsis.lib.py import format_repr
+from apsis.lib.sys import to_signal
+from apsis.runs import template_expand
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class OutputMetadata:
-
-    def __init__(self, name: str, length: int, *, 
-                 content_type="application/octet-stream"):
+    def __init__(self, name: str, length: int, *, content_type="application/octet-stream"):
         """
         :param name:
           User-visible output name.
@@ -22,22 +21,19 @@ class OutputMetadata:
         :param content_type:
           MIME type of output.
         """
-        self.name           = str(name)
-        self.length         = int(length)
-        self.content_type   = str(content_type)
-
+        self.name = str(name)
+        self.length = int(length)
+        self.content_type = str(content_type)
 
     def to_jso(self):
         return {
-            "name"          : self.name,
-            "length"        : self.length,
-            "content_type"  : self.content_type,
+            "name": self.name,
+            "length": self.length,
+            "content_type": self.content_type,
         }
 
 
-
 class Output:
-
     def __init__(self, metadata: OutputMetadata, data: bytes, compression=None):
         """
         :param metadata:
@@ -50,17 +46,15 @@ class Output:
         if not isinstance(data, bytes):
             raise TypeError("data must be bytes")
 
-        self.metadata       = metadata
-        self.data           = data
-        self.compression    = compression
-
+        self.metadata = metadata
+        self.data = data
+        self.compression = compression
 
     def get_uncompressed_data(self) -> bytes:
         """
         Returns the output data, decompressing if necessary.
         """
         return decompress(self.data, self.compression)
-
 
 
 def program_outputs(output: bytes, *, length=None, compression=None):
@@ -75,82 +69,68 @@ def program_outputs(output: bytes, *, length=None, compression=None):
     }
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class ProgramRunning:
-
     def __init__(self, run_state, *, meta={}, times={}):
-        self.run_state  = run_state
-        self.meta       = meta
-        self.times      = times
-
+        self.run_state = run_state
+        self.meta = meta
+        self.times = times
 
     def __repr__(self):
         return format_repr(self)
-
 
 
 class ProgramUpdate:
-
     def __init__(self, *, meta=None, outputs=None):
-        self.meta       = meta
-        self.outputs    = outputs
-
+        self.meta = meta
+        self.outputs = outputs
 
     def __repr__(self):
         return format_repr(self)
-
 
 
 # FIXME: Not an exception.
 class ProgramError(RuntimeError):
-
     def __init__(self, message, *, meta={}, times={}, outputs={}):
         super().__init__(message)
-        self.message    = message
-        self.meta       = meta
-        self.times      = times
-        self.outputs    = outputs
-
+        self.message = message
+        self.meta = meta
+        self.times = times
+        self.outputs = outputs
 
     def __repr__(self):
         return format_repr(self)
-
 
 
 class ProgramSuccess:
-
     def __init__(self, *, meta={}, times={}, outputs={}):
-        self.meta       = meta
-        self.times      = times
-        self.outputs    = outputs
-
+        self.meta = meta
+        self.times = times
+        self.outputs = outputs
 
     def __repr__(self):
         return format_repr(self)
-
 
 
 # FIXME: Not an exception.
 class ProgramFailure(RuntimeError):
-
     def __init__(self, message, *, meta={}, times={}, outputs={}):
-        self.message    = message
-        self.meta       = meta
-        self.times      = times
-        self.outputs    = outputs
-
+        self.message = message
+        self.meta = meta
+        self.times = times
+        self.outputs = outputs
 
     def __repr__(self):
         return format_repr(self)
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 @dataclass
 class Timeout:
-
     duration: float
     signal: str
 
@@ -161,13 +141,11 @@ class Timeout:
             signal = pop("signal", str, default="SIGTERM")
         return cls(duration=duration, signal=signal)
 
-
     def to_jso(self):
         return {
             "duration": self.duration,
             "signal": self.signal,
         }
-
 
     def bind(self, args):
         duration = parse_duration(template_expand(self.duration, args))
@@ -175,11 +153,11 @@ class Timeout:
         return type(self)(duration=duration, signal=signal)
 
 
-
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # FIXME: Apsis should take run_state from RunningProgram, and serialize it on
 # each transition. (??)
+
 
 class RunningProgram:
     """
@@ -195,7 +173,6 @@ class RunningProgram:
     def __init__(self, run_id):
         self.run_id = run_id
 
-
     @property
     def updates(self):
         """
@@ -205,24 +182,19 @@ class RunningProgram:
         the event loop.  Exhaustion indicates the program is done.
         """
 
-
     async def stop(self):
         raise NotImplementedError("not implemented: stop()")
-
 
     async def signal(self, signal):
         raise NotImplementedError("not implemented: signal()")
 
 
-
 class LegacyRunningProgram(RunningProgram):
-
     def __init__(self, run_id, program, cfg, run_state=None):
         super().__init__(run_id)
-        self.program    = program
-        self.cfg        = cfg
-        self.run_state  = run_state
-
+        self.program = program
+        self.cfg = cfg
+        self.run_state = run_state
 
     @memo.property
     async def updates(self):
@@ -245,13 +217,12 @@ class LegacyRunningProgram(RunningProgram):
         except (ProgramError, ProgramFailure) as err:
             yield err
         else:
-            assert isinstance(success, ProgramSuccess), \
-                f"wrong result msg: {success!r}"
+            assert isinstance(success, ProgramSuccess), f"wrong result msg: {success!r}"
             yield success
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class Program(TypedJso):
     """
@@ -265,7 +236,6 @@ class Program(TypedJso):
         Returns a new program with parameters bound to `args`.
         """
 
-
     # FIXME: Find a better way to get run_id into logging without passing it in.
 
     async def start(self, run_id, cfg):
@@ -276,7 +246,6 @@ class Program(TypedJso):
           Implement `run()` instead.
         """
 
-
     def reconnect(self, run_id, run_state):
         """
         Reconnects to an already running run.
@@ -284,7 +253,6 @@ class Program(TypedJso):
         :deprecated:
           Implement `connect()` instead.
         """
-
 
     async def signal(self, run_id, run_state, signal):
         """
@@ -297,19 +265,19 @@ class Program(TypedJso):
         """
         raise NotImplementedError("program signal not implemented")
 
-
     @classmethod
     def from_jso(cls, jso):
         # Extend the default JSO typed resolution to accept a str or list.
         if isinstance(jso, str):
             from .agent import AgentShellProgram
+
             return AgentShellProgram(jso)
         elif isinstance(jso, list):
             from .agent import AgentProgram
+
             return AgentProgram(jso)
         else:
             return TypedJso.from_jso.__func__(cls, jso)
-
 
     def run(self, run_id, cfg) -> RunningProgram:
         """
@@ -324,7 +292,6 @@ class Program(TypedJso):
           `RunningProgram` instance.
         """
         return LegacyRunningProgram(run_id, self, cfg)
-
 
     # FIXME: Remove `run_id` from API; the running program carries it.
     def connect(self, run_id, run_state, cfg) -> RunningProgram:
@@ -342,8 +309,8 @@ class Program(TypedJso):
         return LegacyRunningProgram(run_id, self, cfg, run_state)
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class _InternalProgram(Program):
     """
@@ -355,21 +322,14 @@ class _InternalProgram(Program):
     def bind(self, args):
         pass
 
-
     def start(self, run_id, apsis):
         pass
-
 
     def reconnect(self, run_id, run_state):
         pass
 
-
     async def signal(self, run_id, signum: str):
         pass
 
-
     async def stop(self):
         pass
-
-
-

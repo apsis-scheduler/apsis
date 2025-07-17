@@ -2,13 +2,14 @@
 Tools for working with iterators.
 """
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
-from   collections import deque
+from collections import deque
 
-from   .recipes import *  # also imports * from itertools
+from .recipes import *  # also imports * from itertools
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def ntimes(value, times):
     """
@@ -20,7 +21,7 @@ def ntimes(value, times):
 
 def first(iterable):
     """
-    Generates `(first, item)` for each item in `iterable`, where `first` is 
+    Generates `(first, item)` for each item in `iterable`, where `first` is
     true for the first time and false for subsequent items.
     """
     i = iter(iterable)
@@ -31,7 +32,7 @@ def first(iterable):
 
 def last(iterable):
     """
-    Generates `(last, item)` for each item in `iterable`, where `last` is 
+    Generates `(last, item)` for each item in `iterable`, where `last` is
     false except for the last item.
     """
     i = iter(iterable)
@@ -91,9 +92,10 @@ def take_last(iterable):
     return e
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # FIXME: Elsewhere
+
 
 def ensure_incl(obj):
     if obj is None:
@@ -146,13 +148,14 @@ def join_truncated(max, items, sep=" ", ellipsis="…"):
     Joins up to `max` of `items` with `sep`.
     """
     items = list(items)
-    result = sep.join(items[: max])
+    result = sep.join(items[:max])
     if len(items) > max:
         result += ellipsis + f" ({len(items)} items)"
     return result
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class PeekIter:
     """
@@ -163,18 +166,15 @@ class PeekIter:
         self.__iter = iter(iterable)
         self.__items = deque()
 
-
     def __iter__(self):
         # FIXME: Sloppy.
         return self
-
 
     def __next__(self):
         try:
             return self.__items.popleft()
         except IndexError:
             return next(self.__iter)
-
 
     @property
     def is_done(self):
@@ -191,13 +191,11 @@ class PeekIter:
             else:
                 return False
 
-
     def push(self, item):
         """
         Pushes an `item` to the front of the iterator so that it is next.
         """
         self.__items.appendleft(item)
-
 
     def peek(self, ahead=0):
         """
@@ -209,6 +207,3 @@ class PeekIter:
         while len(self.__items) <= ahead:
             self.__items.append(next(self.__iter))
         return self.__items[ahead]
-
-
-

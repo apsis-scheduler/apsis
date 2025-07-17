@@ -1,11 +1,11 @@
 import argparse
 import ora
-from   pathlib import Path
+from pathlib import Path
 import random
 import sys
 import yaml
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 PROB_DURATION = 0.1
 
@@ -18,7 +18,8 @@ ARGS = {
     "hue": ("red", "blue", "green", "yellow"),
 }
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def random_daytime():
     return str(ora.Daytime.from_ssm(random.randint(0, 86399)))
@@ -41,7 +42,7 @@ def gen_daily_schedule(params):
     return {
         "type": "daily",
         "tz": "UTC",
-        "daytime": sorted( random_daytime() for _ in range(count) )
+        "daytime": sorted(random_daytime() for _ in range(count)),
     }
 
 
@@ -55,8 +56,10 @@ def gen_schedule(params):
 def gen_duration():
     r = random.random()
     return (
-        0 if r < 0.50
-        else random.randint(1, 60) if r < 0.99
+        0
+        if r < 0.50
+        else random.randint(1, 60)
+        if r < 0.99
         else random.randint(1, 180) * 60  # up to 3 hours
     )
 
@@ -71,6 +74,7 @@ for _ in range(int(lines)):
     time.sleep(delay)
 """
 
+
 def gen_output_program(labels):
     lines = random.randint(1, 10000)
     length = random.randint(8, 78)
@@ -79,8 +83,12 @@ def gen_output_program(labels):
     return {
         "type": "program",
         "argv": [
-            sys.executable, "-c", OUTPUT_SCRIPT,
-            str(lines), str(length), str(delay),
+            sys.executable,
+            "-c",
+            OUTPUT_SCRIPT,
+            str(lines),
+            str(length),
+            str(delay),
         ],
     }
 
@@ -102,19 +110,18 @@ def gen_deps(jobs, params):
     if random.random() < 0.1:
         job_id, job = random.choice(list(jobs.items()))
         if job["params"] == params:
-            conds.append({
-                "type": "dependency",
-                "job_id": job_id,
-            })
+            conds.append(
+                {
+                    "type": "dependency",
+                    "job_id": job_id,
+                }
+            )
     return conds
 
 
 def gen_job(jobs):
     params = []
-    labels = list({
-        random.choice(LABELS)
-        for _ in range(int(random.uniform(0, 2) ** 2))
-    })
+    labels = list({random.choice(LABELS) for _ in range(int(random.uniform(0, 2) ** 2))})
 
     program = gen_program(labels)
     schedule = gen_schedule(params)
@@ -137,13 +144,12 @@ def gen_job(jobs):
 
 
 def gen_job_id():
-    return "/".join((
-        *(
-            f"group{random.randint(0, 100)}"
-            for _ in range(random.randint(0, MAX_JOB_ID_DEPTH))
-        ),
-        f"job{random.randint(0, 100000)}"
-    ))
+    return "/".join(
+        (
+            *(f"group{random.randint(0, 100)}" for _ in range(random.randint(0, MAX_JOB_ID_DEPTH))),
+            f"job{random.randint(0, 100000)}",
+        )
+    )
 
 
 def gen_jobs(num):
@@ -155,15 +161,17 @@ def gen_jobs(num):
     return jobs
 
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 
 parser = argparse.ArgumentParser()
+parser.add_argument("num", metavar="NUM", type=int, help="generate NUM jobs")
 parser.add_argument(
-    "num", metavar="NUM", type=int,
-    help="generate NUM jobs")
-parser.add_argument(
-    "--output", metavar="DIR", type=Path, default=Path("./jobs"),
-    help="generate to DIR [def: ./jobs]")
+    "--output",
+    metavar="DIR",
+    type=Path,
+    default=Path("./jobs"),
+    help="generate to DIR [def: ./jobs]",
+)
 args = parser.parse_args()
 
 jobs = gen_jobs(args.num)
@@ -173,4 +181,3 @@ for job_id, job in jobs.items():
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as file:
         yaml.dump(job, file)
-

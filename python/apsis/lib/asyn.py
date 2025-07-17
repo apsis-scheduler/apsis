@@ -1,12 +1,13 @@
 import asyncio
-from   contextlib import contextmanager, suppress
+from contextlib import contextmanager, suppress
 import weakref
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def _install():
     """
@@ -52,7 +53,8 @@ def _install():
 
 _install()
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 async def cancel_task(task, name=None, log=None):
     """
@@ -103,10 +105,8 @@ class TaskGroup:
         self.__tasks = {}
         self.__log = log
 
-
     def __len__(self):
         return len(self.__tasks)
-
 
     def add(self, key, coro):
         task = asyncio.get_event_loop().create_task(coro)
@@ -125,10 +125,8 @@ class TaskGroup:
 
         task.add_done_callback(done)
 
-
     async def cancel(self, key):
         await cancel_task(self.__tasks[key], key, self.__log)
-
 
     async def cancel_all(self):
         """
@@ -138,8 +136,8 @@ class TaskGroup:
             await cancel_task(task, key, self.__log)
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 async def communicate(proc, timeout=None):
     """
@@ -165,11 +163,7 @@ async def communicate(proc, timeout=None):
             else:
                 chunks.append(chunk)
 
-    gathered = asyncio.gather(
-        read(proc.stdout, out),
-        read(proc.stderr, err),
-        proc.wait()
-    )
+    gathered = asyncio.gather(read(proc.stdout, out), read(proc.stderr, err), proc.wait())
 
     try:
         await asyncio.wait_for(gathered, timeout)
@@ -183,7 +177,8 @@ async def communicate(proc, timeout=None):
     return b"".join(out), b"".join(err)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class Publisher:
     """
@@ -197,7 +192,6 @@ class Publisher:
         self.__subs = set()
         self.__closed = False
 
-
     class Subscription:
         """
         Async iterable and iterator of events sent to one subscription.
@@ -206,33 +200,27 @@ class Publisher:
         """
 
         def __init__(self, predicate):
-            self.__predicate    = predicate
-            self.__msgs         = asyncio.Queue()
-            self.__closed       = False
-
+            self.__predicate = predicate
+            self.__msgs = asyncio.Queue()
+            self.__closed = False
 
         def publish(self, msg):
             if self.__predicate is None or self.__predicate(msg):
                 self.__msgs.put_nowait(msg)
 
-
         def _close(self):
             self.__msgs.put_nowait(Publisher._CLOSE)
-
 
         @property
         def closed(self):
             return self.__closed
 
-
         @property
         def len_queue(self):
             return self.__msgs.qsize()
 
-
         def __aiter__(self):
             return self
-
 
         async def __anext__(self):
             if self.__closed:
@@ -243,7 +231,6 @@ class Publisher:
                 raise StopAsyncIteration()
             else:
                 return msg
-
 
         def drain(self):
             """
@@ -261,8 +248,6 @@ class Publisher:
                     else:
                         msgs.append(msg)
             return msgs
-
-
 
     @contextmanager
     def subscription(self, *, predicate=None):
@@ -287,13 +272,11 @@ class Publisher:
             # Unregister the subscription.
             self.__subs.remove(subscription)
 
-
     def publish(self, msg):
         if self.__closed:
             raise RuntimeError("publisher is closed")
         for sub in self.__subs:
             sub.publish(msg)
-
 
     def close(self):
         """
@@ -306,23 +289,19 @@ class Publisher:
                 sub._close()
             self.__closed = True
 
-
     @property
     def num_subs(self):
         return len(self.__subs)
 
-
     @property
     def len_queues(self):
-        return sum( s.len_queue for s in self.__subs )
-
+        return sum(s.len_queue for s in self.__subs)
 
     def get_stats(self):
         return {
-            "num_subs"  : self.num_subs,
+            "num_subs": self.num_subs,
             "len_queues": self.len_queues,
         }
-
 
 
 async def anext_and_drain(subscription, time):
@@ -353,7 +332,6 @@ class KeyPublisher:
     def __init__(self):
         self.__publishers = weakref.WeakValueDictionary()
 
-
     def subscription(self, key):
         """
         Returns a subscription to `key`.
@@ -368,13 +346,11 @@ class KeyPublisher:
         subscription.__publisher = publisher
         return subscription
 
-
     def __contains__(self, key):
         """
         True if at least one subscription for `key` exists.
         """
         return self.__publishers.__contains__(key)
-
 
     def publish(self, key, msg):
         """
@@ -388,7 +364,6 @@ class KeyPublisher:
         else:
             publisher.publish(msg)
 
-
     def close(self, key):
         """
         Closes the publisher for `key`, if any.
@@ -400,6 +375,3 @@ class KeyPublisher:
             pass
         else:
             publisher.close()
-
-
-

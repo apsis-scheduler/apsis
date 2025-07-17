@@ -1,33 +1,33 @@
 import _posixsubprocess  # Yes, we use an internal API here.
 import asyncio
 import builtins
-from   contextlib import contextmanager
+from contextlib import contextmanager
 import datetime
 import errno
 import logging
 import os
-from   pathlib import Path
+from pathlib import Path
 import pwd
 import shlex
 import signal
-from   subprocess import SubprocessError
+from subprocess import SubprocessError
 import tempfile
 import uuid
 
 log = logging.getLogger("processes")
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 MAX_EXC_SIZE = 1048576
 
-class NoSuchProcessError(LookupError):
 
+class NoSuchProcessError(LookupError):
     def __init__(self, proc_id):
         super().__init__(f"no such process: {proc_id}")
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 # We don't use ora here, to allow the agent to run as many places as possible.
 # Possibly, relax this.
@@ -42,7 +42,7 @@ def start(argv, cwd, env, stdin_fd, out_fd):
     """
     Starts a program in a subprocess.
     """
-    argv = [ str(a) for a in argv ]
+    argv = [str(a) for a in argv]
     executable = argv[0]
 
     # Logic copied from subprocess.Popen._execute_child() (POSIX version).
@@ -58,37 +58,37 @@ def start(argv, cwd, env, stdin_fd, out_fd):
                 env_list = []
                 for k, v in env.items():
                     k = os.fsencode(k)
-                    if b'=' in k:
+                    if b"=" in k:
                         raise ValueError("illegal environment variable name")
-                    env_list.append(k + b'=' + os.fsencode(v))
+                    env_list.append(k + b"=" + os.fsencode(v))
             else:
                 # FIXME: What should the "default" environment be?
                 env_list = None  # Use execv instead of execve.
 
-            executables = (os.fsencode(executable), )
+            executables = (os.fsencode(executable),)
 
             pid = _posixsubprocess.fork_exec(
                 argv,
                 executables,
-                True,                   # close_fds
-                (err_write, ),          # pass_fds
+                True,  # close_fds
+                (err_write,),  # pass_fds
                 str(cwd),
                 env_list,
-                stdin_fd,               # stdin read
-                -1,                     # stdin write
-                -1,                     # stdout read
-                out_fd,                 # stdout write
-                -1,                     # stderr read
-                out_fd,                 # stderr write
+                stdin_fd,  # stdin read
+                -1,  # stdin write
+                -1,  # stdout read
+                out_fd,  # stdout write
+                -1,  # stderr read
+                out_fd,  # stderr write
                 err_read,
                 err_write,
-                True,                   # restore_signals
-                True,                   # start_new_session
-                None,                   # gid
-                None,                   # gids
-                None,                   # uid
-                -1,                     # umask
-                None,                   # preexec_fn
+                True,  # restore_signals
+                True,  # start_new_session
+                None,  # gid
+                None,  # gids
+                None,  # uid
+                -1,  # umask
+                None,  # preexec_fn
             )
 
         finally:
@@ -116,15 +116,16 @@ def start(argv, cwd, env, stdin_fd, out_fd):
             pass
 
         try:
-            exc_name, hex_errno, err_msg = err_data.split(b':', 2)
-            exc_name    = exc_name.decode("ascii")
-            errnum      = int(hex_errno, 16)
-            err_msg     = err_msg.decode(errors="surrogatepass")
-            exc_type    = getattr(builtins, exc_name, SubprocessError)
+            exc_name, hex_errno, err_msg = err_data.split(b":", 2)
+            exc_name = exc_name.decode("ascii")
+            errnum = int(hex_errno, 16)
+            err_msg = err_msg.decode(errors="surrogatepass")
+            exc_type = getattr(builtins, exc_name, SubprocessError)
         except ValueError:
             exc_type, errnum, err_msg = (
-                SubprocessError, 0,
-                "Bad exception data from child: " + repr(err_data)
+                SubprocessError,
+                0,
+                "Bad exception data from child: " + repr(err_data),
             )
 
         if issubclass(exc_type, OSError) and errnum != 0:
@@ -136,9 +137,9 @@ def start(argv, cwd, env, stdin_fd, out_fd):
                 if errnum == errno.ENOENT:
                     if noexec:
                         # The error must be from chdir(cwd).
-                        err_msg += ': ' + repr(cwd)
+                        err_msg += ": " + repr(cwd)
                     else:
-                        err_msg += ': ' + repr(executable)
+                        err_msg += ": " + repr(executable)
             raise exc_type(errnum, err_msg)
         raise exc_type(err_msg)
 
@@ -146,7 +147,8 @@ def start(argv, cwd, env, stdin_fd, out_fd):
         return pid
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class ProcessDir:
     """
@@ -164,10 +166,8 @@ class ProcessDir:
         self.out_path = None
         self.pid_path = None
 
-
     def __str__(self):
         return str(self.path)
-
 
     @contextmanager
     def get_stdin_fd(self, stdin=None):
@@ -190,7 +190,6 @@ class ProcessDir:
             # Done with it.
             os.close(fd)
 
-
     @contextmanager
     def get_out_fd(self):
         """
@@ -198,19 +197,16 @@ class ProcessDir:
         """
         self.out_path = self.path / "out"
         # Open a file for the output.
-        fd = os.open(
-            self.out_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode=0o400)
+        fd = os.open(self.out_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode=0o400)
         # Ready to go.
         yield fd
         # Done with it.
         os.close(fd)
 
-
     def write_pid(self, pid):
         self.pid_path = self.path / "pid"
         with open(self.pid_path, "w", mode=0o400) as file:
             print(pid, file=file)
-
 
     def clean(self):
         if self.out_path is not None:
@@ -225,9 +221,9 @@ class ProcessDir:
         self.path = None
 
 
-
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Process management
+
 
 class Processes:
     """
@@ -235,19 +231,17 @@ class Processes:
     """
 
     class Process:
-
         def __init__(self, proc_id):
-            self.proc_id    = proc_id
-            self.state      = None
-            self.proc_dir   = None
-            self.progam     = None
-            self.pid        = None
-            self.exception  = None
-            self.status     = None
-            self.rusage     = None
+            self.proc_id = proc_id
+            self.state = None
+            self.proc_dir = None
+            self.progam = None
+            self.pid = None
+            self.exception = None
+            self.status = None
+            self.rusage = None
             self.start_time = None
-            self.end_time   = None
-
+            self.end_time = None
 
         @property
         def return_code(self):
@@ -255,28 +249,27 @@ class Processes:
             The process's return code, or `None`.
             """
             return (
-                None if self.status is None
-                else os.WEXITSTATUS(self.status) if os.WIFEXITED(self.status)
+                None
+                if self.status is None
+                else os.WEXITSTATUS(self.status)
+                if os.WIFEXITED(self.status)
                 else None
             )
-
 
         @property
         def signal(self):
             return (
-                None if self.status is None
+                None
+                if self.status is None
                 else signal.Signals(os.WTERMSIG(self.status)).name
                 if os.WIFSIGNALED(self.status)
                 else None
             )
 
-
-
     def __init__(self, dir_path: Path):
         self.__dir_path = dir_path
         self.__procs = {}
         self.__pids = {}
-
 
     def start(self, argv, cwd, env, stdin):
         """
@@ -284,16 +277,16 @@ class Processes:
         """
         proc = self.Process(str(uuid.uuid4()))
         proc.program = {
-            "argv"  : [ str(a) for a in argv ],
-            "cwd"   : str(cwd),
-            "env"   : env,
-            "stdin" : stdin,
+            "argv": [str(a) for a in argv],
+            "cwd": str(cwd),
+            "env": env,
+            "stdin": stdin,
         }
         path = Path(tempfile.mkdtemp(dir=self.__dir_path))
         proc_dir = ProcessDir(path)
 
         try:
-            command = " ".join( shlex.quote(a) for a in argv )
+            command = " ".join(shlex.quote(a) for a in argv)
             log.info(f"start: {proc_dir}: {command}")
 
             uid = pwd.getpwuid(os.getuid())
@@ -303,8 +296,8 @@ class Processes:
             proc.start_time = now()
 
             with (
-                    proc_dir.get_stdin_fd(stdin) as stdin_fd,
-                    proc_dir.get_out_fd() as out_fd
+                proc_dir.get_stdin_fd(stdin) as stdin_fd,
+                proc_dir.get_out_fd() as out_fd,
             ):
                 proc.pid = start(argv, cwd, env, stdin_fd, out_fd)
 
@@ -330,7 +323,6 @@ class Processes:
         self.__procs[proc.proc_id] = proc
         return proc
 
-
     def reap(self) -> bool:
         """
         Reaps one completed child process, if available.
@@ -339,8 +331,7 @@ class Processes:
           True if a process was reaped.
         """
         try:
-            pid, status, rusage = os.wait4(
-                -1, os.WNOHANG | os.WUNTRACED | os.WCONTINUED)
+            pid, status, rusage = os.wait4(-1, os.WNOHANG | os.WUNTRACED | os.WCONTINUED)
         except ChildProcessError as exc:
             if exc.errno == errno.ECHILD:
                 # No child ready to be reaped.
@@ -367,7 +358,6 @@ class Processes:
         proc.rusage = rusage
         return True
 
-
     def sigchld(self, signum, frame):
         """
         SIGCHLD handler.
@@ -389,17 +379,14 @@ class Processes:
         # it to __procs.
         asyncio.get_event_loop().call_soon(reap_all)
 
-
     def __len__(self):
         return len(self.__procs)
-
 
     def __getitem__(self, proc_id):
         try:
             return self.__procs[proc_id]
         except KeyError:
             raise NoSuchProcessError(proc_id)
-
 
     def __delitem__(self, proc_id):
         try:
@@ -416,10 +403,8 @@ class Processes:
             proc.proc_dir.clean()
             proc.proc_dir = None
 
-
     def __iter__(self):
         return iter(self.__procs.values())
-
 
     def kill(self, proc_id, signum):
         """
@@ -436,6 +421,3 @@ class Processes:
         else:
             log.info(f"signalling child: pid={proc.pid} signum={signum}")
             os.kill(proc.pid, signum)
-
-
-

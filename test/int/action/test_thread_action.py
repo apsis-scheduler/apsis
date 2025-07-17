@@ -3,21 +3,22 @@ Tests thread actions.
 """
 
 import asyncio
-from   contextlib import closing
+from contextlib import closing
 import json
 import logging
-from   pathlib import Path
+from pathlib import Path
 import pytest
 import time
 import websockets.client
 
-from   instance import ApsisService
+from instance import ApsisService
 
 logger = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 job_dir = Path(__file__).absolute().parent / "jobs"
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -65,8 +66,8 @@ def test_slow_thread_action(inst):
     # Logs should show that the action started but did not finish.
     with inst.get_log() as log:
         log = list(log)
-    assert any( "sleeping action for" in l for l in log )
-    assert not any( "sleeping action done" in l for l in log )
+    assert any("sleeping action for" in l for l in log)
+    assert not any("sleeping action done" in l for l in log)
 
     # Sleep long enough for the action to complete.
     time.sleep(2.5 - elapsed)
@@ -80,8 +81,8 @@ def test_slow_thread_action(inst):
     # Logs should show that the action started and finished.
     with inst.get_log() as log:
         log = list(log)
-    assert any( "sleeping action for" in l for l in log )
-    assert any( "sleeping action done" in l for l in log )
+    assert any("sleeping action for" in l for l in log)
+    assert any("sleeping action done" in l for l in log)
 
 
 def test_error_thread_action(inst):
@@ -105,7 +106,5 @@ def test_error_thread_action(inst):
     # Logs should show that the action started and raised.
     with inst.get_log() as log:
         log = list(log)
-    assert any( "error action" in l for l in log )
-    assert any( "RuntimeError: something went wrong" in l for l in log )
-
-
+    assert any("error action" in l for l in log)
+    assert any("RuntimeError: something went wrong" in l for l in log)

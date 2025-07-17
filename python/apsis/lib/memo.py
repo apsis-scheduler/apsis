@@ -1,6 +1,7 @@
 import functools
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def memoize_with(memo):
     def memoize(fn):
@@ -28,7 +29,6 @@ def memoize(fn):
     return memoize_with({})(fn)
 
 
-
 class property:
     """
     Simplified version of Python 3.8 `functools.cached_property`.
@@ -39,12 +39,10 @@ class property:
         self.name = None
         self.__doc__ = fn.__doc__
 
-
     def __set_name__(self, owner, name):
         if self.name is None:
             self.name = name
         assert self.name == name
-
 
     def __get__(self, self_, _):
         if self_ is None:
@@ -57,6 +55,3 @@ class property:
             val = self.fn(self_)
             self_.__dict__[self.name] = val
             return val
-
-
-

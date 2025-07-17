@@ -1,15 +1,16 @@
 import yaml
 
-from   pathlib import Path
+from pathlib import Path
 import pytest
 import shutil
 
-from   apsis.check import check_job_dependencies_scheduled
-from   apsis.exc import JobsDirErrors, SchemaError
+from apsis.check import check_job_dependencies_scheduled
+from apsis.exc import JobsDirErrors, SchemaError
 import apsis.jobs
-from   apsis.lib import itr
+from apsis.lib import itr
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def dump_yaml_file(obj, path):
     with path.open("w") as file:
@@ -122,7 +123,7 @@ async def test_misspelled_param(tmp_path):
     # Create a dependency job.
     dump_yaml_file(
         {"params": ["date"], "program": {"type": "no-op"}},
-        jobs_path / "dependency.yaml"
+        jobs_path / "dependency.yaml",
     )
 
     job = {
@@ -148,6 +149,7 @@ async def test_misspelled_param(tmp_path):
     except JobsDirErrors as exc:
         for err in exc.errors:
             import traceback
+
             traceback.print_exception(exc, chain=True)
 
         assert len(exc.errors) == 1
@@ -183,10 +185,9 @@ async def test_check_job_dependencies_scheduled(tmp_path):
 
     async def check():
         jobs_dir = await apsis.jobs.load_jobs_dir(jobs_path)
-        return list(itr.chain(*(
-            check_job_dependencies_scheduled(jobs_dir, j)
-            for j in jobs_dir.get_jobs()
-        )))
+        return list(
+            itr.chain(*(check_job_dependencies_scheduled(jobs_dir, j) for j in jobs_dir.get_jobs()))
+        )
 
     # The dependent isn't scheduled, so no error.
     errs = await check()
@@ -212,8 +213,8 @@ async def test_check_job_dependencies_scheduled(tmp_path):
     ]
     dump_yaml_file(dependent, jobs_path / "dependent.yaml")
     errs = await check()
-    assert any( "label=foo" in e for e in errs )
-    assert any( "label=bar" in e for e in errs )
+    assert any("label=foo" in e for e in errs)
+    assert any("label=bar" in e for e in errs)
 
     # Schedule the dependency of one of the scheduled dependents.  There are
     # still errors, because of the dependency of the other scheduled dependent.
@@ -228,8 +229,8 @@ async def test_check_job_dependencies_scheduled(tmp_path):
     ]
     dump_yaml_file(dependency, jobs_path / "dependency.yaml")
     errs = await check()
-    assert any( "label=foo" in e for e in errs )
-    assert not any( "label=bar" in e for e in errs )
+    assert any("label=foo" in e for e in errs)
+    assert not any("label=bar" in e for e in errs)
 
     # Schedule the other dependency.  No more errors.
     dependency["schedule"].append(
@@ -244,5 +245,3 @@ async def test_check_job_dependencies_scheduled(tmp_path):
     dump_yaml_file(dependency, jobs_path / "dependency.yaml")
     errs = await check()
     assert len(errs) == 0
-
-

@@ -1,10 +1,11 @@
 import asyncio
-from   pathlib import Path
+from pathlib import Path
 import pytest
 
-from   apsis.agent.client import Agent
+from apsis.agent.client import Agent
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @pytest.mark.local_ssh
 @pytest.mark.asyncio
@@ -16,8 +17,7 @@ async def test_run_localhost(tmpdir):
     await agent.connect()
 
     async def run():
-        process = await agent.start_process(
-            ["/bin/bash", "-c", f"echo 'Hello, world!' > '{path}'"])
+        process = await agent.start_process(["/bin/bash", "-c", f"echo 'Hello, world!' > '{path}'"])
         proc_id = process["proc_id"]
         # FIXME: Embarrassing.  Need a way to await the process.
         await asyncio.sleep(0.1)
@@ -35,5 +35,3 @@ async def test_run_localhost(tmpdir):
     assert data == "Hello, world!\n"
 
     await agent.stop()
-
-

@@ -2,13 +2,14 @@ import asyncio
 import concurrent.futures
 import logging
 
-from   .condition import Condition
-from   apsis.lib import py
-from   apsis.lib.json import TypedJso, check_schema
+from .condition import Condition
+from apsis.lib import py
+from apsis.lib.json import TypedJso, check_schema
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class Action(TypedJso):
     """
@@ -26,14 +27,13 @@ class Action(TypedJso):
         """
         raise NotImplementedError("Action.__call__")
 
-
     @property
     def condition(self):
         raise NotImplementedError("Action.condition")
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class BaseAction(Action):
     """
@@ -43,22 +43,18 @@ class BaseAction(Action):
     def __init__(self, *, condition=None):
         self.__condition = condition
 
-
     def __repr__(self):
         return py.format_ctor(self, condition=self.__condition)
-
 
     @property
     def condition(self):
         return self.__condition
-
 
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
             condition = pop("if", Condition.from_jso, None)
         return cls(condition=condition)
-
 
     def to_jso(self):
         jso = super().to_jso()
@@ -67,8 +63,8 @@ class BaseAction(Action):
         return jso
 
 
+# -------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
 
 class ThreadAction(BaseAction):
     """
@@ -84,13 +80,9 @@ class ThreadAction(BaseAction):
     def run(self, run):
         raise NotImplementedError("ThreadAction.run")
 
-
     async def __call__(self, apsis, run):
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as exe:
             log.debug(f"thread action start: {self}")
             await loop.run_in_executor(exe, self.run, run)
             log.debug(f"thread action done: {self}")
-
-
-
