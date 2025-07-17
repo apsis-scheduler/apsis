@@ -11,7 +11,6 @@ import json
 import logging
 import sys
 
-import apsis.lib.asyn
 from apsis.agent.client import Agent
 
 # -------------------------------------------------------------------------------

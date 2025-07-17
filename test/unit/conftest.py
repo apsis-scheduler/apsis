@@ -5,7 +5,6 @@ from functools import cached_property
 import pytest
 
 import apsis.program.procstar.agent
-from test.unit import util
 
 
 async def iter_queue(queue: asyncio.Queue):
