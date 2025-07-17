@@ -97,6 +97,40 @@ $ git commit -m "Rebuild front end."
 The Python back end service will serve the prod front end.
 
 
+## Pre-commit Setup
+
+This project uses pre-commit hooks to automatically format code before commits.
+
+### Installation
+Install the pre-commit hooks:
+```bash
+$ uv run pre-commit install
+```
+
+### Usage
+
+Once installed, the pre-commit hooks will run automatically on `git commit`. The hooks will:
+- Format Python code using `ruff format`
+- Only run on files that are being committed
+
+To run the hooks manually on all files:
+```bash
+$ pre-commit run --all-files
+```
+
+To run the hooks on specific files:
+```bash
+$ pre-commit run --files path/to/file.py
+```
+
+### Bypassing Hooks
+
+If you need to bypass the pre-commit hooks (not recommended):
+```bash
+$ git commit --no-verify -m "commit message"
+```
+
+
 ### Docs
 
 With uv, install the docs dependency group:
