@@ -43,6 +43,8 @@ jobs:
           ([[ $? -gt 0 ]] && echo "bumped=false" || echo "bumped=true") | tee -a $GITHUB_OUTPUT
           echo "current-version=$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
           echo "git-tag=v$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Push bumped version
         if: steps.bump.outputs.bumped == 'true'
