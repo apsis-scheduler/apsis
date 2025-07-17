@@ -8,4 +8,3 @@ import pytest
 def set_apsis_host(monkeypatch):
     """Set APSIS_HOST=localhost for all integration tests."""
     monkeypatch.setenv("APSIS_HOST", "localhost")
-
