@@ -42,7 +42,8 @@ dev = [
     "build",
     "pytest",
     "pytest-asyncio",
-    "bump-my-version"
+    "bump-my-version",
+    "ruff>=0.12.4",
 ]
 docs = [
     "sphinx",
