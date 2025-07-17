@@ -106,7 +106,13 @@ def test_run_id_env():
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
         output = svc.client.get_output(run_id, "output").decode()
-        env_vars = dict(line.split("=", 1) for line in output.splitlines())
+        # Flawed parsing: multiline environment variables will be incomplete,
+        # but this works for testing purposes
+        env_vars = {}
+        for line in output.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                env_vars[key] = value
         assert env_vars["APSIS_RUN_ID"] == run_id
 
 
