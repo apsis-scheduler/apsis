@@ -23,39 +23,39 @@ jobs:
         with:
           fetch-depth: 0
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v4
-      with:
-        version: "latest"
-        enable-cache: true
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
 
-    - name: Bump version
-      id: bump
-      run: |
-        git config --global user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
-        git config --global user.name "$(gh api /users/${GITHUB_ACTOR} | jq .name -r)"
-        git config -l
+      - name: Bump version
+        id: bump
+        run: |
+          git config --global user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
+          git config --global user.name "$(gh api /users/${GITHUB_ACTOR} | jq .name -r)"
+          git config -l
 
-        echo "previous-version=$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
+          echo "previous-version=$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
 
-        uvx bump-my-version bump --allow-dirty ${{ inputs.release-type }}
+          uvx bump-my-version bump --allow-dirty ${{ inputs.release-type }}
 
-        ([[ $? -gt 0 ]] && echo "bumped=false" || echo "bumped=true") | tee -a $GITHUB_OUTPUT
-        echo "current-version=$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
-        echo "git-tag=v$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
+          ([[ $? -gt 0 ]] && echo "bumped=false" || echo "bumped=true") | tee -a $GITHUB_OUTPUT
+          echo "current-version=$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
+          echo "git-tag=v$(uvx bump-my-version show current_version)" | tee -a $GITHUB_OUTPUT
 
-    - name: Push bumped version
-      if: steps.bump.outputs.bumped == 'true'
-      run: |
-        git push origin HEAD:${{ github.ref }}
-        git push origin ${{ steps.bump.outputs.git-tag }}
+      - name: Push bumped version
+        if: steps.bump.outputs.bumped == 'true'
+        run: |
+          git push origin HEAD:${{ github.ref }}
+          git push origin ${{ steps.bump.outputs.git-tag }}
 
-    - name: Create Github release
-      if: steps.bump.outputs.bumped == 'true'
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.bump.outputs.git-tag }}
-        name: ${{ steps.bump.outputs.git-tag }}
-        draft: false
-        prerelease: false
-        generate_release_notes: true
+      - name: Create Github release
+        if: steps.bump.outputs.bumped == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.git-tag }}
+          name: ${{ steps.bump.outputs.git-tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
