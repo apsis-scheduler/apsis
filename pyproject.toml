@@ -44,6 +44,7 @@ dev = [
     "pytest-asyncio",
     "bump-my-version",
     "ruff>=0.12.4",
+    "pre-commit>=4.2.0",
 ]
 docs = [
     "sphinx",
