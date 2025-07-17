@@ -17,21 +17,20 @@ jobs:
     - name: Install Litestream
       run: wget --quiet https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.deb && sudo dpkg -i litestream-v0.3.13-linux-amd64.deb
 
-    - uses: actions/setup-python@v5
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
       with:
-        python-version: '3.10'
+        version: "latest"
+        enable-cache: true
 
-    - name: Upgrade pip
-      run: pip3 install --upgrade pip 'setuptools>=61'
-
-    - name: Install package
+    - name: Install dependencies
       # extra index-url is for using procstar repository as a pypi index via Github
       # Pages
-      run: pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple/ -e .[dev]
+      run: uv sync --extra-index-url https://apsis-scheduler.github.io/procstar/simple
 
     - name: Run Python unit tests
-      run: pytest test/unit -m "not local_ssh"
+      run: uv run pytest test/unit -m "not local_ssh"
 
     - name: Run Python integration tests
-      run: pytest test/int -m "not local_ssh"
+      run: uv run pytest test/int -m "not local_ssh"
 
