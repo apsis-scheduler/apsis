@@ -3,7 +3,6 @@ import logging
 import os
 from procstar.testing.agent import TLS_CERT_PATH
 import procstar.http.client
-import random
 import secrets
 import signal
 import subprocess
@@ -11,14 +10,12 @@ import uuid
 
 from apsis.lib.py import merge_mappings
 import instance
+from instance import find_free_port
 
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------------------
 
-# Default agent port for testing, distinct from the usual default.  Choose at
-# random, to reduce the risk of collisions on a test host.
-DEFAULT_AGENT_PORT = random.randint(50000, 60000)
 
 # Environment containing auth info for testing.
 AUTH_ENV = {
@@ -140,7 +137,9 @@ class ApsisService(instance.ApsisService):
     """
 
     # FIXME: Choose an available port by default, instead of fixed.
-    def __init__(self, *, agent_port=DEFAULT_AGENT_PORT, cfg={}, **kw_args):
+    def __init__(self, *, agent_port=None, cfg={}, **kw_args):
+        if agent_port is None:
+            agent_port = find_free_port()
         cfg = merge_mappings(
             cfg,
             {

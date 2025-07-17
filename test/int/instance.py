@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,13 @@ from apsis.sqlite import SqliteDB
 # -------------------------------------------------------------------------------
 
 
+def find_free_port():
+    """Find an available port by binding to port 0 and getting the assigned port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
 def run_apsisctl(*argv):
     subprocess.run(["apsisctl", *(str(a) for a in argv)], check=True)
 
@@ -27,9 +35,8 @@ class ApsisService:
     An Apsis service instance running in a separate process.
     """
 
-    # FIXME: Choose an available port.
-    def __init__(self, *, port=5005, job_dir=None, cfg={}, env={}):
-        self.port = int(port)
+    def __init__(self, *, port=None, job_dir=None, cfg={}, env={}):
+        self.port = int(port) if port is not None else find_free_port()
 
         self.tmp_dir = Path(tempfile.mkdtemp())
         logging.info(f"Apsis instance in {self.tmp_dir}")
