@@ -1,9 +1,30 @@
 # Developing
 
-To set up a dev environment in a venv or conda env,
+## Development Environment Setup
+
+### With direnv (Recommended)
+
+If you have [direnv](https://direnv.net/) installed, environment setup is automatic:
+
+```bash
+# One-time setup: allow direnv to load .envrc
+$ direnv allow
+
+# Environment will be automatically activated when entering the directory
+# Dependencies will be synced automatically
 ```
-$ pip install -r requirements.txt
-$ pip install -e .[dev]
+
+### Manual Setup with uv
+
+```bash
+# Install dependencies (includes dev dependencies by default)
+$ uv sync --extra-index-url https://apsis-scheduler.github.io/procstar/simple
+
+# Or include documentation dependencies too
+$ uv sync --extra-index-url https://apsis-scheduler.github.io/procstar/simple --group docs
+
+# Activate the virtual environment
+$ source .venv/bin/activate
 ```
 
 To initialize an instance DB,
@@ -78,14 +99,19 @@ The Python back end service will serve the prod front end.
 
 ### Docs
 
-Install the `sphinx` and `sphinx-rtd-theme` packages, then,
-```
+With uv, install the docs dependency group:
+```bash
+$ uv sync --group docs
 $ cd docs
 $ make html
 ```
 
 
+
 # Tests
 
-Apsis requires `pytest` and `pytest-asyncio` to run Python tests.
+Run Python tests (dev dependencies are included by default with `uv sync`):
+```bash
+$ pytest
+```
 
