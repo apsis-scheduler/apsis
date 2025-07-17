@@ -12,7 +12,10 @@ Includes [recipes in itertools
 docs](https://docs.python.org/3/library/itertools.html#itertools-recipes)
 """
 
-from itertools import *
+import collections
+import operator
+import random
+from itertools import *  # noqa: F403,F405
 
 # -------------------------------------------------------------------------------
 

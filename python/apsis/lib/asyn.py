@@ -118,7 +118,7 @@ class TaskGroup:
                 _ = task.result()
             except asyncio.CancelledError:
                 pass
-            except:
+            except Exception:
                 logger.warning(f"task: {key}", exc_info=True)
             finally:
                 self.__tasks.pop(key)

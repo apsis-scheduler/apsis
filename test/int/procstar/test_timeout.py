@@ -104,9 +104,9 @@ def test_timeout_with_reconnect(job_name):
         actual_elapsed = res["meta"]["elapsed"]
 
         tolerance = 0.3
-        assert abs(actual_elapsed - timeout) <= tolerance, (
-            f"Elapsed time {actual_elapsed:.3f}s is too far from expected timeout {timeout:.3f}s (tolerance: {tolerance}s)"
-        )
+        assert (
+            abs(actual_elapsed - timeout) <= tolerance
+        ), f"Elapsed time {actual_elapsed:.3f}s is too far from expected timeout {timeout:.3f}s (tolerance: {tolerance}s)"
 
 
 @pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
@@ -148,6 +148,6 @@ def test_timeout_with_delayed_reconnect(job_name):
 
         # needed because Apsis takes ~1s to restart and reconnect
         tolerance = 1
-        assert abs(actual_elapsed - downtime) <= tolerance, (
-            f"Elapsed time {actual_elapsed:.3f}s should be close to downtime {downtime}s (tolerance: {tolerance}s). Run should have been killed shortly after Apsis reconnected."
-        )
+        assert (
+            abs(actual_elapsed - downtime) <= tolerance
+        ), f"Elapsed time {actual_elapsed:.3f}s should be close to downtime {downtime}s (tolerance: {tolerance}s). Run should have been killed shortly after Apsis reconnected."

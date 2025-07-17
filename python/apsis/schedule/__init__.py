@@ -4,6 +4,17 @@ from .daily_interval import DailyIntervalSchedule
 from .explicit import ExplicitSchedule
 from .interval import IntervalSchedule
 
+__all__ = [
+    "Schedule",
+    "DaytimeSpec",
+    "schedule_to_jso",
+    "schedule_from_jso",
+    "DailySchedule",
+    "DailyIntervalSchedule",
+    "ExplicitSchedule",
+    "IntervalSchedule",
+]
+
 # -------------------------------------------------------------------------------
 
 Schedule.TYPE_NAMES.set(DailyIntervalSchedule, "daily-interval")

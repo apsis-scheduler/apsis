@@ -146,7 +146,7 @@ def tupleize(obj):
     else:
         try:
             return tuple(obj)
-        except:
+        except Exception:
             return (obj,)
 
 
