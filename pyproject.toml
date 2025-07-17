@@ -96,7 +96,7 @@ testpaths = "test"
 markers = ["local_ssh"]
 
 [tool.ruff]
-lint.select = ["F"]
+lint.ignore = ["E731", "E741"]
 line-length = 100
 
 [tool.bumpversion]
