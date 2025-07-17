@@ -37,7 +37,18 @@ dependencies = [
     "websockets >=14",
 ]
 
-optional-dependencies = {dev = ["build", "pytest", "pytest-asyncio", "bump-my-version"], doc = ["sphinx", "readthedocs-sphinx-ext", "sphinx-rtd-theme"]}
+[dependency-groups]
+dev = [
+    "build",
+    "pytest",
+    "pytest-asyncio",
+    "bump-my-version"
+]
+docs = [
+    "sphinx",
+    "readthedocs-sphinx-ext",
+    "sphinx-rtd-theme"
+]
 
 [project.urls]
 Repository = "https://github.com/apsis-scheduler/apsis"
