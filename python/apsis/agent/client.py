@@ -24,13 +24,13 @@ import subprocess
 import sys
 import tempfile
 import ujson
-from   urllib.parse import quote_plus
+from urllib.parse import quote_plus
 import warnings
 
 import apsis.lib.asyn
-from   apsis.lib.py import if_none
-from   apsis.lib.sys import get_username
-from   apsis.lib.test import in_test
+from apsis.lib.py import if_none
+from apsis.lib.sys import get_username
+from apsis.lib.test import in_test
 
 log = logging.getLogger("agent.client")
 # Turn down logging for httpx and its dependencies.
@@ -45,7 +45,8 @@ if HTTP_IMPL not in {"httpx", "aiohttp"}:
     warnings.warn(f"unknown APSIS_ASYNC_HTTP={HTTP_IMPL}; using httpx")
     HTTP_IMPL = "httpx"
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class NoAgentError(RuntimeError):
     """
@@ -54,7 +55,6 @@ class NoAgentError(RuntimeError):
 
     def __init__(self, host, user):
         super().__init__(f"no agent: {user} @ {host}")
-
 
 
 class NoSuchProcessError(LookupError):
@@ -66,16 +66,13 @@ class NoSuchProcessError(LookupError):
         super().__init__(f"no such process: {proc_id}")
 
 
-
 class AgentStartError(RuntimeError):
     """
     The agent failed to start.
     """
 
     def __init__(self, returncode, err):
-        super().__init__(
-            f"agent start failed with returncode={returncode}: {err}")
-
+        super().__init__(f"agent start failed with returncode={returncode}: {err}")
 
 
 class RequestError(RuntimeError):
@@ -91,7 +88,6 @@ class RequestError(RuntimeError):
         self.status = status
 
 
-
 class NotFoundError(RuntimeError):
     """
     The service returned 404.
@@ -100,7 +96,6 @@ class NotFoundError(RuntimeError):
     def __init__(self, url, status, error, exception):
         assert status == 404
         super().__init__(url, status, error, exception)
-
 
 
 class InternalServiceError(RuntimeError):
@@ -116,7 +111,6 @@ class InternalServiceError(RuntimeError):
         self.status = status
 
 
-
 class RequestJsonError(RuntimeError):
     """
     The response did not contain expected well-formed JSON.
@@ -125,7 +119,6 @@ class RequestJsonError(RuntimeError):
     def __init__(self, url, status, error):
         super().__init__(f"request JSON error {status}: {url}: {error}")
         self.status = status
-
 
 
 async def _load_data(rsp):
@@ -149,7 +142,8 @@ async def _get_jso(rsp):
         raise RequestJsonError(rsp.url, rsp.status_code, exc)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @functools.lru_cache(1)
 def _get_http_client(loop):
@@ -196,18 +190,19 @@ def get_http_client():
     return _get_http_client(asyncio.get_event_loop())
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # FIXME-CONFIG: Configure how we become other users and log in to other hosts.
 
 SSH_OPTIONS = dict(
-    BatchMode               ="yes",
-    CheckHostIP             ="no",  # FIXME-CONFIG
-    ClearAllForwardings     ="yes",
-    ForwardAgent            ="no",
-    ForwardX11              ="no",
-    StrictHostKeyChecking   ="no",  # FIXME-CONFIG
+    BatchMode="yes",
+    CheckHostIP="no",  # FIXME-CONFIG
+    ClearAllForwardings="yes",
+    ForwardAgent="no",
+    ForwardX11="no",
+    StrictHostKeyChecking="no",  # FIXME-CONFIG
 )
+
 
 def _get_agent_argv(*, host=None, user=None, connect=None, state_dir=None):
     """
@@ -234,17 +229,19 @@ def _get_agent_argv(*, host=None, user=None, connect=None, state_dir=None):
         command = " ".join(argv)
         argv = [
             "/usr/bin/ssh",
-            *itertools.chain.from_iterable(
-                ["-o", f"{k}={v}"]
-                for k, v in SSH_OPTIONS.items()
-            )
+            *itertools.chain.from_iterable(["-o", f"{k}={v}"] for k, v in SSH_OPTIONS.items()),
         ]
         if user is not None:
             argv.extend(["-l", user])
-        argv.extend([
-            host,
-            "exec", "/bin/bash", "-lc", shlex.quote(command),
-        ])
+        argv.extend(
+            [
+                host,
+                "exec",
+                "/bin/bash",
+                "-lc",
+                shlex.quote(command),
+            ]
+        )
 
     elif user is not None:
         argv = ["/usr/bin/sudo", "-u", user, *argv]
@@ -258,8 +255,7 @@ def _get_agent_name(user, host, port):
     return f"agent {user}{host}{port}"
 
 
-async def start_agent(
-        *, host=None, user=None, connect=None, timeout=60, state_dir=None):
+async def start_agent(*, host=None, user=None, connect=None, timeout=60, state_dir=None):
     """
     Starts the agent on `host` as `user`.
 
@@ -272,21 +268,17 @@ async def start_agent(
       The agent port and token.
     """
     name = _get_agent_name(user, host, None)
-    argv = _get_agent_argv(
-        host=host, user=user, connect=connect, state_dir=state_dir
-    )
+    argv = _get_agent_argv(host=host, user=user, connect=connect, state_dir=state_dir)
     log.debug(f"{name}: command: {' '.join(argv)}")
     proc = await asyncio.create_subprocess_exec(
-        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        *argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     try:
         out, err = await apsis.lib.asyn.communicate(proc, timeout)
     except asyncio.CancelledError:
         raise AgentStartError(-1, "agent start canceled") from None
     except asyncio.TimeoutError as exc:
-        raise AgentStartError(
-            -1,
-            f"timeout after {timeout} s\n" + exc.stderr.decode()
-        ) from None
+        raise AgentStartError(-1, f"timeout after {timeout} s\n" + exc.stderr.decode()) from None
 
     # Show the agent's log output.
     for line in err.decode().splitlines():
@@ -296,7 +288,7 @@ async def start_agent(
         # The agent is running.  Whether it just started or not, it prints
         # out its port and secret token.
         try:
-            data, = out.decode().splitlines()
+            (data,) = out.decode().splitlines()
             port, token = data.split()
             log.debug(f"{name}: running on port {port}")
             return int(port), token
@@ -307,13 +299,13 @@ async def start_agent(
         raise AgentStartError(proc.returncode, err.decode())
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class Agent:
-
     # Delays between attempts to start the agent-- back off.  The number of
     # attempts is the number of delays.
-    START_DELAYS = [ 0.5 * i**2 for i in range(6) ]
+    START_DELAYS = [0.5 * i**2 for i in range(6)]
 
     def __init__(self, host=None, user=None, *, connect=None, state_dir=DEFAULT):
         """
@@ -331,19 +323,17 @@ class Agent:
             except KeyError:
                 state_dir = get_test_state_dir() if in_test() else None
 
-        self.__host         = host
-        self.__user         = user
-        self.__connect      = connect
-        self.__state_dir    = state_dir
+        self.__host = host
+        self.__user = user
+        self.__connect = connect
+        self.__state_dir = state_dir
 
-        self.__lock         = asyncio.Lock()
-        self.__conn         = None
-
+        self.__lock = asyncio.Lock()
+        self.__conn = None
 
     def __str__(self):
         port = None if self.__conn is None else self.__conn[0]
         return _get_agent_name(self.__user, self.__host, port)
-
 
     async def connect(self):
         """
@@ -356,17 +346,16 @@ class Agent:
             if self.__conn is None:
                 log.debug(f"{self}: starting")
                 port, token = await start_agent(
-                    host        =self.__host,
-                    user        =self.__user,
-                    connect     =self.__connect,
-                    state_dir   =self.__state_dir,
+                    host=self.__host,
+                    user=self.__user,
+                    connect=self.__connect,
+                    state_dir=self.__state_dir,
                 )
                 log.debug(f"{self}: started")
 
                 self.__conn = port, token
 
             return self.__conn
-
 
     async def disconnect(self, port, token):
         log.debug(f"{self}: waiting to disconnect")
@@ -377,15 +366,16 @@ class Agent:
             else:
                 log.debug(f"{self}: conn changed; not disconnecting")
 
-
     @contextlib.asynccontextmanager
     async def __request(
-            self, method, endpoint,
-            data=None,
-            *,
-            args={},
-            restart=False,
-            client=None,
+        self,
+        method,
+        endpoint,
+        data=None,
+        *,
+        args={},
+        restart=False,
+        client=None,
     ):
         """
         Context manager for an HTTP request to the agent.  The value is the
@@ -420,15 +410,14 @@ class Agent:
             # FIXME: Use library.
             url = f"https://{url_host}:{port}/api/v1" + endpoint
             if len(args) > 0:
-                url += "?" + "&".join(
-                    f"{k}={quote_plus(v)}" for k, v in args.items() 
-                )
+                url += "?" + "&".join(f"{k}={quote_plus(v)}" for k, v in args.items())
 
             try:
                 match HTTP_IMPL:
                     case "httpx":
                         rsp = await client.request(
-                            method, url,
+                            method,
+                            url,
                             headers={
                                 # The auth header, so the agent accepts us.
                                 "X-Auth-Token": token,
@@ -440,7 +429,8 @@ class Agent:
 
                     case "aiohttp":
                         rsp = await client.request(
-                            method, url,
+                            method,
+                            url,
                             verify_ssl=False,
                             headers={
                                 # The auth header, so the agent accepts us.
@@ -469,11 +459,14 @@ class Agent:
                     elif 400 <= status < 600:
                         jso = await _get_jso(rsp)
                         raise (
-                            NotFoundError if status == 400
-                            else RequestError if status < 500
+                            NotFoundError
+                            if status == 400
+                            else RequestError
+                            if status < 500
                             else InternalServiceError
                         )(
-                            url, status,
+                            url,
+                            status,
                             (jso or {}).get("error", None),
                             (jso or {}).get("exception", None),
                         )
@@ -515,7 +508,6 @@ class Agent:
             # Ran out of connection attempts.
             raise NoAgentError(self.__host, self.__user)
 
-
     async def is_running(self):
         try:
             async with self.__request("GET", "/running"):
@@ -525,14 +517,11 @@ class Agent:
         else:
             return True
 
-
     async def get_processes(self):
         async with self.__request("GET", "/processes") as rsp:
             return (await _get_jso(rsp))["processes"]
 
-
-    async def start_process(
-            self, argv, cwd="/", env={}, stdin=None, restart=False):
+    async def start_process(self, argv, cwd="/", env={}, stdin=None, restart=False):
         """
         Starts a process.
 
@@ -542,18 +531,15 @@ class Agent:
         username = get_username() if self.__user is None else self.__user
         data = {
             "program": {
-                "username"  : username,
-                "argv"      : [ str(a) for a in argv ],
-                "cwd"       : str(cwd),
-                "env"       : env,
-                "stdin"     : stdin,
+                "username": username,
+                "argv": [str(a) for a in argv],
+                "cwd": str(cwd),
+                "env": env,
+                "stdin": stdin,
             },
         }
-        async with self.__request(
-                "POST", "/processes", data=data, restart=restart
-        ) as rsp:
+        async with self.__request("POST", "/processes", data=data, restart=restart) as rsp:
             return (await _get_jso(rsp))["process"]
-
 
     async def get_process(self, proc_id, *, restart=False, client=None):
         """
@@ -566,7 +552,6 @@ class Agent:
 
         except NotFoundError:
             raise NoSuchProcessError(proc_id)
-
 
     async def get_process_output(self, proc_id, *, compression=None, client=None):
         """
@@ -588,7 +573,6 @@ class Agent:
         except NotFoundError:
             raise NoSuchProcessError(proc_id)
 
-
     async def del_process(self, proc_id, *, client=None):
         """
         Deltes a process.  The process may not be running.
@@ -600,7 +584,6 @@ class Agent:
 
         except NotFoundError:
             raise NoSuchProcessError(proc_id)
-
 
     async def signal(self, proc_id, signal):
         """
@@ -614,14 +597,12 @@ class Agent:
         except NotFoundError:
             raise NoSuchProcessError(proc_id)
 
-
     async def stop(self):
         """
         Shuts down an agent, if there are no remaining processes.
         """
         async with self.__request("POST", "/stop") as rsp:
             return (await _get_jso(rsp))["stop"]
-
 
 
 @functools.cache
@@ -632,5 +613,3 @@ def get_test_state_dir():
     state_dir = tempfile.mkdtemp(prefix="apsis-agent-test-")
     log.info(f"test agent state dir: {state_dir}")
     return state_dir
-
-

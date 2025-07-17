@@ -1,18 +1,20 @@
 import itertools
 import ora
-from   ora import Daytime, get_calendar
+from ora import Daytime, get_calendar
 import yaml
 
-from   apsis.lib import itr
-from   apsis.schedule import Schedule, DailyIntervalSchedule, DaytimeSpec
+from apsis.lib import itr
+from apsis.schedule import Schedule, DailyIntervalSchedule, DaytimeSpec
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_daily_interval():
     sched = DailyIntervalSchedule(
         "America/New_York",
         ora.get_calendar("Mon-Fri"),
-        "12:00:00", "16:00:00",
+        "12:00:00",
+        "16:00:00",
         2700,
         {"name": "foo"},
     )
@@ -25,20 +27,16 @@ def test_daily_interval():
         assert Daytime(12, 0, 0) <= y < Daytime(16, 0, 0)
 
     for (t0, a0), (t1, a1) in itr.pairwise(res):
-        assert next(sched(t0 -    1))[0] == t0
-        assert next(sched(t0 +    1))[0] == t1
+        assert next(sched(t0 - 1))[0] == t0
+        assert next(sched(t0 + 1))[0] == t1
         assert next(sched(t0 + 2699))[0] == t1
         assert next(sched(t0 + 2700))[0] == t1
-        assert next(sched(t1 -    1))[0] == t1
+        assert next(sched(t1 - 1))[0] == t1
 
 
 def test_daily_interval_wrap():
     sched = DailyIntervalSchedule(
-        "America/New_York",
-        ora.get_calendar("Mon-Fri"),
-        "22:00:00", "23:59:59",
-        300,
-        {}
+        "America/New_York", ora.get_calendar("Mon-Fri"), "22:00:00", "23:59:59", 300, {}
     )
 
     times = sched("2022-06-10T23:45:00-04:00")
@@ -142,6 +140,7 @@ schedule:
   interval: 300
 """
 
+
 def test_from_json_compat():
     """
     Tests loading JSON without the `DaytimeSpec` syntax, i.e. bare start and stop times.
@@ -233,6 +232,4 @@ def test_nonexistent_start():
     check("2023-03-13T03:15:00-04:00")
     check("2023-03-13T03:45:00-04:00")
     check("2023-03-13T04:15:00-04:00")
-    check("2023-03-13T04:45:00-04:00") 
-
-
+    check("2023-03-13T04:45:00-04:00")

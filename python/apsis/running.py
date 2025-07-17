@@ -4,23 +4,31 @@ Managing runs in the _running_ state.
 
 import asyncio
 import logging
-from   ora import now
+from ora import now
 import traceback
 
-from   apsis.lib.cmpr import compress_async
-from   apsis.program.base import (
-    Output, OutputMetadata,
-    ProgramRunning, ProgramError, ProgramFailure, ProgramSuccess, ProgramUpdate)
-from   apsis.states import State
+from apsis.lib.cmpr import compress_async
+from apsis.program.base import (
+    Output,
+    OutputMetadata,
+    ProgramRunning,
+    ProgramError,
+    ProgramFailure,
+    ProgramSuccess,
+    ProgramUpdate,
+)
+from apsis.states import State
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 async def _maybe_compress(outputs, *, compression="br", min_size=16384):
     """
     Compresses final outputs, if needed.
     """
+
     async def _cmpr(output):
         if output.compression is None and output.metadata.length >= min_size:
             # Compress the output.
@@ -34,7 +42,7 @@ async def _maybe_compress(outputs, *, compression="br", min_size=16384):
         else:
             return output
 
-    o = await asyncio.gather(*( _cmpr(o) for o in outputs.values() ))
+    o = await asyncio.gather(*(_cmpr(o) for o in outputs.values()))
     return dict(zip(outputs.keys(), o))
 
 
@@ -54,19 +62,21 @@ async def _process_updates(apsis, run):
                 case ProgramRunning() as running:
                     apsis.run_log.record(run, "running")
                     apsis._transition(
-                        run, State.running,
-                        run_state   =running.run_state,
-                        meta        ={"program": running.meta},
-                        times       =running.times,
+                        run,
+                        State.running,
+                        run_state=running.run_state,
+                        meta={"program": running.meta},
+                        times=running.times,
                     )
 
                 case ProgramError() as error:
                     apsis.run_log.info(run, f"error: {error.message}")
                     apsis._update_output_data(run, error.outputs, persist=True)
                     apsis._transition(
-                        run, State.error,
-                        meta        ={"program": error.meta},
-                        times       =error.times,
+                        run,
+                        State.error,
+                        meta={"program": error.meta},
+                        times=error.times,
                     )
                     return
 
@@ -103,42 +113,33 @@ async def _process_updates(apsis, run):
 
                 case ProgramSuccess() as success:
                     apsis.run_log.record(run, "success")
-                    apsis._update_output_data(
-                        run,
-                        await _maybe_compress(success.outputs),
-                        True
-                    )
+                    apsis._update_output_data(run, await _maybe_compress(success.outputs), True)
                     apsis._transition(
-                        run, State.success,
-                        meta        ={"program": success.meta},
-                        times       =success.times,
+                        run,
+                        State.success,
+                        meta={"program": success.meta},
+                        times=success.times,
                     )
 
                 case ProgramFailure() as failure:
                     # Program ran and failed.
                     apsis.run_log.record(run, f"failure: {failure.message}")
-                    apsis._update_output_data(
-                        run,
-                        await _maybe_compress(failure.outputs),
-                        True
-                    )
+                    apsis._update_output_data(run, await _maybe_compress(failure.outputs), True)
                     apsis._transition(
-                        run, State.failure,
-                        meta        ={"program": failure.meta},
-                        times       =failure.times,
+                        run,
+                        State.failure,
+                        meta={"program": failure.meta},
+                        times=failure.times,
                     )
 
                 case ProgramError() as error:
                     apsis.run_log.info(run, f"error: {error.message}")
-                    apsis._update_output_data(
-                        run,
-                        await _maybe_compress(error.outputs),
-                        True
-                    )
+                    apsis._update_output_data(run, await _maybe_compress(error.outputs), True)
                     apsis._transition(
-                        run, State.error,
-                        meta        ={"program": error.meta},
-                        times       =error.times,
+                        run,
+                        State.error,
+                        meta={"program": error.meta},
+                        times=error.times,
                     )
 
                 case _ as update:
@@ -174,5 +175,3 @@ async def _process_updates(apsis, run):
 
     finally:
         run._running_program = None
-
-

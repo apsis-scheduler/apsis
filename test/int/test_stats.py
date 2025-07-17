@@ -1,10 +1,11 @@
-from   contextlib import closing
+from contextlib import closing
 import json
 import time
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_stats(tmp_path):
     path = tmp_path / "stats.json"
@@ -19,21 +20,27 @@ def test_stats(tmp_path):
 
         client = inst.client
 
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.stats.StatsProgram",
-                "path": str(path),
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.stats.StatsProgram",
+                    "path": str(path),
+                },
             },
-        })
+        )
         time.sleep(0.2)
         assert client.get_run(res["run_id"])["state"] == "success"
 
-        res = client.schedule_adhoc("now", {
-            "program": {
-                "type": "apsis.program.internal.stats.StatsProgram",
-                "path": str(path),
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.stats.StatsProgram",
+                    "path": str(path),
+                },
             },
-        })
+        )
         time.sleep(0.2)
         assert client.get_run(res["run_id"])["state"] == "success"
 
@@ -45,5 +52,3 @@ def test_stats(tmp_path):
         assert int(stats0["scheduled"]["num_entries"]) == 0
         # assert int(stats1["tasks"]["num_running"]) == 1
         assert int(stats1["scheduled"]["num_entries"]) == 0
-
-

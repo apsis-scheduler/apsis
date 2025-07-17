@@ -1,6 +1,7 @@
 import pytest
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_parse_duration_err():
     from apsis.lib.parse import parse_duration as p
@@ -59,5 +60,3 @@ def test_parse_duration():
     assert p("1.0h") == 3600
     assert p("1.5 h") == 5400
     assert p("-10 d") == -864000
-
-

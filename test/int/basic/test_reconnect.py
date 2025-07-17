@@ -1,10 +1,11 @@
-from   contextlib import closing
+from contextlib import closing
 import logging
-from   pathlib import Path
+from pathlib import Path
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_reconnect(tmpdir):
     job_dir = Path(__file__).parent / "jobs"
@@ -14,10 +15,7 @@ def test_reconnect(tmpdir):
         inst.start_serve()
         inst.wait_for_serve()
 
-        run_ids = [
-            inst.client.schedule("sleep", {"time": 2})["run_id"]
-            for _ in range(8)
-        ]
+        run_ids = [inst.client.schedule("sleep", {"time": 2})["run_id"] for _ in range(8)]
         for run_id in run_ids:
             res = inst.wait_run(run_id, wait_states=("new", "starting"))
             assert res["state"] == "running"
@@ -34,5 +32,3 @@ def test_reconnect(tmpdir):
         for run_id in run_ids:
             res = inst.wait_run(run_id)
             assert res["state"] == "success"
-
-

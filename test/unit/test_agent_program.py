@@ -4,7 +4,8 @@ import pytest
 import apsis.program
 import apsis.agent.client
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 async def _run():
     prog = apsis.program.AgentProgram(["/bin/sleep", "1"]).bind({})
@@ -24,7 +25,5 @@ async def test_agent_program_basic():
 
 @pytest.mark.asyncio
 async def test_agent_program_concurrent():
-    results = await asyncio.gather(*( _run() for _ in range(100) ))
-    assert all( r.meta["status"] == 0 for r in results )
-
-
+    results = await asyncio.gather(*(_run() for _ in range(100)))
+    assert all(r.meta["status"] == 0 for r in results)

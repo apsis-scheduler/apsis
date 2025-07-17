@@ -1,10 +1,11 @@
-from   pathlib import Path
+from pathlib import Path
 
-from   procstar_instance import ApsisService
+from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_program():
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True) as agent:
@@ -21,6 +22,6 @@ def test_program():
 
 if __name__ == "__main__":
     from apsis.lib import logging
+
     logging.configure(level="DEBUG")
     test_program()
-

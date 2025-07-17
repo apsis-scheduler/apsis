@@ -2,9 +2,10 @@ import asyncio
 import brotli
 import pytest
 
-from   apsis.lib.cmpr import compress_async
+from apsis.lib.cmpr import compress_async
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_compress_async():
@@ -26,6 +27,7 @@ async def test_compress_async_timing():
     data = b"alkjsdhtlkqjhwetrnabsdcvlkjhqaweljkh" * 1048576
 
     check = 0
+
     async def background():
         nonlocal check
         for i in range(1000):
@@ -42,5 +44,3 @@ async def test_compress_async_timing():
     # background() should have run concurrently.
     assert check > 0
     assert await task == 499500
-
-

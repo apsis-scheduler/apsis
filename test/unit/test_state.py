@@ -1,6 +1,7 @@
-from   apsis.states import State, reachable
+from apsis.states import State, reachable
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_reachable():
     states = set(State)
@@ -21,6 +22,4 @@ def test_reachable():
     assert reachable(State.success) == {State.success}
     assert reachable(State.failure) == {State.failure}
     assert reachable(State.skipped) == {State.skipped, State.error}
-    assert reachable(State.error)   == {State.error}
-
-
+    assert reachable(State.error) == {State.error}

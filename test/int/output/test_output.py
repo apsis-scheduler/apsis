@@ -1,15 +1,16 @@
 import brotli
-from   contextlib import closing
-from   pathlib import Path
+from contextlib import closing
+from pathlib import Path
 import pytest
 import sqlite3
-from   time import sleep
+from time import sleep
 
-from   instance import ApsisService
+from instance import ApsisService
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 job_dir = Path(__file__).absolute().parent / "jobs"
+
 
 @pytest.fixture(scope="function")
 def inst():
@@ -26,7 +27,8 @@ def client(inst, scope="function"):
     return inst.client
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_output_basic(client):
     res = client.schedule("printf", {"string": "hello\n"})
@@ -66,15 +68,13 @@ def test_large_output_compression(inst):
             FROM output
             WHERE run_id = ?
             """,
-            (run_id, )
+            (run_id,),
         )
         rows = list(cursor)
         assert len(rows) == 1
-        (length, compression, data), = rows
+        ((length, compression, data),) = rows
         # Compressed output should have been stored in the output table.
         assert length == 1048576
         assert compression == "br"
         assert len(data) < 1024  # compresses real nice
         assert len(brotli.decompress(data)) == 1048576
-
-

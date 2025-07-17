@@ -1,10 +1,11 @@
 import brotli
 import pytest
 
-from   apsis.sqlite import SqliteDB
-from   apsis.program import OutputMetadata, Output
+from apsis.sqlite import SqliteDB
+from apsis.program import OutputMetadata, Output
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_basic(tmp_path):
     path = tmp_path / "apsis.db"
@@ -34,10 +35,15 @@ def test_br(tmp_path):
 
     SqliteDB.create(path=path)
     db = SqliteDB.open(path).output_db
-    db.upsert("r99", "test", Output(
-        OutputMetadata("program output", len(DATA)),
-        brotli.compress(DATA), "br",
-    ))
+    db.upsert(
+        "r99",
+        "test",
+        Output(
+            OutputMetadata("program output", len(DATA)),
+            brotli.compress(DATA),
+            "br",
+        ),
+    )
 
     db = SqliteDB.open(path).output_db
     output = db.get_output("r99", "test")
@@ -48,5 +54,3 @@ def test_br(tmp_path):
     assert len(output.data) < 1024
     data = output.get_uncompressed_data()
     assert data == DATA
-
-

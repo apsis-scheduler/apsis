@@ -14,16 +14,19 @@ from apsis.program.base import (
     ProgramRunning,
 )
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_process_program_jso():
-    program = Program.from_jso({
-        "type"      : "apsis.program.procstar.agent.ProcstarProgram",
-        "argv"      : ["/usr/bin/echo", "Hello, {{ name }}!"],
-        "stop"      : {"signal": "SIGUSR1"},
-        "group_id"  : "prod",
-        "resources": {"mem_max_gb": 1.5},
-    })
+    program = Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarProgram",
+            "argv": ["/usr/bin/echo", "Hello, {{ name }}!"],
+            "stop": {"signal": "SIGUSR1"},
+            "group_id": "prod",
+            "resources": {"mem_max_gb": 1.5},
+        }
+    )
 
     # JSO round trip.
     program = Program.from_jso(program.to_jso())
@@ -46,11 +49,13 @@ def test_process_program_jso():
 
 
 def test_shell_command_program_jso():
-    program = Program.from_jso({
-        "type"      : "apsis.program.procstar.agent.ProcstarShellProgram",
-        "command"   : "echo 'Hello, {{ name }}!'",
-        "sudo_user" : "produser",
-    })
+    program = Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "echo 'Hello, {{ name }}!'",
+            "sudo_user": "produser",
+        }
+    )
 
     # JSO round trip.
     program = Program.from_jso(program.to_jso())
@@ -71,31 +76,39 @@ def test_shell_command_program_jso():
 
 
 def test_systemd_properties():
-    program = Program.from_jso({
-        "type": "apsis.program.procstar.agent.ProcstarShellProgram",
-        "command": "/usr/bin/true",
-        "resources": {"mem_max_gb": 2},
-    })
+    program = Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "/usr/bin/true",
+            "resources": {"mem_max_gb": 2},
+        }
+    )
     running_program = program.bind({}).run("r123", {})
     systemd = running_program._spec.to_jso()["systemd_properties"]
-    assert systemd["slice"]["memory_max"] == 2 * 10 ** 9
+    assert systemd["slice"]["memory_max"] == 2 * 10**9
     assert systemd["slice"]["memory_swap_max"] == 0
 
     # test default
-    program = Program.from_jso({
-        "type": "apsis.program.procstar.agent.ProcstarShellProgram",
-        "command": "/usr/bin/true",
-    })
-    running_program = program.bind({}).run("r123", {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 64}}}})
-    systemd = running_program._spec.to_jso()["systemd_properties"]
-    assert systemd["slice"]["memory_max"] == 64 * 10 ** 9
-
-    with pytest.raises(SchemaError):
-        program = Program.from_jso({
+    program = Program.from_jso(
+        {
             "type": "apsis.program.procstar.agent.ProcstarShellProgram",
             "command": "/usr/bin/true",
-            "resources": {"mem_max_gb": -1},
-        })
+        }
+    )
+    running_program = program.bind({}).run(
+        "r123", {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 64}}}}
+    )
+    systemd = running_program._spec.to_jso()["systemd_properties"]
+    assert systemd["slice"]["memory_max"] == 64 * 10**9
+
+    with pytest.raises(SchemaError):
+        program = Program.from_jso(
+            {
+                "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+                "command": "/usr/bin/true",
+                "resources": {"mem_max_gb": -1},
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -157,8 +170,8 @@ async def test_missing_final_fddata(mock_proc, monkeypatch):
 
     # Third update should now be ProgramError (after timeout) instead of hanging
     final_update = await anext(running_program.updates)
-    assert isinstance(
-        final_update, ProgramError
-    ), f"Expected ProgramError, got {type(final_update)}"
+    assert isinstance(final_update, ProgramError), (
+        f"Expected ProgramError, got {type(final_update)}"
+    )
     assert "Timeout waiting for final FdData" in final_update.message
     assert "exit_code=0" in final_update.message

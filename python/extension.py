@@ -1,9 +1,9 @@
 import apsis.actions
 import apsis.lib.json
-from   apsis.lib.py import tupleize
-from   apsis.lib import email
+from apsis.lib.py import tupleize
+from apsis.lib import email
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 # FIXME: jinja2?
 TEMPLATE = """<!doctype html>
@@ -20,6 +20,7 @@ TEMPLATE = """<!doctype html>
 </html>
 """
 
+
 class EmailAction:
     """
     Action that sends an HTML email summarizing the run.
@@ -30,24 +31,21 @@ class EmailAction:
         self.__from = from_
         self.__condition = condition
 
-
     @classmethod
     def from_jso(cls, jso):
         with apsis.lib.json.check_schema(jso) as pop:
-            to      = pop("to", str)
-            from_   = pop("from", str)
-            cnd     = pop("if", apsis.actions.Condition.from_jso, default=None)
+            to = pop("to", str)
+            from_ = pop("from", str)
+            cnd = pop("if", apsis.actions.Condition.from_jso, default=None)
         return cls(to, from_=from_, condition=cnd)
-            
 
     def to_jso(self):
         cnd = None if self.__condition is None else self.__condition.to_jso()
         return {
-            "to"    : list(self.__to),
-            "from"  : self.__from,
-            "if"    : cnd,
+            "to": list(self.__to),
+            "from": self.__from,
+            "if": cnd,
         }
-
 
     async def __call__(self, apsis, run):
         if self.__condition is not None and not self.__condition(run):
@@ -64,8 +62,4 @@ class EmailAction:
         body = TEMPLATE.format(**locals())
 
         smtp_cfg = apsis.cfg.get("smtp", {})
-        email.send_html(
-            self.__to, subject, body, from_=self.__from, smtp_cfg=smtp_cfg)
-
-
-
+        email.send_html(self.__to, subject, body, from_=self.__from, smtp_cfg=smtp_cfg)

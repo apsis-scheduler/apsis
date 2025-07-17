@@ -4,7 +4,8 @@ import pytest
 
 import apsis.agent.client
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 async def _wait(agent, proc_id):
     # FIXME: Do something better.
@@ -28,9 +29,7 @@ async def test_start_stop():
     agent = apsis.agent.client.Agent()
     await agent.connect()
 
-    proc_id = (
-        await agent.start_process(["/bin/echo", "Hello, world!"])
-    )["proc_id"]
+    proc_id = (await agent.start_process(["/bin/echo", "Hello, world!"]))["proc_id"]
     proc, output, stop = await _wait(agent, proc_id)
     assert proc["state"] == "done"
     assert proc["status"] == 0
@@ -77,18 +76,16 @@ async def test_concurrent_start():
     """
     Checks that concurrent agent starts all use the same agent.
     """
-    agents = [ apsis.agent.client.Agent() for _ in range(10) ]
-    res = await asyncio.gather(*( a.connect() for a in agents ))
+    agents = [apsis.agent.client.Agent() for _ in range(10)]
+    res = await asyncio.gather(*(a.connect() for a in agents))
     assert len(res) == len(agents)
 
     # All connections should be to the same port.
-    assert len(set( r[0] for r in res )) == 1
+    assert len(set(r[0] for r in res)) == 1
 
     await agents[0].stop()
 
     # All should be stopped.
-    res = await asyncio.gather(*( a.is_running() for a in agents ))
+    res = await asyncio.gather(*(a.is_running() for a in agents))
     assert len(res) == len(agents)
-    assert all( not r for r in res )
-
-
+    assert all(not r for r in res)

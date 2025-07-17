@@ -1,9 +1,9 @@
-from   ora import Time, Daytime, now, get_display_time_zone
+from ora import Time, Daytime, now, get_display_time_zone
 import rich.box
 import rich.console
-from   rich.style import Style
-from   rich.table import Table
-from   rich.text import Text
+from rich.style import Style
+from rich.table import Table
+from rich.text import Text
 import rich.theme
 import yaml
 
@@ -13,68 +13,71 @@ import apsis.lib.parse
 import apsis.lib.py
 import apsis.lib.string
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
-THEME = rich.theme.Theme({
-    "arg"       : "#5f5f87",
-    "error"     : "red1",
-    "job"       : "#008787",
-    "key"       : "color(244)",
-    "param"     : "#5f5f87",
-    "run"       : "#00af87",
-    "time"      : "#505050",
-    "warning"   : "orange3",
-})
+THEME = rich.theme.Theme(
+    {
+        "arg": "#5f5f87",
+        "error": "red1",
+        "job": "#008787",
+        "key": "color(244)",
+        "param": "#5f5f87",
+        "run": "#00af87",
+        "time": "#505050",
+        "warning": "orange3",
+    }
+)
+
 
 @apsis.lib.memo.memoize
 def get_console():
     return rich.console.Console(theme=THEME)
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 TABLE_KWARGS = {
-    "box"       : rich.box.SIMPLE_HEAVY,
-    "padding"   : (0, 0),
-    "show_edge" : False,
+    "box": rich.box.SIMPLE_HEAVY,
+    "padding": (0, 0),
+    "show_edge": False,
 }
 
 STATE_STYLE = {
-    "new"       : Style(color="#00005f"),
-    "scheduled" : Style(color="#767676"),
-    "starting"  : Style(color="#767676"),
-    "waiting"   : Style(color="#626262"),
-    "running"   : Style(color="#af8700"),
-    "stopping"  : Style(color="#767676"),
-    "success"   : Style(color="#00875f"),
-    "failure"   : Style(color="#af0000"),
-    "error"     : Style(color="#af00af"),
-    "skipped"   : Style(color="#888888"),
+    "new": Style(color="#00005f"),
+    "scheduled": Style(color="#767676"),
+    "starting": Style(color="#767676"),
+    "waiting": Style(color="#626262"),
+    "running": Style(color="#af8700"),
+    "stopping": Style(color="#767676"),
+    "success": Style(color="#00875f"),
+    "failure": Style(color="#af0000"),
+    "error": Style(color="#af00af"),
+    "skipped": Style(color="#888888"),
 }
 
 _STATE_SYM = {
-    "new"       : ".",
-    "scheduled" : "O",
-    "starting"  : "›",
-    "waiting"   : "|",
-    "running"   : "»",
-    "stopping"  : "≯",
-    "success"   : "+",
-    "failure"   : "X",
-    "error"     : "!",
-    "skipped"   : "-",
+    "new": ".",
+    "scheduled": "O",
+    "starting": "›",
+    "waiting": "|",
+    "running": "»",
+    "stopping": "≯",
+    "success": "+",
+    "failure": "X",
+    "error": "!",
+    "skipped": "-",
 }
 
 STATE_SYM = {
-    s: Text("[") + Text(c, style=STATE_STYLE[s]) + Text("]")
-    for s, c in _STATE_SYM.items()
+    s: Text("[") + Text(c, style=STATE_STYLE[s]) + Text("]") for s, c in _STATE_SYM.items()
 }
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def indent(string, indent):
     ind = " " * indent
-    return "\n".join( ind + l for l in string.splitlines() )
+    return "\n".join(ind + l for l in string.splitlines())
 
 
 def format_duration(sec):
@@ -82,9 +85,7 @@ def format_duration(sec):
     h, m = divmod(m, 60)
     d, h = divmod(h, 24)
     return (
-        f"{d}:{h:02}:{m:02}:{s:02}" if d > 0
-        else f"{h}:{m:02}:{s:02}" if h > 0
-        else f"{m}:{s:02}"
+        f"{d}:{h:02}:{m:02}:{s:02}" if d > 0 else f"{h}:{m:02}:{s:02}" if h > 0 else f"{m}:{s:02}"
     )
 
 
@@ -106,25 +107,22 @@ def get_run_elapsed(cur, run):
     except KeyError:
         return None
     else:
-        return Time(
-            cur if run["state"] == "running"
-            else run["times"][run["state"]]
-        ) - start
+        return Time(cur if run["state"] == "running" else run["times"][run["state"]]) - start
 
 
 def format_jso(jso, indent=0):
     ind = " " * indent
     wid = 12 - indent
-    keys = ( k for k in jso if k not in {"str"} )
-    keys = apsis.lib.py.to_front(keys, ("type", ))
-    return "\n".join( f"{ind}[key]{k:{wid}s}:[/] {jso[k]}" for k in keys )
+    keys = (k for k in jso if k not in {"str"})
+    keys = apsis.lib.py.to_front(keys, ("type",))
+    return "\n".join(f"{ind}[key]{k:{wid}s}:[/] {jso[k]}" for k in keys)
 
 
 def print_cond(cond, con, *, verbosity=0):
     if verbosity < 1:
         con.print(f"- {cond['str']}")
     else:
-        con.print("•" + format_jso(cond, indent=2)[1 :])
+        con.print("•" + format_jso(cond, indent=2)[1:])
 
 
 def format_program(program, *, verbosity=0, indent=0):
@@ -140,13 +138,13 @@ def format_schedule(schedule, indent=0):
 
 
 def format_params(params):
-    return ", ".join( f"[param]{p}[/]" for p in params )
+    return ", ".join(f"[param]{p}[/]" for p in params)
 
 
 def format_instance(run):
     return (
-          f"[job]{run['job_id']}[/]("
-        + ", ".join( f"{k}=[arg]{v}[/]" for k, v in run["args"].items() )
+        f"[job]{run['job_id']}[/]("
+        + ", ".join(f"{k}=[arg]{v}[/]" for k, v in run["args"].items())
         + ")"
     )
 
@@ -226,10 +224,7 @@ def print_run_log(run_log, con):
     table.add_column("time", style="time")
     table.add_column("message")
     for h in run_log:
-        table.add_row(
-            format_time(Time(h["timestamp"])),
-            h["message"]
-        )
+        table.add_row(format_time(Time(h["timestamp"])), h["message"])
     con.print(table)
 
 
@@ -267,7 +262,7 @@ def print_runs(runs, con, *, arg_style="separate"):
         if arg_style == "combined":
             row.extend(run["args"].values())
         elif arg_style == "separate":
-            row.append(" ".join( f"{k}={v}" for k, v in run["args"].items() ))
+            row.append(" ".join(f"{k}={v}" for k, v in run["args"].items()))
         table.add_row(*row)
 
     con.print(table)
@@ -287,7 +282,8 @@ def print_api_error(err, con):
             con.print(indent(msg, 2))
 
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def parse_at_time(string):
     """
@@ -299,7 +295,7 @@ def parse_at_time(string):
         return "now"
 
     if string.startswith("+"):
-        return now() + apsis.lib.parse.parse_duration(string[1 :])
+        return now() + apsis.lib.parse.parse_duration(string[1:])
 
     try:
         return Time(string)
@@ -320,5 +316,3 @@ def parse_at_time(string):
     # FIXME: Accept expressions like "1 hour".
 
     raise ValueError(f"cannot interpret as time: {string}")
-
-

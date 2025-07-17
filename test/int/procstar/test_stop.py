@@ -1,31 +1,38 @@
-from   ora import Time
-from   pathlib import Path
+from ora import Time
+from pathlib import Path
 import time
 
-from   procstar_instance import ApsisService
-from   apsis.jobs import jso_to_job, dump_job
+from procstar_instance import ApsisService
+from apsis.jobs import jso_to_job, dump_job
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
-SLEEP_JOB = jso_to_job({
-    "params": ["time"],
-    "program": {
-        "type": "procstar",
-        "argv": ["/usr/bin/sleep", "{{ time }}"],
-    }
-}, "sleep")
+SLEEP_JOB = jso_to_job(
+    {
+        "params": ["time"],
+        "program": {
+            "type": "procstar",
+            "argv": ["/usr/bin/sleep", "{{ time }}"],
+        },
+    },
+    "sleep",
+)
 
 IGNORE_TERM_PATH = Path(__file__).parent / "ignore-term"
-IGNORE_TERM_JOB = jso_to_job({
-    "params": ["time"],
-    "program": {
-        "type": "procstar",
-        "argv": [IGNORE_TERM_PATH, "{{ time }}"],
-        "stop": {
-            "grace_period": 2,
+IGNORE_TERM_JOB = jso_to_job(
+    {
+        "params": ["time"],
+        "program": {
+            "type": "procstar",
+            "argv": [IGNORE_TERM_PATH, "{{ time }}"],
+            "stop": {
+                "grace_period": 2,
+            },
         },
-    }
-}, "ignore term")
+    },
+    "ignore term",
+)
+
 
 def test_stop():
     svc = ApsisService()
@@ -33,7 +40,8 @@ def test_stop():
     with svc, svc.agent():
         # Schedule a 3 sec job but tell Apsis to stop it after 1 sec.
         run_id = svc.client.schedule(
-            SLEEP_JOB.job_id, {"time": "3"},
+            SLEEP_JOB.job_id,
+            {"time": "3"},
             stop_time="+1s",
         )["run_id"]
         res = svc.wait_run(run_id)
@@ -52,8 +60,7 @@ def test_stop_api():
     with svc, svc.agent():
         # Schedule a 3 sec job but tell Apsis to stop it after 1 sec.
         run_id = svc.client.schedule(SLEEP_JOB.job_id, {"time": "3"})["run_id"]
-        res = svc.wait_run(
-            run_id, wait_states=("new", "scheduled", "waiting", "starting"))
+        res = svc.wait_run(run_id, wait_states=("new", "scheduled", "waiting", "starting"))
 
         time.sleep(0.5)
         res = svc.client.stop_run(run_id)
@@ -73,10 +80,9 @@ def test_dont_stop():
     dump_job(svc.jobs_dir, IGNORE_TERM_JOB)
     with svc, svc.agent():
         # Schedule a 1 sec run but tell Apsis to stop it after 3 sec.
-        run_id = svc.client.schedule(
-            IGNORE_TERM_JOB.job_id, {"time": "1"},
-            stop_time="+3s"
-        )["run_id"]
+        run_id = svc.client.schedule(IGNORE_TERM_JOB.job_id, {"time": "1"}, stop_time="+3s")[
+            "run_id"
+        ]
         res = svc.wait_run(run_id)
 
         assert res["state"] == "success"
@@ -93,10 +99,9 @@ def test_kill():
         # Schedule a 5 sec run but tell Apsis to stop it after 1 sec.  The
         # process ignores SIGTERM so Apsis will send SIGQUIT after the grace
         # period.
-        run_id = svc.client.schedule(
-            IGNORE_TERM_JOB.job_id, {"time": "5"},
-            stop_time="+1s"
-        )["run_id"]
+        run_id = svc.client.schedule(IGNORE_TERM_JOB.job_id, {"time": "5"}, stop_time="+1s")[
+            "run_id"
+        ]
 
         time.sleep(1.5)
         res = svc.client.get_run(run_id)
@@ -121,8 +126,7 @@ def test_rerun_with_stop():
 
     job_dir = Path(__file__).parent / "jobs"
     with ApsisService(job_dir=job_dir) as svc, svc.agent():
-        run_id = svc.client.schedule(
-            "sleep", {"time": "10"}, stop_time="+0.5s")["run_id"]
+        run_id = svc.client.schedule("sleep", {"time": "10"}, stop_time="+0.5s")["run_id"]
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
         assert near(Time(res["times"]["stop"]), Time(res["times"]["schedule"]) + 0.5)
@@ -139,5 +143,3 @@ def test_rerun_with_stop():
         assert remeta["times"]["elapsed"] < 0.1
         assert remeta["status"]["signal"] == "SIGTERM"
         assert remeta["proc_stat"]["pid"] != meta["proc_stat"]["pid"]
-
-

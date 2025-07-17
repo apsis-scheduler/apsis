@@ -1,10 +1,11 @@
 import errno
 import fcntl
 import os
-from   pathlib import Path
+from pathlib import Path
 import time
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class PidFile:
     """
@@ -14,7 +15,6 @@ class PidFile:
     def __init__(self, path):
         self.path = Path(path)
         self.file = None
-
 
     def lock(self):
         """
@@ -62,11 +62,7 @@ class PidFile:
 
             return None
 
-
     def unlock(self):
         if self.file is not None:
             self.file.close()
             self.file = None
-
-
-

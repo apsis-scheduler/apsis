@@ -16,7 +16,7 @@ may by false, true, or `"starttls"`.  `auth` is none for no auth, or a
 `{username, password}` dict.
 """
 
-from   email.mime.text import MIMEText
+from email.mime.text import MIMEText
 import logging
 import os
 import pwd
@@ -25,7 +25,8 @@ import socket
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def get_default_sender():
     """
@@ -54,10 +55,10 @@ def send_message(to, msg, *, from_=None, smtp_cfg={}):
     :param from_:
       The sender address, or none to determine automatically.
     """
-    host    = smtp_cfg.get("host", "localhost")
-    port    = smtp_cfg.get("port", 0)
-    ssl     = smtp_cfg.get("ssl", False)
-    auth    = smtp_cfg.get("auth", None)
+    host = smtp_cfg.get("host", "localhost")
+    port = smtp_cfg.get("port", 0)
+    ssl = smtp_cfg.get("ssl", False)
+    auth = smtp_cfg.get("auth", None)
 
     log.info(f"sending email: {from_} to {', '.join(to)}")
     SMTP = smtplib.SMTP_SSL if ssl is True else smtplib.SMTP
@@ -80,10 +81,8 @@ def send_html(to, subject, html, *, from_=None, smtp_cfg={}):
       The sender address, or none to determine automatically.
     """
     msg = MIMEText(html, "html")
-    msg['Subject'] = subject
-    msg['From'] = from_
-    msg['To'] = ", ".join(to)  # FIXME: quote
-    
+    msg["Subject"] = subject
+    msg["From"] = from_
+    msg["To"] = ", ".join(to)  # FIXME: quote
+
     send_message(to, msg, from_=from_, smtp_cfg=smtp_cfg)
-
-

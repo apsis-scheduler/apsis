@@ -1,8 +1,8 @@
 import re
 
-from   .py import or_none
+from .py import or_none
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 _DURATION_RE = re.compile(
     r"""
@@ -17,19 +17,20 @@ _DURATION_RE = re.compile(
     )
     $
     """,
-    re.VERBOSE
+    re.VERBOSE,
 )
 
 _DURATION_UNITS = {
     unit: mult
     for units, mult in [
-            (("s", "sec", "second", "seconds"),     1),
-            (("m", "min", "minute", "minutes"),    60),
-            (("h", "hour", "hours"),             3600),
-            (("d", "day", "days"),              86400),
+        (("s", "sec", "second", "seconds"), 1),
+        (("m", "min", "minute", "minutes"), 60),
+        (("h", "hour", "hours"), 3600),
+        (("d", "day", "days"), 86400),
     ]
     for unit in units
 }
+
 
 def parse_duration(string) -> float:
     """
@@ -53,12 +54,8 @@ def parse_duration(string) -> float:
     try:
         res *= _DURATION_UNITS[unit]
     except KeyError:
-        raise ValueError(
-            f"can't parse as duration: {string}: unknown unit {unit}"
-        ) from None
+        raise ValueError(f"can't parse as duration: {string}: unknown unit {unit}") from None
     return res
 
 
 nparse_duration = or_none(parse_duration)
-
-

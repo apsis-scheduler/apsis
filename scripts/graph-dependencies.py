@@ -3,21 +3,23 @@
 import argparse
 import asyncio
 import graphviz
-from   pathlib import Path
+from pathlib import Path
 
-from   apsis.actions import ScheduleAction
-from   apsis.cond.dependency import Dependency
-from   apsis.jobs import load_jobs_dir
+from apsis.actions import ScheduleAction
+from apsis.cond.dependency import Dependency
+from apsis.jobs import load_jobs_dir
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 parser = argparse.ArgumentParser()
+parser.add_argument("path", metavar="DIR", type=Path, help="check the jobs in DIR")
 parser.add_argument(
-    "path", metavar="DIR", type=Path,
-    help="check the jobs in DIR")
-parser.add_argument(
-    "--output", metavar="PATH", type=Path, default="./dependencies.pdf",
-    help="write output to PATH")
+    "--output",
+    metavar="PATH",
+    type=Path,
+    default="./dependencies.pdf",
+    help="write output to PATH",
+)
 args = parser.parse_args()
 
 # Load all jobs.
@@ -44,4 +46,3 @@ for job in jobs:
             dot.edge(job.job_id, action.job_id, dir="both", arrowtail="dot")
 
 dot.view(args.output)
-

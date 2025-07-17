@@ -1,17 +1,18 @@
 import logging
 
-from   apsis.lib.json import check_schema
-from   apsis.lib.py import format_ctor, iterize
-from   apsis.runs import Instance, get_bind_args
-from   apsis.states import State, reachable
-from   .base import RunStoreCondition, _bind
+from apsis.lib.json import check_schema
+from apsis.lib.py import format_ctor, iterize
+from apsis.runs import Instance, get_bind_args
+from apsis.states import State, reachable
+from .base import RunStoreCondition, _bind
 
 log = logging.getLogger(__name__)
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def join_states(states):
-    return "|".join( s.name for s in sorted(states, key=lambda s: s.value) )
+    return "|".join(s.name for s in sorted(states, key=lambda s: s.value))
 
 
 class Dependency(RunStoreCondition):
@@ -22,116 +23,104 @@ class Dependency(RunStoreCondition):
     DEFAULT_STATE = State.success
 
     def __init__(
-            self, job_id, args={},
-            *,
-            states  =DEFAULT_STATE,
-            exist   =None,
+        self,
+        job_id,
+        args={},
+        *,
+        states=DEFAULT_STATE,
+        exist=None,
     ):
-        args = { str(k): str(v) for k, v in args.items() }
+        args = {str(k): str(v) for k, v in args.items()}
         states = frozenset(iterize(states))
-        assert all( isinstance(s, State) for s in states )
+        assert all(isinstance(s, State) for s in states)
         if exist is not None:
             exist = frozenset(iterize(exist))
-            assert all( isinstance(s, State) for s in exist )
+            assert all(isinstance(s, State) for s in exist)
             assert len(states - exist) == 0
 
         self.job_id = job_id
-        self.args   = args
+        self.args = args
         self.states = states
-        self.exist  = exist
-
+        self.exist = exist
 
     def __repr__(self):
         return format_ctor(
             self,
-            self.job_id, self.args,
-            states  =self.states,
-            exist   =self.exist,
+            self.job_id,
+            self.args,
+            states=self.states,
+            exist=self.exist,
         )
-
 
     def __str__(self):
         inst = Instance(self.job_id, self.args)
         states = join_states(self.states)
-        exist = (
-            "" if self.exist is None
-            else ", must exist as " + join_states(self.exist)
-        )
+        exist = "" if self.exist is None else ", must exist as " + join_states(self.exist)
         return f"dependency {inst} is {states}{exist}"
-
 
     def to_jso(self):
         jso = {
             **super().to_jso(),
             "job_id": self.job_id,
-            "args"  : self.args,
+            "args": self.args,
         }
         if self.states != {self.DEFAULT_STATE}:
-            jso["states"] = [ s.name for s in self.states ]
+            jso["states"] = [s.name for s in self.states]
         if self.exist is not None:
-            jso["exist"] = [ s.name for s in self.exist ]
+            jso["exist"] = [s.name for s in self.exist]
         return jso
-
 
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
             states = pop("states", default=cls.DEFAULT_STATE.name)
-            states = { State[s] for s in iterize(states) }
+            states = {State[s] for s in iterize(states)}
             exist = pop("exist", default=None)
             if exist is True:
                 # Require the existence of a run in any state from which one of
                 # the target states is reachable.
-                exist = { s for s in State if reachable(s) & states }
+                exist = {s for s in State if reachable(s) & states}
             elif exist is not None:
-                exist = { State[s] for s in iterize(exist) }
+                exist = {State[s] for s in iterize(exist)}
             return cls(
                 pop("job_id"),
                 pop("args", default={}),
-                states  =states,
-                exist   =exist,
+                states=states,
+                exist=exist,
             )
-
 
     def bind(self, run, jobs):
         job = jobs[self.job_id]
         bind_args = get_bind_args(run)
         args = _bind(job, self.args, run.inst.args, bind_args)
         return type(self)(
-            self.job_id, args,
-            states  =self.states,
-            exist   =self.exist,
+            self.job_id,
+            args,
+            states=self.states,
+            exist=self.exist,
         )
-
 
     async def wait(self, run_store):
         # Wait for a matching run to transition into a matching state.
-        with run_store.publisher.subscription(predicate=lambda m:
-                m.job_id == self.job_id
-                and m.args == self.args
+        with run_store.publisher.subscription(
+            predicate=lambda m: m.job_id == self.job_id and m.args == self.args
         ) as sub:
             while True:
                 # Look for matching runs.
                 _, runs = run_store.query(job_id=self.job_id, args=self.args)
 
                 # Is the dependency satisfied?
-                if any( r.state in self.states for r in runs ):
+                if any(r.state in self.states for r in runs):
                     return True
 
                 # Check for runs in exist states, if indicated.
-                if (
-                        self.exist is not None
-                        and not any( r.state in self.exist for r in runs )
-                ):
+                if self.exist is not None and not any(r.state in self.exist for r in runs):
                     # No dependency run exists in a valid starting state.
                     inst = Instance(self.job_id, self.args)
                     return self.Transition(
                         State.error,
-                        f"no dependency {inst} exists in {join_states(self.exist)}"
+                        f"no dependency {inst} exists in {join_states(self.exist)}",
                     )
 
                 # Wait for a matching run to transition.
                 await anext(sub)
-
-
-

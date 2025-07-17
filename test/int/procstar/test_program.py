@@ -1,14 +1,15 @@
 import asyncio
-from   pathlib import Path
+from pathlib import Path
 import signal
 
 import pytest
 
-from   procstar_instance import ApsisService
+from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def test_program():
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True) as agent:
@@ -39,7 +40,7 @@ def test_reconnect():
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True) as agent:
         run_id = svc.client.schedule("sleep", {"time": 1})["run_id"]
         # Wait for the run to start; we can't reconnect to starting runs.
-        res = svc.wait_run(run_id, wait_states=("starting", ))
+        res = svc.wait_run(run_id, wait_states=("starting",))
         assert res["state"] == "running"
 
         svc.restart()
@@ -54,13 +55,10 @@ def test_reconnect_many(num=256):
     Tests reconnecting to many running runs after Apsis restart.
     """
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent(serve=True) as agent:
-        run_ids = [
-            svc.client.schedule("sleep", {"time": 1})["run_id"]
-            for _ in range(num)
-        ]
+        run_ids = [svc.client.schedule("sleep", {"time": 1})["run_id"] for _ in range(num)]
         # Wait for the runs to start; we can't reconnect to starting runs.
         for run_id in run_ids:
-            res = svc.wait_run(run_id, wait_states=("starting", ))
+            res = svc.wait_run(run_id, wait_states=("starting",))
             # Some may have completed already.
             assert res["state"] in {"running", "success"}
 
@@ -75,14 +73,16 @@ def test_reconnect_many(num=256):
 
 def test_signal():
     SIGNALS = (
-        signal.SIGTERM, signal.SIGINT, signal.SIGKILL,
-        signal.SIGUSR1, signal.SIGUSR2
+        signal.SIGTERM,
+        signal.SIGINT,
+        signal.SIGKILL,
+        signal.SIGUSR1,
+        signal.SIGUSR2,
     )
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent():
         # Schedule some runs.
         run_ids = [
-            svc.client.schedule("sleep", {"time": 1})["run_id"]
-            for _ in range(len(SIGNALS) + 1)
+            svc.client.schedule("sleep", {"time": 1})["run_id"] for _ in range(len(SIGNALS) + 1)
         ]
         # Wait for them to start.
         for run_id in run_ids:
@@ -106,7 +106,7 @@ def test_run_id_env():
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
         output = svc.client.get_output(run_id, "output").decode()
-        env_vars = dict( line.split("=", 1) for line in output.splitlines() )
+        env_vars = dict(line.split("=", 1) for line in output.splitlines())
         assert env_vars["APSIS_RUN_ID"] == run_id
 
 
@@ -117,12 +117,13 @@ async def test_resources():
         res = await asyncio.wait_for(svc.async_wait_run(run_id), 1)
         assert res["state"] == "success"
 
+
 # FIXME: procstar connection timeout and reconnect: use SIGHUP to pause agent,
 # wait for websocket timeout, then resume agent and watch it reconnect.
 
 if __name__ == "__main__":
     from apsis.lib import logging
+
     logging.configure(level="DEBUG")
     logging.set_log_levels()
     test_program()
-

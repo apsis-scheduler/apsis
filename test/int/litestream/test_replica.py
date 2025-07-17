@@ -1,18 +1,19 @@
-from   contextlib import closing, contextmanager
+from contextlib import closing, contextmanager
 import ora
 import os
-from   pathlib import Path
+from pathlib import Path
 import pytest
 import shutil
 import signal
 import subprocess
-from   time import sleep
+from time import sleep
 
-from   instance import ApsisService
+from instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
 
 # -------------------------------------------------------------------------------
+
 
 def is_litestream_available():
     return shutil.which("litestream") is not None
@@ -41,7 +42,8 @@ def restore_litestream_db(restored_db_path, replica_path):
         [
             "litestream",
             "restore",
-            "-o", str(restored_db_path),
+            "-o",
+            str(restored_db_path),
             f"file://{replica_path}",
         ],
         check=True,
@@ -77,7 +79,7 @@ def test_replica():
                 s: client.schedule("no-op", {})["run_id"]
                 for s in ["success", "failure", "error", "skipped"]
             }
-            assert all( inst.wait_run(r)["state"] == "success" for r in run_ids.values() )
+            assert all(inst.wait_run(r)["state"] == "success" for r in run_ids.values())
             for state, run_id in run_ids.items():
                 if state != "success":
                     client.mark(run_id, state)
@@ -100,7 +102,7 @@ def test_replica():
         inst.wait_for_serve()
 
         log = inst.get_log_lines()
-        assert any( restored_db_name in l for l in log )
+        assert any(restored_db_name in l for l in log)
 
         # check runs data is accurate in the restored db
         for state, run_id in run_ids.items():
@@ -163,7 +165,7 @@ def test_replica_killing_apsis_and_litestream():
         inst.wait_for_serve()
 
         log = inst.get_log_lines()
-        assert any( restored_db_name in l for l in log )
+        assert any(restored_db_name in l for l in log)
 
         # check the run is still in the running state after reconnecting to the new Apsis instance
         assert client.get_run(run_id)["state"] == "running"
@@ -194,8 +196,13 @@ def test_replica_killing_apsis_and_litestream_with_heavy_load():
 
             client = inst.client
             # populate apsis db with a large number of runs
-            runs_ids = [client.schedule("sleep", {"duration": "12"})["run_id"] for _ in range(num_jobs)]
-            sched_runs_ids = [client.schedule("sleep", {"duration": "1"}, time=ora.now() + 14)["run_id"] for _ in range(num_jobs)]
+            runs_ids = [
+                client.schedule("sleep", {"duration": "12"})["run_id"] for _ in range(num_jobs)
+            ]
+            sched_runs_ids = [
+                client.schedule("sleep", {"duration": "1"}, time=ora.now() + 14)["run_id"]
+                for _ in range(num_jobs)
+            ]
 
             runs = [client.get_run(r) for r in runs_ids]
             sched_runs = [client.get_run(r) for r in sched_runs_ids]
@@ -223,7 +230,7 @@ def test_replica_killing_apsis_and_litestream_with_heavy_load():
         inst.wait_for_serve()
 
         log = inst.get_log_lines()
-        assert any( restored_db_name in l for l in log )
+        assert any(restored_db_name in l for l in log)
         sleep(1)
 
         # check runs are still in the right state after reconnecting to the new Apsis instance
@@ -237,5 +244,3 @@ def test_replica_killing_apsis_and_litestream_with_heavy_load():
         assert all(run["state"] == "success" for run in all_runs_results)
 
         inst.stop_serve()
-
-
