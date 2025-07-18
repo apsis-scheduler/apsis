@@ -18,6 +18,21 @@ SLEEP_JOB = jso_to_job(
     "sleep",
 )
 
+EXIT_ZERO_ON_TERM_PATH = Path(__file__).parent / "exit-zero-on-term"
+EXIT_ZERO_ON_TERM_JOB = jso_to_job(
+    {
+        "params": ["time"],
+        "program": {
+            "type": "procstar",
+            "argv": [EXIT_ZERO_ON_TERM_PATH, "{{ time }}"],
+            "stop": {
+                "grace_period": 2,
+            },
+        },
+    },
+    "exit zero on term",
+)
+
 IGNORE_TERM_PATH = Path(__file__).parent / "ignore-term"
 IGNORE_TERM_JOB = jso_to_job(
     {
@@ -46,10 +61,28 @@ def test_stop():
         )["run_id"]
         res = svc.wait_run(run_id)
 
-        # The run was successfully stopped by Apsis, by sending it SIGTERM.
-        assert res["state"] == "success"
+        assert res["state"] == "failure"
         meta = res["meta"]["program"]
         assert meta["status"]["signal"] == "SIGTERM"
+        assert meta["stop"]["signals"] == ["SIGTERM"]
+        assert meta["times"]["elapsed"] < 2
+
+
+def test_stop_signal_handled():
+    svc = ApsisService()
+    dump_job(svc.jobs_dir, EXIT_ZERO_ON_TERM_JOB)
+    with svc, svc.agent():
+        # Schedule a 3 sec job but tell Apsis to stop it after 1 sec.
+        run_id = svc.client.schedule(
+            EXIT_ZERO_ON_TERM_JOB.job_id,
+            {"time": "3"},
+            stop_time="+1s",
+        )["run_id"]
+        res = svc.wait_run(run_id)
+
+        assert res["state"] == "success"
+        meta = res["meta"]["program"]
+        assert meta["status"]["signal"] == None
         assert meta["stop"]["signals"] == ["SIGTERM"]
         assert meta["times"]["elapsed"] < 2
 
@@ -67,10 +100,29 @@ def test_stop_api():
         assert res["state"] == "stopping"
 
         res = svc.wait_run(run_id)
-        # The run was successfully stopped by Apsis, by sending it SIGTERM.
-        assert res["state"] == "success"
+        assert res["state"] == "failure"
         meta = res["meta"]["program"]
         assert meta["status"]["signal"] == "SIGTERM"
+        assert meta["stop"]["signals"] == ["SIGTERM"]
+        assert meta["times"]["elapsed"] < 2
+
+
+def test_stop_api_signal_handled():
+    svc = ApsisService()
+    dump_job(svc.jobs_dir, EXIT_ZERO_ON_TERM_JOB)
+    with svc, svc.agent():
+        # Schedule a 3 sec job but tell Apsis to stop it after 1 sec.
+        run_id = svc.client.schedule(EXIT_ZERO_ON_TERM_JOB.job_id, {"time": "3"})["run_id"]
+        res = svc.wait_run(run_id, wait_states=("new", "scheduled", "waiting", "starting"))
+
+        time.sleep(0.5)
+        res = svc.client.stop_run(run_id)
+        assert res["state"] == "stopping"
+
+        res = svc.wait_run(run_id)
+        assert res["state"] == "success"
+        meta = res["meta"]["program"]
+        assert meta["status"]["signal"] == None
         assert meta["stop"]["signals"] == ["SIGTERM"]
         assert meta["times"]["elapsed"] < 2
 
@@ -125,17 +177,22 @@ def test_rerun_with_stop():
     near = lambda x, y: abs(x - y) < 0.1
 
     job_dir = Path(__file__).parent / "jobs"
+    dump_job(job_dir, EXIT_ZERO_ON_TERM_JOB)
     with ApsisService(job_dir=job_dir) as svc, svc.agent():
-        run_id = svc.client.schedule("sleep", {"time": "10"}, stop_time="+0.5s")["run_id"]
+        run_id = svc.client.schedule(
+            EXIT_ZERO_ON_TERM_JOB.job_id,
+            {"time": "10"},
+            stop_time="+0.5s",
+        )["run_id"]
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
         assert near(Time(res["times"]["stop"]), Time(res["times"]["schedule"]) + 0.5)
         meta = res["meta"]["program"]
-        assert meta["status"]["signal"] == "SIGTERM"
+        assert meta["status"]["signal"] == None
 
         rerun_id = svc.client.rerun(run_id)["run_id"]
         reres = svc.wait_run(rerun_id)
-        assert reres["state"] == "success"
+        assert reres["state"] == "failure"
         # The rerun should use the old stop time.
         assert reres["times"]["stop"] == res["times"]["stop"]
         # Because of the old stop time, the rerun should have been stopped immediately.
