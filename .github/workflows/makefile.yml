@@ -32,8 +32,8 @@ jobs:
       run: uv run ruff format --check --diff
 
     - name: Run Python unit tests
-      run: uv run pytest test/unit -m "not local_ssh"
+      run: uv run pytest -v test/unit -m "not local_ssh"
 
     - name: Run Python integration tests
-      run: uv run pytest -n 4 test/int -m "not local_ssh"
+      run: uv run pytest -v -n 4 test/int -m "not local_ssh"
 
