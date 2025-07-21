@@ -28,7 +28,7 @@ class VacuumProgram(_InternalProgram):
 
     @classmethod
     def from_jso(cls, jso):
-        with check_schema(jso) as pop:
+        with check_schema(jso):
             pass
         return cls()
 

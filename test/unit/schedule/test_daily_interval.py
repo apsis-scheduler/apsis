@@ -168,7 +168,6 @@ def test_nonexistent():
         {},
     )
 
-    date = ora.Date("2023-03-11")
     start = ("2023-03-11", "00:00:00") @ tz
     print(f"start: {start}")
     times = sched(start)
@@ -207,7 +206,6 @@ def test_nonexistent_start():
         {},
     )
 
-    date = ora.Date("2023-03-11")
     start = ("2023-03-11", "00:00:00") @ tz
     print(f"start: {start}")
     times = sched(start)

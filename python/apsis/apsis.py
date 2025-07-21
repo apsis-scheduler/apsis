@@ -597,7 +597,7 @@ class Apsis:
         async def stop():
             try:
                 await run._running_program.stop()
-            except:
+            except:  # noqa: E722
                 log.info("program.stop() exception", exc_info=True)
 
         self.__stopping_tasks.add(run.run_id, stop())
@@ -636,8 +636,6 @@ class Apsis:
         Collects latency measurements.
         """
         while True:
-            num_tasks = len(asyncio.all_tasks())
-
             # Wake up on the next round 10 seconds.
             t = now()
             next_second = t.EPOCH + math.ceil((t - t.EPOCH + 0.01) / 10) * 10

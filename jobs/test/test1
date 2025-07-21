@@ -6,9 +6,9 @@ import sys
 import time
 
 logging.basicConfig(
-    format  ="%(asctime)s %(name)-18s [%(levelname)-7s] %(message)s",
-    datefmt ="%H:%M:%S",
-    level   =logging.INFO,
+    format="%(asctime)s %(name)-18s [%(levelname)-7s] %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
 )
 
 _, id = sys.argv

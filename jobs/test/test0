@@ -17,4 +17,3 @@ if random.random() < 0.1:
 else:
     logging.info("test0 succeeded")
     raise SystemExit(0)
-

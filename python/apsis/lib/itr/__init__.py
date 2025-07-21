@@ -6,7 +6,7 @@ Tools for working with iterators.
 
 from collections import deque
 
-from .recipes import *  # also imports * from itertools
+from .recipes import *  # noqa: F403  # also imports * from itertools
 
 # -------------------------------------------------------------------------------
 

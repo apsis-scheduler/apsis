@@ -49,7 +49,6 @@ def test_runs_by_job():
         run_store.add(run)
 
     query = lambda *a, **k: run_store.query(*a, **k)[1]
-    get = lambda r: run_store.get(r)[1]
 
     run_ids = [r.run_id for r in query()]
     assert len(run_ids) == n

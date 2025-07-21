@@ -2,14 +2,12 @@
 Tests thread actions.
 """
 
-import asyncio
 from contextlib import closing
 import json
 import logging
 from pathlib import Path
 import pytest
 import time
-import websockets.client
 
 from instance import ApsisService
 

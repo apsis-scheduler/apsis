@@ -1,12 +1,9 @@
-import asyncio
 import logging
-from logging import log, debug, info, warning, error, critical
 import logging.handlers
 import ora
 import rich.highlighter
 import rich.logging
 import rich.text
-import threading
 
 import apsis.cmdline
 

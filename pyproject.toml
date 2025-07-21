@@ -96,7 +96,12 @@ testpaths = "test"
 markers = ["local_ssh"]
 
 [tool.ruff]
-lint.select = ["F"]
+lint.ignore = [
+    "E402",  # Module level import not at top of file (needed for gc tracking setup)
+    "E731",  # Do not assign a lambda expression, use a def
+    "E741",  # Ambiguous variable name (single letters like 'l', 'O', 'I')
+    "F405",  # Name may be undefined, or defined from star imports (itertools recipes)
+]
 line-length = 100
 
 [tool.bumpversion]

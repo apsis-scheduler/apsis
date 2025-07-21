@@ -13,6 +13,23 @@ from .noop import NoOpProgram
 from .process import ProcessProgram, ShellCommandProgram
 from .procstar.agent import ProcstarProgram, ProcstarShellProgram
 
+__all__ = [
+    "Program",
+    "Output",
+    "OutputMetadata",
+    "ProgramRunning",
+    "ProgramError",
+    "ProgramSuccess",
+    "ProgramFailure",
+    "AgentProgram",
+    "AgentShellProgram",
+    "NoOpProgram",
+    "ProcessProgram",
+    "ShellCommandProgram",
+    "ProcstarProgram",
+    "ProcstarShellProgram",
+]
+
 # -------------------------------------------------------------------------------
 
 Program.TYPE_NAMES.set(NoOpProgram, "no-op")

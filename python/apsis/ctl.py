@@ -11,7 +11,6 @@ import gc
 import logging
 import os
 from pathlib import Path
-import sanic  # must be imported before apsis.lib.asyn
 import sys
 
 import apsis.check

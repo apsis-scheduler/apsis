@@ -196,7 +196,6 @@ def test_clean_up_jobs(tmp_path):
         time.sleep(2.5)
 
         res = client.schedule_adhoc("now", {"program": {"type": "no-op"}})
-        run_id2 = res["run_id"]
         job_id2 = res["job_id"]
 
         inst.stop_serve()
