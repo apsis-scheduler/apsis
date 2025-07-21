@@ -170,8 +170,8 @@ async def test_missing_final_fddata(mock_proc, monkeypatch):
 
     # Third update should now be ProgramError (after timeout) instead of hanging
     final_update = await anext(running_program.updates)
-    assert isinstance(
-        final_update, ProgramError
-    ), f"Expected ProgramError, got {type(final_update)}"
+    assert isinstance(final_update, ProgramError), (
+        f"Expected ProgramError, got {type(final_update)}"
+    )
     assert "Timeout waiting for final FdData" in final_update.message
     assert "exit_code=0" in final_update.message
