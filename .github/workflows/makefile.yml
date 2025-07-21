@@ -35,5 +35,5 @@ jobs:
       run: uv run pytest test/unit -m "not local_ssh"
 
     - name: Run Python integration tests
-      run: uv run pytest test/int -m "not local_ssh"
+      run: uv run pytest -n 4 test/int -m "not local_ssh"
 
