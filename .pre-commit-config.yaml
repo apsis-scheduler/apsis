@@ -2,6 +2,10 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4
     hooks:
+      - id: ruff
+        name: ruff linting
+        description: Run ruff linting
+        types: [python]
       - id: ruff-format
         name: ruff format
         description: Format Python code
