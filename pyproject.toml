@@ -45,6 +45,7 @@ dev = [
     "bump-my-version",
     "ruff>=0.12.4",
     "pre-commit>=4.2.0",
+    "pytest-xdist>=3.8.0",
 ]
 docs = [
     "sphinx",
