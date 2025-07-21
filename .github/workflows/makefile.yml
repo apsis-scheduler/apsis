@@ -31,6 +31,9 @@ jobs:
     - name: Check Python formatting
       run: uv run ruff format --check --diff
 
+    - name: Run ruff linting
+      run: uv run ruff check
+
     - name: Run Python unit tests
       run: uv run pytest test/unit -m "not local_ssh"
 
