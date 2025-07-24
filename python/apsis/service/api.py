@@ -538,8 +538,14 @@ async def websocket_summary(request, ws):
                 job_msgs = (messages.make_job(j) for j in jobs)
 
                 # Send all procstar agent conns.
-                agent_server = procstar.get_agent_server()
-                conn_msgs = (messages.make_agent_conn(c) for c in agent_server.connections.values())
+                try:
+                    agent_server = procstar.get_agent_server()
+                except procstar.NoServerError:
+                    conn_msgs = iter([])
+                else:
+                    conn_msgs = (
+                        messages.make_agent_conn(c) for c in agent_server.connections.values()
+                    )
 
                 # Send summaries of all runs.
                 _, runs = apsis.run_store.query()
