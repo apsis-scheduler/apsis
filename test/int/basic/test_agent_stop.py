@@ -15,7 +15,7 @@ def test_stop_basic():
         assert res["state"] == "running"
 
         res = inst.wait_run(run_id)
-        assert res["state"] == "success"
+        assert res["state"] == "failure"
         assert "stopping" in res["times"]
         assert res["meta"]["elapsed"] < 2
 
@@ -36,7 +36,7 @@ def test_stop_api():
         assert res["state"] == "stopping"
 
         res = inst.wait_run(run_id)
-        assert res["state"] == "success"
+        assert res["state"] == "failure"
         assert "stopping" in res["times"]
         assert res["meta"]["elapsed"] < 2
 
