@@ -229,15 +229,6 @@ class RunningProcessProgram(RunningProgram):
 
         if return_code == 0:
             yield ProgramSuccess(meta=meta, outputs=outputs)
-
-        elif (
-            self.stopping
-            and self.returncode < 0
-            and Signals(self.returncode) == self.program.stop.signal
-        ):
-            # Program stopped as expected.
-            yield ProgramFailure(meta=meta, outputs=outputs)
-
         else:
             message = f"program failed: return code {return_code}"
             yield ProgramFailure(message, meta=meta, outputs=outputs)

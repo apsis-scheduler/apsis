@@ -634,13 +634,6 @@ class RunningProcstarProgram(base.RunningProgram):
             if res.status.exit_code == 0 and not self.timed_out:
                 # The process terminated successfully.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
-            elif (
-                self.stopping
-                and res.status.signal is not None
-                and Signals[res.status.signal] == self.program.stop.signal
-            ):
-                # The process stopped with the expected signal.
-                yield ProgramSuccess(meta=meta, outputs=outputs)
             else:
                 message = (
                     f"exit code {res.status.exit_code}"
