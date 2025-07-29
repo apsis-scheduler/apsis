@@ -336,16 +336,6 @@ class RunningAgentProgram(RunningProgram):
             try:
                 if status == 0:
                     yield ProgramSuccess(meta=proc, outputs=outputs)
-
-                elif (
-                    self.stopping
-                    and os.WIFSIGNALED(status)
-                    and Signals(os.WTERMSIG(status)) == self.program.stop.signal
-                ):
-                    # Program stopped as expected.
-                    log.info("EXPECTED SIGTERM WHEN STOPPING")
-                    yield ProgramSuccess(meta=proc, outputs=outputs)
-
                 else:
                     message = f"program failed: status {status}{explanation}"
                     yield ProgramFailure(message, meta=proc, outputs=outputs)
