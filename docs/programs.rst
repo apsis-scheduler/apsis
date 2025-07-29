@@ -179,9 +179,9 @@ Apsis requests a program to stop if the program's run is configured with a stop
 schedule, or in response to an explicit stop operation invoked by the user.
 
 Before Apsis requests a program to stop, it transitions the run to the
-*stopping* state.  If the program terminates correctly in response to the stop
-request, Apsis transitions the run to *success*; if the program terminates in an
-unexpected way, *failure*.
+*stopping* state.  If the program terminates correctly (zero exit code) in response 
+to the stop request, Apsis transitions the run to *success*; if the program terminates 
+in an unexpected way (non-zero exit code), *failure*.
 
 The program types above that create a UNIX process (`program`, `shell`,
 `procstar`, `procstar-shell`) all implement program stop similarly.  In response
@@ -206,8 +206,8 @@ only wait 15 seconds before sending `SIGKILL`.
             signal: SIGUSR2
             grace_period: 15s
 
-If the program terminates with an exit status that indicates the process ended
-from `SIGUSR2`, Apsis considers the run to have succeeded.
+Only if the process terminates with zero exit code the run will be considered as 
+successfull.
 
 
 Internal Programs
