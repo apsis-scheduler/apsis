@@ -46,8 +46,8 @@ def test_stop():
         )["run_id"]
         res = svc.wait_run(run_id)
 
-        # The run was successfully stopped by Apsis, by sending it SIGTERM.
-        assert res["state"] == "success"
+        # The run was stopped by Apsis, by sending it SIGTERM.
+        assert res["state"] == "failure"
         meta = res["meta"]["program"]
         assert meta["status"]["signal"] == "SIGTERM"
         assert meta["stop"]["signals"] == ["SIGTERM"]
@@ -67,8 +67,8 @@ def test_stop_api():
         assert res["state"] == "stopping"
 
         res = svc.wait_run(run_id)
-        # The run was successfully stopped by Apsis, by sending it SIGTERM.
-        assert res["state"] == "success"
+        # The run was stopped by Apsis, by sending it SIGTERM.
+        assert res["state"] == "failure"
         meta = res["meta"]["program"]
         assert meta["status"]["signal"] == "SIGTERM"
         assert meta["stop"]["signals"] == ["SIGTERM"]
@@ -128,14 +128,14 @@ def test_rerun_with_stop():
     with ApsisService(job_dir=job_dir) as svc, svc.agent():
         run_id = svc.client.schedule("sleep", {"time": "10"}, stop_time="+0.5s")["run_id"]
         res = svc.wait_run(run_id)
-        assert res["state"] == "success"
+        assert res["state"] == "failure"
         assert near(Time(res["times"]["stop"]), Time(res["times"]["schedule"]) + 0.5)
         meta = res["meta"]["program"]
         assert meta["status"]["signal"] == "SIGTERM"
 
         rerun_id = svc.client.rerun(run_id)["run_id"]
         reres = svc.wait_run(rerun_id)
-        assert reres["state"] == "success"
+        assert reres["state"] == "failure"
         # The rerun should use the old stop time.
         assert reres["times"]["stop"] == res["times"]["stop"]
         # Because of the old stop time, the rerun should have been stopped immediately.
