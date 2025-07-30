@@ -329,7 +329,7 @@ async def websocket_output_updates(request, ws, run_id, output_id):
         with apsis.output_update_publisher.subscription(run_id) as sub:
             try:
                 output = apsis.outputs.get_output(run_id, output_id)
-                if start is not None and output.compression is not None:
+                if start is not None and output.compression is None:
                     # Send the output data up to now.
                     msg = output_to_http_message(output, interval=(start, None))
                     await ws.send(msg)
