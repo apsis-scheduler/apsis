@@ -4,9 +4,12 @@ from apsis.lib import memo
 from apsis.lib.api import decompress
 from apsis.lib.json import TypedJso, check_schema
 from apsis.lib.parse import parse_duration
-from apsis.lib.py import format_repr
+from apsis.lib.py import format_repr, get_cfg
 from apsis.lib.sys import to_signal
 from apsis.runs import template_expand
+
+TIMEOUT_DURATION = 36 * 60 * 60  # 36 hours
+TIMEOUT_SIGNAL = "SIGTERM"
 
 # -------------------------------------------------------------------------------
 
@@ -151,6 +154,12 @@ class Timeout:
         duration = parse_duration(template_expand(self.duration, args))
         signal = to_signal(template_expand(self.signal, args)).name
         return type(self)(duration=duration, signal=signal)
+
+
+def get_global_runtime_timeout(cfg):
+    timeout_duration = get_cfg(cfg, "program.timeout.duration", TIMEOUT_DURATION)
+    timeout_signal = get_cfg(cfg, "program.timeout.signal", TIMEOUT_SIGNAL)
+    return Timeout(duration=timeout_duration, signal=timeout_signal)
 
 
 # -------------------------------------------------------------------------------
