@@ -6,6 +6,7 @@ from ruamel.yaml import YAML
 from .lib.json import to_array
 from .lib.parse import nparse_duration
 from .lib.py import get_cfg, set_cfg
+from .lib.sys import to_signal
 
 log = logging.getLogger(__name__)
 
@@ -21,11 +22,16 @@ def normalize_path(path, base_path: Path):
 
 def check(cfg, base_path: Path):
     def _check_duration(path):
-        duration = nparse_duration(get_cfg(cfg, path, None))
-        if duration is not None and duration <= 0:
-            log.error("negative duration: {path}")
-        else:
-            set_cfg(cfg, path, duration)
+        duration_str = get_cfg(cfg, path, None)
+        duration = nparse_duration(duration_str)
+        if duration is not None:
+            if duration <= 0:
+                raise ValueError(f"{path} has negative duration: {duration_str}")
+
+    def _check_signal(path):
+        signal = get_cfg(cfg, path, None)
+        if signal is not None:
+            to_signal(signal)
 
     job_dir = normalize_path(cfg.get("job_dir", "jobs"), base_path)
     if not job_dir.exists():
@@ -44,15 +50,13 @@ def check(cfg, base_path: Path):
 
     cfg["actions"] = to_array(cfg.get("action", []))
 
-    waiting = cfg["waiting"] = cfg.setdefault("waiting", {})
-    max_time = waiting["max_time"] = nparse_duration(waiting.get("max_time", None))
-    if max_time is not None and max_time <= 0:
-        log.error("negative waiting.max_time: {max_time}")
-
+    _check_duration("waiting.max_time")
     _check_duration("procstar.agent.connection.start_timeout")
     _check_duration("procstar.agent.connection.reconnect_timeout")
     _check_duration("procstar.agent.run.update_interval")
     _check_duration("procstar.agent.run.output_interval")
+    _check_duration("program.timeout.duration")
+    _check_signal("program.timeout.signal")
 
     # runs_lookback → runs.lookback
     try:

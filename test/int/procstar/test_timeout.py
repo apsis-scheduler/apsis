@@ -52,6 +52,79 @@ def test_timeout(job_name):
         assert res["program"]["timeout"]["duration"] == 5.0
 
 
+def test_configured_timeout():
+    global_timeout = 1
+    timeout_signal = "SIGTERM"
+    with (
+        ApsisService(
+            job_dir=JOB_DIR,
+            cfg={"program": {"timeout": {"duration": global_timeout, "signal": timeout_signal}}},
+        ) as svc,
+        svc.agent(serve=True),
+    ):
+        client = svc.client
+        run_id = client.schedule("sleep", {"time": 10})["run_id"]
+        res = client.get_run(run_id)
+        assert res["state"] in ("starting", "running")
+
+        res = svc.wait_run(run_id)
+        assert res["state"] == "failure"
+        assert res["meta"]["program"]["stop"]["signals"] == [timeout_signal]
+        assert 0.9 < res["meta"]["elapsed"] < 1.1
+        run_log = client.get_run_log(run_id)
+        assert (
+            run_log[-1]["message"]
+            == f"failure: killed by {timeout_signal} (timeout after {global_timeout} s)"
+        )
+        assert "timeout" in res["program"]
+
+    # test timeout is disabled by default if not configured
+    with (
+        ApsisService(
+            job_dir=JOB_DIR,
+        ) as svc,
+        svc.agent(serve=True),
+    ):
+        client = svc.client
+        run_id = client.schedule("sleep", {"time": 1})["run_id"]
+        res = client.get_run(run_id)
+        assert res["state"] in ("starting", "running")
+
+        res = svc.wait_run(run_id)
+        assert res["state"] == "success"
+        assert res["meta"]["program"]["stop"]["signals"] == []
+        assert 0.9 < res["meta"]["elapsed"] < 1.1
+        assert "timeout" not in res["program"]
+
+
+@pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
+def test_job_timeout_overrides_global_configured_default(job_name):
+    timeout_signal = "SIGTERM"
+    global_timeout = 5
+    job_timeout = 1
+    with (
+        ApsisService(
+            job_dir=JOB_DIR,
+            cfg={"program": {"timeout": {"duration": global_timeout}}},
+        ) as svc,
+        svc.agent(serve=True),
+    ):
+        client = svc.client
+        run_id = client.schedule(job_name, {"timeout": job_timeout, "sleep_duration": 10})["run_id"]
+        res = client.get_run(run_id)
+        assert res["state"] in ("starting", "running")
+
+        res = svc.wait_run(run_id)
+        assert res["state"] == "failure"
+        assert res["meta"]["program"]["stop"]["signals"] == [timeout_signal]
+        assert 0.9 < res["meta"]["elapsed"] < 1.1
+        run_log = client.get_run_log(run_id)
+        assert (
+            run_log[-1]["message"]
+            == f"failure: killed by {timeout_signal} (timeout after {job_timeout} s)"
+        )
+
+
 @pytest.mark.parametrize("signal", ["SIGTERM", "SIGKILL", "SIGUSR2"])
 def test_signal(signal):
     """
