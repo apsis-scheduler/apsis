@@ -24,51 +24,49 @@ def test_duplicate_key_in_config(tmp_path):
         apsis.config.load(cfg_file)
 
 
-def test_invalid_config_values(tmp_path, caplog):
+def test_invalid_config_values_raise_errors(tmp_path, caplog):
     db_file = tmp_path / "test.db"
     db_file.touch()
     job_dir = tmp_path / "jobs"
     job_dir.mkdir()
+    negative_duration = "-30s"
     cfg_with_negative_durations = f"""
     database:
         path: {db_file}
-        timeout: -30s
+        timeout: {negative_duration}
     waiting:
-        max_time: -5m
-    procstar:
-        agent:
-            connection:
-                start_timeout: -2h
-                reconnect_timeout: -15s
-            run:
-                update_interval: -2s
-                output_interval: -1s
-    program:
-        timeout:
-            duration: -3h
-            signal: INVALID_SIGNAL
+        max_time: 5m
     job_dir: {job_dir}
     """
 
-    cfg_file = tmp_path / "negative_duration_cfg.yaml"
+    cfg_file = tmp_path / "invalid_config.yaml"
     cfg_file.write_text(cfg_with_negative_durations)
 
-    apsis.config.load(cfg_file)
+    with pytest.raises(ValueError) as exc:
+        apsis.config.load(cfg_file)
+    assert f"database.timeout has negative duration: {negative_duration}" in str(exc.value)
 
-    log_messages = [record.message for record in caplog.records if record.levelno == logging.ERROR]
+    invalid_signal = "INVALID_SIGNAL"
+    cfg_with_invalid_signal = f"""
+    database:
+        path: {db_file}
+        timeout: 30s
+    waiting:
+        max_time: 5m
+    program:
+        timeout:
+            duration: 3h
+            signal: {invalid_signal}
+    job_dir: {job_dir}
+    """
 
-    expected_duration_errors = 7
-    expected_signal_errors = 1
+    cfg_file.write_text(cfg_with_invalid_signal)
 
-    duration_error_count = sum(1 for msg in log_messages if "negative duration:" in msg)
-    signal_error_count = sum(1 for msg in log_messages if "invalid signal:" in msg)
+    with pytest.raises(ValueError) as exc:
+        apsis.config.load(cfg_file)
+    assert f"not a signal: {invalid_signal}" in str(exc.value)
 
-    assert duration_error_count == expected_duration_errors, (
-        f"Expected {expected_duration_errors} duration errors, got {duration_error_count}"
-    )
-    assert signal_error_count == expected_signal_errors, (
-        f"Expected {expected_signal_errors} signal errors, got {signal_error_count}"
-    )
+
 
 
 def test_missing_config_values_not_set_to_none(tmp_path, caplog):
@@ -84,7 +82,7 @@ def test_missing_config_values_not_set_to_none(tmp_path, caplog):
     simple_cfg = f"""
     database:
         path: {db_file}
-        timeout: -30s
+        timeout: 30s
     job_dir: {job_dir}
     """
 
