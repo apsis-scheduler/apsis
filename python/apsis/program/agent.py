@@ -16,6 +16,7 @@ from .base import (
     program_outputs,
     Timeout,
     RunningProgram,
+    get_global_runtime_timeout,
 )
 from .process import Stop, BoundStop
 from apsis.agent.client import Agent, NoSuchProcessError
@@ -210,6 +211,8 @@ class BoundAgentProgram(Program):
 class RunningAgentProgram(RunningProgram):
     def __init__(self, run_id, program, cfg, run_state=None):
         super().__init__(run_id)
+        if program.timeout is None:
+            program.timeout = get_global_runtime_timeout(cfg)
         self.program = program
         self.cfg = cfg
         self.run_state = run_state

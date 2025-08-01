@@ -6,6 +6,7 @@ from ruamel.yaml import YAML
 from .lib.json import to_array
 from .lib.parse import nparse_duration
 from .lib.py import get_cfg, set_cfg
+from .lib.sys import to_signal
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,14 @@ def check(cfg, base_path: Path):
     _check_duration("procstar.agent.connection.reconnect_timeout")
     _check_duration("procstar.agent.run.update_interval")
     _check_duration("procstar.agent.run.output_interval")
+    _check_duration("program.timeout.duration")
+
+    timeout_signal = get_cfg(cfg, "program.timeout.signal", None)
+    if timeout_signal is not None:
+        try:
+            to_signal(timeout_signal)
+        except ValueError as exc:
+            log.error(f"invalid program.timeout.signal: {exc}")
 
     # runs_lookback → runs.lookback
     try:

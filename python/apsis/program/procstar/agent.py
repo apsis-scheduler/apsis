@@ -19,7 +19,13 @@ from apsis.lib.parse import nparse_duration
 from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
 from apsis.program import base
-from apsis.program.base import ProgramSuccess, ProgramFailure, ProgramError, Timeout
+from apsis.program.base import (
+    ProgramSuccess,
+    ProgramFailure,
+    ProgramError,
+    Timeout,
+    get_global_runtime_timeout,
+)
 from apsis.program.process import Stop, BoundStop
 from apsis.runs import join_args, template_expand
 
@@ -423,6 +429,8 @@ class RunningProcstarProgram(base.RunningProgram):
           The most recent `Result`, if any.
         """
         super().__init__(run_id)
+        if program.timeout is None:
+            program.timeout = get_global_runtime_timeout(cfg)
         self.program = program
         self.cfg = get_cfg(cfg, "procstar.agent", {})
         self.run_state = run_state
