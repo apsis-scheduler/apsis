@@ -158,7 +158,7 @@ class Timeout:
 
 def get_global_runtime_timeout(cfg):
     timeout_duration = get_cfg(cfg, "program.timeout.duration", None)
-    if timeout_duration is None or timeout_duration <= 0:
+    if timeout_duration is None:
         return None
     timeout_signal = get_cfg(cfg, "program.timeout.signal", TIMEOUT_SIGNAL)
     return Timeout(duration=timeout_duration, signal=timeout_signal)
