@@ -2,7 +2,6 @@ import pytest
 from time import sleep
 from pathlib import Path
 
-from apsis.program.base import TIMEOUT_DURATION, TIMEOUT_SIGNAL
 from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
@@ -77,6 +76,25 @@ def test_configured_timeout():
             run_log[-1]["message"]
             == f"failure: killed by {timeout_signal} (timeout after {global_timeout} s)"
         )
+        assert "timeout" in res["program"]
+
+    # test timeout is disabled by default if not configured
+    with (
+        ApsisService(
+            job_dir=JOB_DIR,
+        ) as svc,
+        svc.agent(serve=True),
+    ):
+        client = svc.client
+        run_id = client.schedule("sleep", {"time": 1})["run_id"]
+        res = client.get_run(run_id)
+        assert res["state"] in ("starting", "running")
+
+        res = svc.wait_run(run_id)
+        assert res["state"] == "success"    
+        assert res["meta"]["program"]["stop"]["signals"] == []
+        assert 0.9 < res["meta"]["elapsed"] < 1.1
+        assert "timeout" not in res["program"]
 
 
 @pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
