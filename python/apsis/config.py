@@ -54,11 +54,7 @@ def check(cfg, base_path: Path):
 
     cfg["actions"] = to_array(cfg.get("action", []))
 
-    waiting = cfg["waiting"] = cfg.setdefault("waiting", {})
-    max_time = waiting["max_time"] = nparse_duration(waiting.get("max_time", None))
-    if max_time is not None and max_time <= 0:
-        log.error("negative waiting.max_time: {max_time}")
-
+    _check_duration("waiting.max_time")
     _check_duration("procstar.agent.connection.start_timeout")
     _check_duration("procstar.agent.connection.reconnect_timeout")
     _check_duration("procstar.agent.run.update_interval")
