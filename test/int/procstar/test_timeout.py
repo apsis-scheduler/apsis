@@ -79,6 +79,34 @@ def test_configured_timeout():
         )
 
 
+@pytest.mark.parametrize("job_name", ["timeout", "timeout-shell"])
+def test_job_timeout_overrides_global_configured_default(job_name):
+    timeout_signal = "SIGTERM"
+    global_timeout = 5
+    job_timeout = 1
+    with (
+        ApsisService(
+            job_dir=JOB_DIR,
+            cfg={"program": {"timeout": {"duration": global_timeout}}},
+        ) as svc,
+        svc.agent(serve=True),
+    ):
+        client = svc.client
+        run_id = client.schedule(job_name, {"timeout": job_timeout, "sleep_duration": 10})["run_id"]
+        res = client.get_run(run_id)
+        assert res["state"] in ("starting", "running")
+
+        res = svc.wait_run(run_id)
+        assert res["state"] == "failure"
+        assert res["meta"]["program"]["stop"]["signals"] == [timeout_signal]
+        assert 0.9 < res["meta"]["elapsed"] < 1.1
+        run_log = client.get_run_log(run_id)
+        assert (
+            run_log[-1]["message"]
+            == f"failure: killed by {timeout_signal} (timeout after {job_timeout} s)"
+        )
+
+
 @pytest.mark.parametrize("signal", ["SIGTERM", "SIGKILL", "SIGUSR2"])
 def test_signal(signal):
     """
