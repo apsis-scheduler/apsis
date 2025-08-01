@@ -67,7 +67,7 @@ def test_invalid_config_values(tmp_path, caplog):
         f"Expected {expected_duration_errors} duration errors, got {duration_error_count}"
     )
     assert signal_error_count == expected_signal_errors, (
-        f"Expected {expected_waiting_errors} signal errors, got {waiting_error_count}"
+        f"Expected {expected_signal_errors} signal errors, got {signal_error_count}"
     )
 
 
