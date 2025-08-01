@@ -67,8 +67,6 @@ def test_invalid_config_values_raise_errors(tmp_path, caplog):
     assert f"not a signal: {invalid_signal}" in str(exc.value)
 
 
-
-
 def test_missing_config_values_not_set_to_none(tmp_path, caplog):
     """
     Test that the config check does not set missing values to None.

@@ -91,7 +91,7 @@ def test_configured_timeout():
         assert res["state"] in ("starting", "running")
 
         res = svc.wait_run(run_id)
-        assert res["state"] == "success"    
+        assert res["state"] == "success"
         assert res["meta"]["program"]["stop"]["signals"] == []
         assert 0.9 < res["meta"]["elapsed"] < 1.1
         assert "timeout" not in res["program"]
