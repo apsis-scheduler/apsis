@@ -24,7 +24,7 @@ def check(cfg, base_path: Path):
     def _check_duration(path):
         duration = nparse_duration(get_cfg(cfg, path, None))
         if duration is not None and duration <= 0:
-            log.error("negative duration: {path}")
+            log.error(f"negative duration: {path}")
         else:
             set_cfg(cfg, path, duration)
 
