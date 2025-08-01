@@ -23,10 +23,11 @@ def normalize_path(path, base_path: Path):
 def check(cfg, base_path: Path):
     def _check_duration(path):
         duration = nparse_duration(get_cfg(cfg, path, None))
-        if duration is not None and duration <= 0:
-            log.error(f"negative duration: {path}")
-        else:
-            set_cfg(cfg, path, duration)
+        if duration is not None:
+            if duration <= 0:
+                log.error(f"negative duration: {path}")
+            else:
+                set_cfg(cfg, path, duration)
 
     job_dir = normalize_path(cfg.get("job_dir", "jobs"), base_path)
     if not job_dir.exists():
@@ -61,7 +62,7 @@ def check(cfg, base_path: Path):
         try:
             to_signal(timeout_signal)
         except ValueError as exc:
-            log.error(f"invalid program.timeout.signal: {exc}")
+            log.error(f"invalid signal: {exc}")
 
     # runs_lookback → runs.lookback
     try:
