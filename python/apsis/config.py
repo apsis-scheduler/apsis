@@ -29,6 +29,14 @@ def check(cfg, base_path: Path):
             else:
                 set_cfg(cfg, path, duration)
 
+    def _check_signal(path):
+        signal = get_cfg(cfg, path, None)
+        if signal is not None:
+            try:
+                to_signal(signal)
+            except ValueError as e:
+                log.error(f"invalid signal: {signal}")
+
     job_dir = normalize_path(cfg.get("job_dir", "jobs"), base_path)
     if not job_dir.exists():
         log.error(f"missing job directory: {job_dir}")
@@ -56,13 +64,7 @@ def check(cfg, base_path: Path):
     _check_duration("procstar.agent.run.update_interval")
     _check_duration("procstar.agent.run.output_interval")
     _check_duration("program.timeout.duration")
-
-    timeout_signal = get_cfg(cfg, "program.timeout.signal", None)
-    if timeout_signal is not None:
-        try:
-            to_signal(timeout_signal)
-        except ValueError as exc:
-            log.error(f"invalid signal: {exc}")
+    _check_signal("program.timeout.signal")
 
     # runs_lookback → runs.lookback
     try:
