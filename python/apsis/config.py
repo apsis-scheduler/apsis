@@ -27,6 +27,7 @@ def check(cfg, base_path: Path):
         if duration is not None:
             if duration <= 0:
                 raise ValueError(f"{path} has negative duration: {duration_str}")
+            set_cfg(cfg, path, duration)
 
     def _check_signal(path):
         signal = get_cfg(cfg, path, None)
