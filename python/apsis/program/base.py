@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from signal import Signals
 
 from apsis.lib import memo
 from apsis.lib.api import decompress
@@ -8,8 +9,7 @@ from apsis.lib.py import format_repr, get_cfg
 from apsis.lib.sys import to_signal
 from apsis.runs import template_expand
 
-TIMEOUT_DURATION = 36 * 60 * 60  # 36 hours
-TIMEOUT_SIGNAL = "SIGTERM"
+TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
 # -------------------------------------------------------------------------------
 
@@ -157,7 +157,9 @@ class Timeout:
 
 
 def get_global_runtime_timeout(cfg):
-    timeout_duration = get_cfg(cfg, "program.timeout.duration", TIMEOUT_DURATION)
+    timeout_duration = get_cfg(cfg, "program.timeout.duration", None)
+    if timeout_duration is None or timeout_duration <=0:
+        return None
     timeout_signal = get_cfg(cfg, "program.timeout.signal", TIMEOUT_SIGNAL)
     return Timeout(duration=timeout_duration, signal=timeout_signal)
 
