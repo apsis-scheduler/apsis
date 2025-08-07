@@ -97,6 +97,9 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
       True if the service should be restarted on exit.
     """
     log.info(f"starting Apsis {__version__} service")
+    from time import sleep
+    log.info("ciaisidioivokfnvdk")
+    sleep(5)
 
     apsis = build_apsis(cfg)
 
