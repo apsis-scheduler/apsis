@@ -12,6 +12,19 @@ log = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------------------
 
+_global_config = None
+
+
+def set_global_config(cfg):
+    global _global_config
+    _global_config = cfg
+
+
+def get_global_config():
+    return _global_config
+
+# -------------------------------------------------------------------------------
+
 
 def normalize_path(path, base_path: Path):
     path = Path(path)

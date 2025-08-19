@@ -9,6 +9,7 @@ import signal
 from apsis import __version__
 from apsis.apsis import Apsis
 from apsis.exc import JobsDirErrors
+from apsis.config import set_global_config
 from apsis.jobs import load_jobs_dir
 from apsis.lib.asyn import cancel_task
 from apsis.sqlite import SqliteDB
@@ -70,6 +71,9 @@ app.static("/static", str(vue_dir / "static"))
 
 
 def build_apsis(cfg):
+    # Set global configuration for use by programs during deserialization
+    set_global_config(cfg)
+    
     db_cfg = cfg["database"]
     db_path = db_cfg["path"]
 
