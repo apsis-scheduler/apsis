@@ -19,6 +19,8 @@ def set_log_levels():
     logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
     logging.getLogger("requests.packages.urllib3.connectionpool").setLevel(logging.INFO)
     logging.getLogger("websockets.protocol").setLevel(logging.INFO)
+    logging.getLogger("botocore").setLevel(logging.WARNING)
+    logging.getLogger("boto3").setLevel(logging.WARNING)
 
 
 # -------------------------------------------------------------------------------
