@@ -1,0 +1,11 @@
+params: [date, region]
+
+program:
+  type: no-op
+  duration: 0.1
+
+condition:
+  type: dependency
+  job_id: 'data_{{region}}'
+  args:
+    date: '{{date}}'

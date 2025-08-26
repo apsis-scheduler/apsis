@@ -1,0 +1,5 @@
+params: [date]
+
+program:
+  type: no-op
+  duration: 0.1

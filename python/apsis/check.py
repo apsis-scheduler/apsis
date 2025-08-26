@@ -2,7 +2,7 @@ import ora
 
 from apsis.cond.dependency import Dependency
 from apsis.jobs import Jobs
-from apsis.runs import Instance, Run, validate_args, bind
+from apsis.runs import Instance, Run, validate_args, bind, template_expand
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
@@ -51,27 +51,45 @@ def check_job(jobs_dir, job):
                 # No associated job; that's OK.
                 return
 
-            # Find the associated job.
-            try:
-                associated_job = jobs_dir.get_job(associated_job_id)
-            except LookupError:
-                yield f"unknown job ID in {context}: {associated_job_id}"
-                return
+            # Handle parametrized job IDs
+            if "{{" in associated_job_id and "}}" in associated_job_id:
+                # Validate template syntax by trying to expand it with mock parameters
+                mock_args = {param: f"<{param}>" for param in job.params}
+                try:
+                    # Try to expand the template to check for syntax errors
+                    expanded_id = template_expand(associated_job_id, mock_args)
+                    # Template syntax is valid, but we can't validate job existence
+                    # since we don't know the actual parameter values at load time
+                    # This is acceptable - runtime will validate actual job existence
+                    associated_job = None
+                except (SyntaxError, NameError) as exc:
+                    yield f"invalid template in {context} job ID '{associated_job_id}': {exc}"
+                    return
+            else:
+                # Find the associated job for non-parametrized job IDs
+                try:
+                    associated_job = jobs_dir.get_job(associated_job_id)
+                except LookupError:
+                    yield f"unknown job ID in {context}: {associated_job_id}"
+                    return
 
-            # Look up additional args, if any.
-            try:
-                args = set(obj.args)
-            except AttributeError:
-                args = set()
+            # Skip parameter validation for parametrized job IDs since we can't 
+            # determine the actual target job at load time
+            if associated_job is not None:
+                # Look up additional args, if any.
+                try:
+                    args = set(obj.args)
+                except AttributeError:
+                    args = set()
 
-            params = set(associated_job.params)
-            # Check for missing args.  The params of the associated job can be bound
-            # either to the args of this job or to explicit args.
-            for missing in params - set(job.params) - args:
-                yield f"missing arg in {context}: param {missing} of job {associated_job_id}"
-            # Check for extraneous explicit args.
-            for extra in args - params:
-                yield f"extraneous arg in {context}: param {extra} of job {associated_job_id}"
+                params = set(associated_job.params)
+                # Check for missing args.  The params of the associated job can be bound
+                # either to the args of this job or to explicit args.
+                for missing in params - set(job.params) - args:
+                    yield f"missing arg in {context}: param {missing} of job {associated_job_id}"
+                # Check for extraneous explicit args.
+                for extra in args - params:
+                    yield f"extraneous arg in {context}: param {extra} of job {associated_job_id}"
 
         # We couldn't construct a run to check.  At least confirm that any
         # action or condition that refers to another job is valid.

@@ -1,0 +1,16 @@
+params: [date, region, env]
+
+program:
+  type: no-op
+  duration: 0.1
+
+condition:
+  - type: dependency
+    job_id: 'data_{{region}}'
+    args:
+      date: '{{date}}'
+  
+  - type: dependency
+    job_id: 'data_{{env}}'
+    args:
+      date: '{{date}}'

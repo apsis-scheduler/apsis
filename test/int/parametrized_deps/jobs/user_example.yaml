@@ -1,0 +1,10 @@
+params: [date, strat]
+
+
+program:
+  type: shell
+  command: 'echo {{strat}}'
+
+condition:
+  type: dependency
+  job_id: 'data_{{strat}}'

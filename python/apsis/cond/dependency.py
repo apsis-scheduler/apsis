@@ -2,7 +2,7 @@ import logging
 
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
-from apsis.runs import Instance, get_bind_args
+from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State, reachable
 from .base import RunStoreCondition, _bind
 
@@ -90,11 +90,13 @@ class Dependency(RunStoreCondition):
             )
 
     def bind(self, run, jobs):
-        job = jobs[self.job_id]
         bind_args = get_bind_args(run)
+        # {'Date': <class 'ora.ext.Date'>, 'Daytime': <class 'ora.ext.Daytime'>, 'Time': <class 'ora.Time'>, 'TimeZone': <class 'ora.ext.TimeZone'>, 'to_local': <built-in function to_local>, 'from_local': <built-in function from_local>, 'format': <built-in function format>, 'get_calendar': <functools._lru_cache_wrapper object at 0x7fa64585f3d0>, 'run_id': 'r5759', 'job_id': 'test_parametrized_deps', 'date': '2025-07-29', 'strat': 'us'}
+        expanded_job_id = template_expand(self.job_id, bind_args)
+        job = jobs[expanded_job_id]
         args = _bind(job, self.args, run.inst.args, bind_args)
         return type(self)(
-            self.job_id,
+            expanded_job_id,
             args,
             states=self.states,
             exist=self.exist,
