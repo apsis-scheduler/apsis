@@ -51,11 +51,7 @@ class Agent:
         self.port = port
         self.serve = serve is not None
         self.serve_port = (
-            None
-            if serve is None
-            else 3000
-            if serve is True  # FIXME: Choose a port.
-            else int(serve)
+            None if serve is None else find_free_port() if serve is True else int(serve)
         )
 
         self.proc = None
