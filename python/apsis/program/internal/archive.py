@@ -111,12 +111,13 @@ class ArchiveProgram(_InternalProgram):
             },
         }
 
+        archive_cutoff = ora.now() - self.__age
         count = self.__count
         while count > 0:
             chunk = count if self.__chunk_size is None else min(count, self.__chunk_size)
             with Timer() as timer:
                 run_ids = db.get_archive_run_ids(
-                    before=ora.now() - self.__age,
+                    before=archive_cutoff,
                     count=chunk,
                 )
             meta["time"]["get runs"] += timer.elapsed
