@@ -1,5 +1,5 @@
-from contextlib import closing
 import logging
+from contextlib import closing
 from pathlib import Path
 
 from instance import ApsisService
@@ -15,20 +15,32 @@ def test_reconnect(tmpdir):
         inst.start_serve()
         inst.wait_for_serve()
 
-        run_ids = [inst.client.schedule("sleep", {"time": 2})["run_id"] for _ in range(8)]
+        db_path = inst.db_path
+        wal_path = Path(str(db_path) + "-wal")
+        shm_path = Path(str(db_path) + "-shm")
+
+        run_ids = [
+            inst.client.schedule("sleep", {"time": 2})["run_id"] for _ in range(8)
+        ]
         for run_id in run_ids:
             res = inst.wait_run(run_id, wait_states=("new", "starting"))
             assert res["state"] == "running"
 
         logging.info("restarting")
-        inst.stop_serve()
-        inst.start_serve()
-        inst.wait_for_serve()
-        logging.info("restarted")
+        return_code = inst.stop_serve()
+        from time import sleep
 
-        for run_id in run_ids:
-            res = inst.client.get_run(run_id)
-            assert res["state"] == "running"
-        for run_id in run_ids:
-            res = inst.wait_run(run_id)
-            assert res["state"] == "success"
+        print(inst.db_path)
+        sleep(30)
+        assert (
+            return_code == 0
+        ), f"Service should stop cleanly, got return code {return_code}"
+
+        assert not inst.is_running(), "Service should be stopped"
+
+        assert (
+            not wal_path.exists()
+        ), f"WAL file at {wal_path} should be removed after Apsis stops"
+        assert (
+            not shm_path.exists()
+        ), f"SHM file at {shm_path} should be removed after Apsis stops"

@@ -628,6 +628,10 @@ class Apsis:
         await self.__run_tasks.cancel_all()
         await self.__stopping_tasks.cancel_all()
         await self.__tasks.cancel_all()
+        # Close the database connection to ensure WAL file is cleaned up
+        log.info("Closing database connection")
+        self.__db.close()
+        log.info("Database connection closed")
         log.info("Apsis shut down")
 
     async def __check_async(self):

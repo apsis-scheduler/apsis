@@ -6,6 +6,7 @@ import contextlib
 import logging
 import ora
 from pathlib import Path
+import sqlite3
 import sqlalchemy as sa
 import ujson
 
@@ -84,7 +85,10 @@ class ClockDB:
     # the SQLAlchemy ORM.
 
     def __init__(self, engine):
-        self.__connection = engine.connect().connection
+        # Get the raw connection directly from the engine
+        # For StaticPool, this should be the single shared connection
+        self.__conn_wrapper = engine.connect()
+        self.__connection = self.__conn_wrapper.connection
 
         ((length,),) = self.__connection.execute("SELECT COUNT(*) FROM clock")
         if length == 0:
@@ -93,6 +97,10 @@ class ClockDB:
             self.__connection.commit()
         else:
             assert length == 1
+
+    def close(self):
+        if hasattr(self, '_ClockDB__conn_wrapper'):
+            self.__conn_wrapper.close()
 
     def get_time(self):
         ((time,),) = self.__connection.execute("SELECT time FROM clock")
@@ -310,8 +318,13 @@ class RunDB:
 
     def __init__(self, engine):
         self.__engine = engine
-        self.__connection = engine.raw_connection()
-        # FIXME: Do we need to clean this up?
+        # Use the pooled connection via engine.connect()
+        self.__conn_wrapper = engine.connect()
+        self.__connection = self.__conn_wrapper.connection
+
+    def close(self):
+        if hasattr(self, '_RunDB__conn_wrapper'):
+            self.__conn_wrapper.close()
 
     @staticmethod
     def __query_runs(conn, expr):
@@ -554,10 +567,15 @@ class OutputDB:
 
     def __init__(self, engine):
         self.__engine = engine
-        self.__connection = engine.connect().connection
+        self.__conn_wrapper = engine.connect()
+        self.__connection = self.__conn_wrapper.connection
+
+    def close(self):
+        if hasattr(self, '_OutputDB__conn_wrapper'):
+            self.__conn_wrapper.close()
 
     def upsert(self, run_id: str, output_id: str, output: Output):
-        self.__connection.connection.execute(
+        self.__connection.execute(
             """
             INSERT INTO output (
                 run_id,
@@ -587,7 +605,7 @@ class OutputDB:
                 output.data,
             ),
         )
-        self.__connection.connection.commit()
+        self.__connection.commit()
 
     def get_metadata(self, run_id):
         """
@@ -689,8 +707,45 @@ class SqliteDB:
         return engine
 
     def close(self):
+        log.info("Closing SqliteDB")
+
+        # Close all sub-database connections first
+        if hasattr(self, 'clock_db') and hasattr(self.clock_db, 'close'):
+            log.debug("Closing clock_db connection")
+            self.clock_db.close()
+        if hasattr(self, 'run_db') and hasattr(self.run_db, 'close'):
+            log.debug("Closing run_db connection")
+            self.run_db.close()
+        if hasattr(self, 'output_db') and hasattr(self.output_db, 'close'):
+            log.debug("Closing output_db connection")
+            self.output_db.close()
+
+        # Get the database path before disposing the engine
+        # Extract the path from the engine URL
+        db_path = None
+        if hasattr(self.__engine, 'url') and self.__engine.url.database:
+            db_path = self.__engine.url.database
+            log.debug(f"Database path: {db_path}")
+
+        # Close all connections in the pool
+        log.info("Disposing database engine")
         self.__engine.dispose()
-        del self.__engine
+
+        # Now that all SQLAlchemy connections are closed, do the WAL checkpoint
+        # Use a direct sqlite3 connection to ensure clean checkpoint
+        if db_path:
+            import sqlite3
+            log.info("Performing WAL checkpoint(TRUNCATE)")
+            try:
+                with sqlite3.connect(db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    conn.commit()
+                log.info("WAL checkpoint completed")
+            except Exception as e:
+                log.warning(f"WAL checkpoint failed: {e}")
+
+        log.info("SqliteDB closed successfully")
 
     @classmethod
     def create(cls, path, *, clock=None):
