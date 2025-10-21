@@ -121,6 +121,11 @@ class ArchiveProgram(_InternalProgram):
                     count=chunk,
                 )
             meta["time"]["get runs"] += timer.elapsed
+
+            if not run_ids:
+                # all eligible runs have been archived
+                break
+
             count -= chunk
 
             # Make sure all runs are retired; else skip them.
