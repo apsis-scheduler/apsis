@@ -59,10 +59,12 @@ async def assume_role_credentials(role_arn: str, session_name: str = None, regio
 class ECSTaskManager:
     """Abstraction layer for managing ECS tasks."""
 
-    def __init__(self, cluster_name: str, region: str = "us-east-1", infrastructure_role_arn: str = None):
+    def __init__(self, cluster_name: str, region: str, default_disk_space_gb: int,
+                 ebs_volume_role_arn: str = None):
         self.cluster_name = cluster_name
         self.region = region
-        self.infrastructure_role_arn = infrastructure_role_arn
+        self.default_disk_space_gb = default_disk_space_gb
+        self.ebs_volume_role_arn = ebs_volume_role_arn
         self._ecs_client = None
         self._logs_client = None
 
@@ -80,8 +82,6 @@ class ECSTaskManager:
 
     def _create_ebs_volume_config(self, disk_space_gb: int) -> List[Dict]:
         """Create EBS volume configuration with specified size."""
-        if not self.infrastructure_role_arn:
-            raise ValueError("infrastructure_role_arn must be configured to use EBS volumes")
         
         return [
             {
@@ -93,8 +93,10 @@ class ECSTaskManager:
                     "throughput": 125,
                     "encrypted": True,
                     "filesystemType": "ext4",
-                    "roleArn": self.infrastructure_role_arn,
-                    "terminationPolicy": {"deleteOnTermination": False}, #FIXME
+                    "roleArn": self.ebs_volume_role_arn,
+                    #TODO: check if we want to retain volumes instead
+                    # For the moment, just delete them to avoid extra costs during development and testing
+                    "terminationPolicy": {"deleteOnTermination": True},
                 },
             }
         ]
@@ -107,10 +109,12 @@ class ECSTaskManager:
         memory: Optional[int] = None,
         cpu: Optional[int] = None,
         disk_space: Optional[int] = None,
+        tags: Optional[List[Dict[str, str]]] = None,
+        task_role_arn: Optional[str] = None,
     ) -> str:
         # Retry configuration - transparent to users
         max_retries = 3
-        base_delay = 10.0  # 10 seconds base delay
+        base_delay = 30
         
         for attempt in range(max_retries + 1):  # +1 for initial attempt
             try:
@@ -144,13 +148,18 @@ class ECSTaskManager:
                 if cpu is not None:
                     task_cpu = max(cpu + 256, 1024)
                     overrides["cpu"] = str(task_cpu)
+                
+                # Override task role if specified
+                if task_role_arn is not None:
+                    logger.info("5555555555555555555555555555555555")
+                    logger.info(task_role_arn)
+                    logger.info("xxxxxxxxxxxxxxx66666666666666666666666666")
+                    overrides["taskRoleArn"] = task_role_arn
+                    logger.info(f"Overriding task role to: {task_role_arn}")
 
-                # Always attach EBS volume - use default size if not specified
-                default_disk_space = 20  # Default 20GB if not specified
-                actual_disk_space = disk_space if disk_space is not None else default_disk_space
+                actual_disk_space = disk_space if (disk_space is not None and disk_space > 0) else self.default_disk_space_gb
 
                 volume_configurations = self._create_ebs_volume_config(actual_disk_space)
-                logger.info(f"Creating EBS volume: {actual_disk_space} GB (gp3, role: {self.infrastructure_role_arn})")
 
                 run_task_params = {
                     "cluster": self.cluster_name,
@@ -161,7 +170,10 @@ class ECSTaskManager:
                             
                 if overrides:
                     run_task_params["overrides"] = overrides
-
+                
+                if tags:
+                    run_task_params["tags"] = tags
+                
                 # Run the task (bridge mode - no network configuration needed)
                 response = await asyncio.get_event_loop().run_in_executor(
                     None,

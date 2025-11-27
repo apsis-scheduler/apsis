@@ -22,7 +22,7 @@ from apsis.program.procstar.base import BaseRunningProcstarProgram
 from apsis.program.process import BoundStop
 from apsis.lib.py import nstr, or_none
 from apsis.lib.json import ifkey
-from .ecs import ECSTaskManager, assume_role_credentials
+from .ecs import ECSTaskManager
 from apsis.procstar import get_agent_server
 from procstar.agent.exc import (
     NoOpenConnectionInGroup,
@@ -64,9 +64,13 @@ class ProcstarECSProgram(_ProcstarProgram):
             cpu: CPU limit in CPU units (1 vCPU = 1024 units) for the ECS task container
             disk_space: Ephemeral storage in GiB for the ECS task
             role: Optional IAM role name to assume (role ARN will be constructed)
-            **kwargs: Passed to _ProcstarProgram (includes group_id, timeout, stop, resources)
+            **kwargs: Passed to _ProcstarProgram (timeout, stop, resources)
+                     Note: group_id is ignored for ECS - each run gets a unique group
         """
-        super().__init__(**kwargs)
+        # Remove group_id from kwargs if provided - we'll set our own
+        kwargs.pop('group_id', None)
+        # Always use a placeholder - the actual group will be set at runtime
+        super().__init__(group_id="ECS_DYNAMIC", **kwargs)
         self.command = command
         self.environment = environment or {}
         self.memory = memory
@@ -98,7 +102,7 @@ class ProcstarECSProgram(_ProcstarProgram):
             environment={
                 k: template_expand(v, args) for k, v in self.environment.items()
                 },
-            group_id=or_none(template_expand)(self.group_id, args),
+            group_id="ECS_DYNAMIC",  # Always use placeholder - runtime will set actual group
             sudo_user=or_none(template_expand)(self.sudo_user, args),
             stop=self.stop.bind(args),
             timeout=None if self.timeout is None else self.timeout.bind(args),
@@ -119,6 +123,10 @@ class ProcstarECSProgram(_ProcstarProgram):
             disk_space = pop("disk", default=None)
             role = pop("role", default=None)
             kw_args = cls._from_jso(pop)
+            # Remove group_id if present - ECS always uses dynamic groups
+            if 'group_id' in kw_args:
+                logger.warning(f"Ignoring group_id '{kw_args['group_id']}' in ProcstarECSProgram - each run uses a unique group")
+                kw_args.pop('group_id')
 
         return cls(
             command=command,
@@ -251,8 +259,10 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         self.task_definition = get_cfg(ecs_cfg, "task_definition", "run-procstar-agent")
         self.region = get_cfg(ecs_cfg, "region", "us-east-1")
         self.startup_timeout = get_cfg(ecs_cfg, "startup_timeout", 900)
-        infrastructure_role_arn = get_cfg(ecs_cfg, "infrastructure_role_arn", None)
+        default_disk_space_gb = get_cfg(ecs_cfg, "default_disk_space_gb", 20)
         aws_account_number = get_cfg(ecs_cfg, "aws_account_number", None)
+        ebs_volume_role = get_cfg(ecs_cfg, "ebs_volume_role", None)
+        ebs_volume_role_arn = f"arn:aws:iam::{aws_account_number}:role/{ebs_volume_role}"
         
         # Construct IAM role ARN from role if specified
         self.iam_role_arn = None
@@ -262,7 +272,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             self.iam_role_arn = f"arn:aws:iam::{aws_account_number}:role/{self.program.role}"
 
         self.task_arn: Optional[str] = None
-        self.ecs_manager = ECSTaskManager(self.cluster_name, self.region, infrastructure_role_arn)
+        self.ecs_manager = ECSTaskManager(self.cluster_name, self.region, default_disk_space_gb, ebs_volume_role_arn)
 
         self.proc_id = None
         self.conn_id = None
@@ -330,25 +340,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             env_vars = dict(self.program.environment)
             env_vars["APSIS_RUN_ID"] = self.run_id
             env_vars["PROCSTAR_GROUP_ID"] = self.unique_group_id  # Set unique group for this run
-            
-            # If role is specified, assume the role and add credentials to environment
-            if self.iam_role_arn:
-                logger.info(f"Assuming IAM role: {self.iam_role_arn} (role: {self.program.role})")
-                try:
-                    assumed_credentials = await assume_role_credentials(
-                        self.iam_role_arn, 
-                        session_name=f"apsis-run-{self.run_id}",
-                        region=self.region
-                    )
-                    env_vars.update(assumed_credentials)
-                    logger.info(f"Successfully assumed role {self.iam_role_arn}")
-                except Exception as e:
-                    logger.error(f"Failed to assume role {self.iam_role_arn}: {e}")
-                    meta = self._get_base_metadata()
-                    meta["error"] = f"Failed to assume IAM role: {e}"
-                    yield ProgramError(f"Failed to assume IAM role: {e}", meta=meta)
-                    return
-
             # Generate unique proc ID
             self.proc_id = str(uuid.uuid4())
             logger.info(f"Generated proc_id {self.proc_id} for run {self.run_id}")
@@ -356,7 +347,8 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             # Start the ECS task (which runs the Procstar agent)
             logger.info(
                 f"Starting ECS task with task_definition={self.task_definition}, "
-                f"memory={self.program.memory}, cpu={self.program.cpu}, disk_space={self.program.disk_space}"
+                f"memory={self.program.memory}, cpu={self.program.cpu}, disk_space={self.program.disk_space}, "
+                f"task_role={self.iam_role_arn if self.iam_role_arn else 'default'}"
             )
             self.task_arn = await self.ecs_manager.start_task(
                 task_definition=self.task_definition,
@@ -364,6 +356,8 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
                 memory=self.program.memory,
                 cpu=self.program.cpu,
                 disk_space=self.program.disk_space,
+                tags=[{"key": "apsis-run-id", "value": self.run_id}],
+                task_role_arn=self.iam_role_arn,
             )
             logger.info(f"ECS task started with ARN: {self.task_arn}")
 
