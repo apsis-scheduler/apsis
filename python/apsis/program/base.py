@@ -280,13 +280,13 @@ class Program(TypedJso):
     def from_jso(cls, jso):
         # Extend the default JSO typed resolution to accept a str or list.
         if isinstance(jso, str):
-            from .agent import AgentShellProgram
+            from .procstar.agent import ProcstarShellProgram
 
-            return AgentShellProgram(jso)
+            return ProcstarShellProgram(jso)
         elif isinstance(jso, list):
-            from .agent import AgentProgram
+            from .procstar.agent import ProcstarProgram
 
-            return AgentProgram(jso)
+            return ProcstarProgram(jso)
         else:
             return TypedJso.from_jso.__func__(cls, jso)
 
