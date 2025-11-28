@@ -1,31 +1,24 @@
-import asyncio
 from dataclasses import dataclass
 import logging
 import ora
 import procstar.spec
 from procstar.agent.exc import (
-    NoConnectionError,
     NoOpenConnectionInGroup,
-    ProcessUnknownError,
 )
-from procstar.agent.proc import FdData, Interval, Process, Result
-from signal import Signals
+from procstar.agent.proc import FdData, Interval, Process
 import uuid
 
-from apsis.lib import asyn
-from apsis.lib import memo
 from apsis.lib.json import check_schema, ifkey
 from apsis.lib.parse import nparse_duration
 from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
 from apsis.program import base
 from apsis.program.base import (
-    ProgramSuccess,
-    ProgramFailure,
     ProgramError,
     Timeout,
     get_global_runtime_timeout,
 )
+from apsis.program.procstar.base import BaseRunningProcstarProgram
 from apsis.program.process import Stop, BoundStop
 from apsis.runs import join_args, template_expand
 
@@ -425,23 +418,16 @@ async def collect_final_fd_data(
     return initial_fd_data
 
 
-class RunningProcstarProgram(base.RunningProgram):
+class RunningProcstarProgram(BaseRunningProcstarProgram):
     def __init__(self, run_id, program, cfg, run_state=None):
         """
         :param res:
           The most recent `Result`, if any.
         """
-        super().__init__(run_id)
         if program.timeout is None:
             program.timeout = get_global_runtime_timeout(cfg)
-        self.program = program
-        self.cfg = get_cfg(cfg, "procstar.agent", {})
-        self.run_state = run_state
-
-        self.proc = None
-        self.stopping = False
-        self.stop_signals = []
-        self.timed_out = False
+        super().__init__(run_id, program, cfg, run_state)
+        self.proc_id = None
 
     @property
     def _spec(self):
@@ -474,247 +460,58 @@ class RunningProcstarProgram(base.RunningProgram):
             systemd_properties=systemd,
         )
 
-    @memo.property
-    async def updates(self):
-        """
-        Handles running `inst` until termination.
-        """
-        run_cfg = get_cfg(self.cfg, "run", {})
-        update_interval = run_cfg.get("update_interval", None)
-        update_interval = nparse_duration(update_interval)
-        output_interval = run_cfg.get("output_interval", None)
-        output_interval = nparse_duration(output_interval)
-
-        if self.run_state is None:
-            # Start the proc.
-
-            conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
-            conn_timeout = nparse_duration(conn_timeout)
-            proc_id = str(uuid.uuid4())
-
-            try:
-                # Start the proc.
-                self.proc, res = await get_agent_server().start(
-                    proc_id=proc_id,
-                    group_id=self.program.group_id,
-                    spec=self._spec,
-                    conn_timeout=conn_timeout,
-                )
-            except NoOpenConnectionInGroup as exc:
-                msg = f"start failed: {proc_id}: {exc}"
-                log.warning(msg)
-                yield ProgramError(msg)
-                return
-
-            conn_id = self.proc.conn_id
-            log.info(f"started: {proc_id} on conn {conn_id}")
-
-            start = ora.now()
-            self.run_state = {
-                "conn_id": conn_id,
-                "proc_id": proc_id,
-                "start": str(start),
-            }
-            yield base.ProgramRunning(run_state=self.run_state, meta=_make_metadata(proc_id, res))
-
-        else:
-            # Reconnect to the proc.
-            conn_timeout = get_cfg(self.cfg, "connection.reconnect_timeout", None)
-            conn_timeout = nparse_duration(conn_timeout)
-
-            conn_id = self.run_state["conn_id"]
-            proc_id = self.run_state["proc_id"]
-            start = ora.Time(self.run_state["start"])
-            log.info(f"reconnecting: {proc_id} on conn {conn_id}")
-
-            try:
-                self.proc = await get_agent_server().reconnect(
-                    conn_id=conn_id,
-                    proc_id=proc_id,
-                    conn_timeout=conn_timeout,
-                )
-            except NoConnectionError as exc:
-                msg = f"reconnect failed: {proc_id}: {exc}"
-                log.error(msg)
-                yield ProgramError(msg)
-                return
-
-            # Request a result immediately.
-            await self.proc.request_result()
-            res = None
-
-            log.info(f"reconnected: {proc_id} on conn {conn_id}")
-
-        # We now have a proc running on the agent.
+    async def _start_new_execution(self, update_interval, output_interval):
+        """Start new execution by connecting to Procstar agent."""
+        conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
+        conn_timeout = nparse_duration(conn_timeout)
+        self.proc_id = str(uuid.uuid4())
 
         try:
-            tasks = asyn.TaskGroup()
-
-            if self.program.timeout is not None:
-
-                async def timeout_handler():
-                    elapsed_so_far = ora.now() - start
-                    remaining = self.program.timeout.duration - elapsed_so_far
-                    sleep_duration = max(0, remaining)
-
-                    if sleep_duration > 0:
-                        await asyncio.sleep(sleep_duration)
-
-                    if not self.stopping and self.proc is not None:
-                        elapsed = ora.now() - start
-                        log.info(f"{self.run_id}: timeout")
-                        self.timed_out = True
-                        timeout_signal = Signals[self.program.timeout.signal]
-                        self.stop_signals.append(timeout_signal)
-                        await self.proc.send_signal(timeout_signal)
-
-                tasks.add("timeout", timeout_handler())
-
-            # Output collected so far.
-            fd_data = None
-
-            # Start tasks to request periodic updates of results and output.
-
-            if update_interval is not None:
-                # Start a task that periodically requests the current result.
-                tasks.add("poll update", asyn.poll(self.proc.request_result, update_interval))
-
-            if output_interval is not None:
-                # Start a task that periodically requests additional output.
-                def more_output():
-                    # From the current position to the end.
-                    start = 0 if fd_data is None else fd_data.interval.stop
-                    interval = Interval(start, None)
-                    return self.proc.request_fd_data("stdout", interval=interval)
-
-                tasks.add("poll output", asyn.poll(more_output, output_interval))
-
-            # Process further updates, until the process terminates.
-            async for update in self.proc.updates:
-                match update:
-                    case FdData():
-                        fd_data = _combine_fd_data(fd_data, update)
-                        yield base.ProgramUpdate(outputs=await _make_outputs(fd_data))
-
-                    case Result() as res:
-                        meta = _make_metadata(proc_id, res)
-
-                        if res.state == "running":
-                            # Intermediate result.
-                            yield base.ProgramUpdate(meta=meta)
-                        else:
-                            # Process terminated.
-                            break
-
-            else:
-                # Proc was deleted--but we didn't delete it.
-                assert False, "proc deleted"
-
-            # Stop update tasks.
-            await tasks.cancel_all()
-
-            # Do we have the complete output?
-            length = res.fds.stdout.length
-            if length > 0 and (fd_data is None or fd_data.interval.stop < length):
-                # Request any remaining output.
-                await self.proc.request_fd_data(
-                    "stdout",
-                    interval=Interval(0 if fd_data is None else fd_data.interval.stop, None),
-                )
-                try:
-                    fd_data = await asyncio.wait_for(
-                        collect_final_fd_data(fd_data, self.proc, length),
-                        timeout=FD_DATA_TIMEOUT,
-                    )
-                except asyncio.TimeoutError:
-                    error_msg = (
-                        f"Timeout waiting for final FdData after {FD_DATA_TIMEOUT}s."
-                        f"Run completed with exit_code={res.status.exit_code}."
-                    )
-                    log.error(error_msg)
-                    yield ProgramError(
-                        error_msg,
-                        meta=_make_metadata(proc_id, res),
-                        outputs=await _make_outputs(fd_data),
-                    )
-                    return
-
-            outputs = await _make_outputs(fd_data)
-            meta["stop"] = {"signals": [s.name for s in self.stop_signals]}
-
-            if res.status.exit_code == 0 and not self.timed_out:
-                # The process terminated successfully.
-                yield ProgramSuccess(meta=meta, outputs=outputs)
-            else:
-                message = (
-                    f"exit code {res.status.exit_code}"
-                    if res.status.signal is None
-                    else f"killed by {res.status.signal}"
-                )
-                if self.timed_out:
-                    elapsed = ora.now() - start
-                    message += f" (timeout after {elapsed:.0f} s)"
-                yield ProgramFailure(message, meta=meta, outputs=outputs)
-
-        except asyncio.CancelledError:
-            # Don't clean up the proc; we can reconnect.
-            self.proc = None
-
-        except ProcessUnknownError:
-            # Don't ask to clean it up; it's already gone.
-            self.proc = None
-
-        except Exception as exc:
-            log.error("procstar", exc_info=True)
-            yield ProgramError(
-                f"procstar: {exc}",
-                meta={} if res is None else _make_metadata(proc_id, res),
+            # Start the proc.
+            self.proc, res = await get_agent_server().start(
+                proc_id=self.proc_id,
+                group_id=self.program.group_id,
+                spec=self._spec,
+                conn_timeout=conn_timeout,
             )
-
-        finally:
-            # Cancel our helper tasks.
-            await tasks.cancel_all()
-            if self.proc is not None:
-                # Done with this proc; ask the agent to delete it.
-                try:
-                    # Request deletion.
-                    await self.proc.delete()
-                except Exception as exc:
-                    # Just log this; for Apsis, the proc is done.
-                    log.error(f"delete {self.proc.proc_id}: {exc}")
-                self.proc = None
-
-    async def stop(self):
-        if self.proc is None:
-            log.warning("no more proc to stop")
+        except NoOpenConnectionInGroup as exc:
+            msg = f"start failed: {self.proc_id}: {exc}"
+            log.warning(msg)
+            yield ProgramError(msg)
             return
 
-        stop = self.program.stop
-        self.stopping = True
+        conn_id = self.proc.conn_id
+        log.info(f"started: {self.proc_id} on conn {conn_id}")
 
-        # Send the stop signal.
-        self.stop_signals.append(stop.signal)
-        await self.signal(stop.signal)
+        start = ora.now()
+        self.run_state = {
+            "conn_id": conn_id,
+            "proc_id": self.proc_id,
+            "start": str(start),
+        }
+        yield base.ProgramRunning(run_state=self.run_state, meta=_make_metadata(self.proc_id, res))
 
-        if stop.grace_period is not None:
+        # Monitor execution
+        async for update in self._monitor_procstar_execution(start, update_interval, output_interval):
+            yield update
+
+    async def _restore_reconnection_state(self):
+        """Restore state needed for reconnection."""
+        self.conn_id = self.run_state["conn_id"]
+        self.proc_id = self.run_state["proc_id"]
+
+    def _get_result_metadata(self, res):
+        """Override to use legacy _make_metadata function."""
+        return _make_metadata(self.proc_id, res)
+
+    async def _cleanup(self):
+        """Cleanup resources after execution."""
+        if self.proc is not None:
+            # Done with this proc; ask the agent to delete it.
             try:
-                # Wait for the grace period to expire.
-                await asyncio.sleep(stop.grace_period)
-            except asyncio.CancelledError:
-                # That's what we were hoping for.
-                pass
-            else:
-                # Send a kill signal.
-                try:
-                    self.stop_signals.append(Signals.SIGKILL)
-                    await self.signal(Signals.SIGKILL)
-                except ValueError:
-                    # Proc is gone; that's OK.
-                    pass
-
-    async def signal(self, signal):
-        if self.proc is None:
-            log.warning("no more proc to signal")
-            return
-
-        await self.proc.send_signal(int(signal))
+                # Request deletion.
+                await self.proc.delete()
+            except Exception as exc:
+                # Just log this; for Apsis, the proc is done.
+                log.error(f"delete {self.proc.proc_id}: {exc}")
+            self.proc = None

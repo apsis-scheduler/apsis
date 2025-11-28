@@ -56,7 +56,8 @@ async def _process_updates(apsis, run):
     updates = aiter(run._running_program.updates)
 
     try:
-        if run.state == State.starting:
+        # Handle startup phase - loop until we get ProgramRunning or an error
+        while run.state == State.starting:
             update = await anext(updates)
             match update:
                 case ProgramRunning() as running:
@@ -68,6 +69,14 @@ async def _process_updates(apsis, run):
                         meta={"program": running.meta},
                         times=running.times,
                     )
+                    break
+
+                case ProgramUpdate() as update:
+                    # Handle intermediate updates during startup
+                    if update.outputs is not None:
+                        apsis._update_output_data(run, update.outputs, False)
+                    if update.meta is not None:
+                        apsis._update_metadata(run, {"program": update.meta})
 
                 case ProgramError() as error:
                     apsis.run_log.info(run, f"error: {error.message}")

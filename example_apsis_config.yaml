@@ -1,0 +1,21 @@
+# (...)
+procstar:
+  agent:
+    enable: true
+    connection:
+      start_timeout: 5 min
+      reconnect_timeout: 5 sec
+      update_interval: 0
+    run:
+      output_interval: 10
+      update_interval: 20
+  ecs:
+    aws_account_number: "446481858873"
+    cluster_name: "procstar"
+    task_definition: "procstar-agent-ecs"
+    region: "us-east-1"
+    startup_timeout: 1800
+    default_disk_space_gb: 11
+    ebs_volume_role: "sysasdsched"
+
+# (...)
