@@ -4,6 +4,6 @@ metadata:
   description: Sleeps for a while.
 
 program:
-  type: program
+  type: procstar
   argv: ["/usr/bin/python", "-c", "import time; time.sleep(float({{ time }}))"]
 

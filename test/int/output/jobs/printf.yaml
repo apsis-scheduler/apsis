@@ -1,7 +1,7 @@
 params: [string]
 
 program:
-  type: program
+  type: procstar
   argv:
     - /usr/bin/printf
     - "{{ string }}"

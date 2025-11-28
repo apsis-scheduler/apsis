@@ -1,7 +1,7 @@
 params: ["timeout"]
 
 program:
-  type: program
+  type: procstar
   argv: ["/usr/bin/sleep", "3"]
   timeout:
     duration: "{{ timeout }}"

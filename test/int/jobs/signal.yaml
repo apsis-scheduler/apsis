@@ -1,7 +1,7 @@
 params: ["signal"]
 
 program:
-  type: program
+  type: procstar
   argv: ["/usr/bin/sleep", "3"]
   timeout:
     duration: 1
