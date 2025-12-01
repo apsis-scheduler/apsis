@@ -2,7 +2,7 @@ from contextlib import closing
 from pathlib import Path
 import pytest
 
-from instance import ApsisService
+from procstar_instance import ApsisService
 
 # -------------------------------------------------------------------------------
 
@@ -16,7 +16,8 @@ def inst():
         inst.write_cfg()
         inst.start_serve()
         inst.wait_for_serve()
-        yield inst
+        with inst.agent(serve=True):
+            yield inst
 
 
 def test_timeout(inst):

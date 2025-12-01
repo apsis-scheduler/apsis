@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 import sqlite3
 
-from instance import ApsisService, run_apsisctl
+from procstar_instance import ApsisService
+from instance import run_apsisctl
 
 # -------------------------------------------------------------------------------
 
