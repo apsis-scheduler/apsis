@@ -8,7 +8,7 @@ hour, or 4:00 PM US/Eastern on the day before every US holiday.
 
 ### Components
 
-The components of Apsis are,
+The components of Apsis are:
 
 - A service that schedules tasks and exposes its state via a REST API.
 
