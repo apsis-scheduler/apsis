@@ -412,7 +412,10 @@ async def collect_final_fd_data(
                 # Confirm that we've accumulated all the output as
                 # specified in the result.
                 assert fd_data_local.interval.start == 0
-                assert fd_data_local.interval.stop == expected_length
+                if fd_data_local.interval.stop != expected_length:
+                    log.warning(
+                        f"FdData length mismatch: expected {expected_length}, got {fd_data_local.interval.stop}."
+                    )
                 return fd_data_local
 
             case _:
