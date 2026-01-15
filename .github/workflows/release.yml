@@ -49,6 +49,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: Update lockfile and commit
+        if: steps.bump.outputs.bumped == 'true'
+        run: |
+          uv lock
+          git add -A
+          git commit -m "Bump version: ${{ steps.bump.outputs.previous-version }} → ${{ steps.bump.outputs.current-version }}"
+          git tag v${{ steps.bump.outputs.current-version }}
+
       - name: Push bumped version
         if: steps.bump.outputs.bumped == 'true'
         run: |
