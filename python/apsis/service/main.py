@@ -98,15 +98,16 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
     """
     log.info(f"starting Apsis {__version__} service")
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.set_debug(True)
+
     apsis = build_apsis(cfg)
 
     app.apsis = apsis
     # Flag to indicate whether to restart after shutting down.
     app.restart = False
     app.running = True  # FIXME: ??  Remove?
-
-    loop = asyncio.get_event_loop()
-    loop.set_debug(True)
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
