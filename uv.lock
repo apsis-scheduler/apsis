@@ -103,7 +103,7 @@ wheels = [
 
 [[package]]
 name = "apsis"
-version = "0.34.2"
+version = "0.36.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
