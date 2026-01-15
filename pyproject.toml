@@ -111,3 +111,6 @@ filename = "pyproject.toml"
 [[tool.bumpversion.files]]
 filename = "docs/conf.py"
 
+[tool.uv]
+extra-index-url = ["https://apsis-scheduler.github.io/procstar/simple"]
+
