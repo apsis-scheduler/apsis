@@ -2,62 +2,53 @@
 
 import logging
 import uuid
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
 import ora
+import procstar.spec
+from procstar.agent.exc import (
+    NoOpenConnectionInGroup,
+)
+from procstar.agent.proc import Result
 
-from apsis.lib.py import get_cfg
-from apsis.lib.json import check_schema
+from apsis.lib.json import check_schema, ifkey
 from apsis.lib.parse import nparse_duration
+from apsis.lib.py import get_cfg, nstr, or_none
+from apsis.procstar import get_agent_server
 from apsis.program.base import (
     Program,
-    ProgramRunning,
     ProgramError,
+    ProgramRunning,
     ProgramUpdate,
     Timeout,
     get_global_runtime_timeout,
 )
-from apsis.program.procstar.agent import _ProcstarProgram, BoundResources
-from apsis.program.procstar.base import BaseRunningProcstarProgram
 from apsis.program.process import BoundStop
-from apsis.lib.py import nstr, or_none
-from apsis.lib.json import ifkey
-from .ecs import ECSTaskManager
-from apsis.procstar import get_agent_server
-from procstar.agent.exc import (
-    NoOpenConnectionInGroup,
-)
-import procstar.spec
-from procstar.agent.proc import Result
+from apsis.program.procstar.agent import BoundResources, _ProcstarProgram
+from apsis.program.procstar.base import BaseRunningProcstarProgram
 from apsis.runs import template_expand
 
+from .ecs import ECSTaskManager
 
 logger = logging.getLogger(__name__)
 
 
-class ProcstarECSProgram(_ProcstarProgram):
-    """Program that executes commands on AWS ECS using Procstar agents.
-
-    This program launches an ECS task that runs a Procstar agent, then
-    connects to that agent via websocket to execute the specified command.
-    This follows the proper Procstar architecture for distributed job execution.
-    """
+class _BaseProcstarECSProgram(_ProcstarProgram):
+    """Base class for ECS Procstar programs with common functionality."""
 
     def __init__(
         self,
-        command: str,
         *,
         environment: Optional[Dict[str, str]] = None,
-        memory = None,
-        cpu = None,
-        disk_space = None,
+        memory=None,
+        cpu=None,
+        disk_space=None,
         role: Optional[str] = None,
         **kwargs,
     ):
-        """Initialize ProcstarECSProgram.
+        """Initialize base ECS program.
 
         Args:
-            command: Command to execute via Procstar agent
             environment: Additional environment variables
             memory: Memory limit in MiB for the ECS task container
             cpu: CPU limit in CPU units (1 vCPU = 1024 units) for the ECS task container
@@ -65,18 +56,16 @@ class ProcstarECSProgram(_ProcstarProgram):
             role: Optional IAM role name to assume (role ARN will be constructed)
             **kwargs: Passed to _ProcstarProgram (timeout, stop, resources)
         """
-        kwargs.pop('group_id', None)
+        kwargs.pop("group_id", None)
         super().__init__(group_id=None, **kwargs)
-        self.command = command
         self.environment = environment or {}
         self.memory = memory
         self.cpu = cpu
         self.disk_space = disk_space
         self.role = role
 
-    def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
-        """Bind template parameters in the program configuration."""
-        argv = ["/usr/bin/bash", "-c", template_expand(self.command, args)]
+    def _build_bound_program(self, argv, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
+        """Common logic for building a bound program."""
         # Expand memory, CPU, and disk_space templates, convert to int if not None
         expanded_memory = None
         if self.memory is not None:
@@ -91,13 +80,15 @@ class ProcstarECSProgram(_ProcstarProgram):
         expanded_disk_space = None
         if self.disk_space is not None:
             expanded_disk_space = template_expand(str(self.disk_space), args)
-            expanded_disk_space = int(expanded_disk_space) if expanded_disk_space else None
+            expanded_disk_space = (
+                int(expanded_disk_space) if expanded_disk_space else None
+            )
 
         return BoundProcstarECSProgram(
             argv,
             environment={
                 k: template_expand(v, args) for k, v in self.environment.items()
-                },
+            },
             sudo_user=or_none(template_expand)(self.sudo_user, args),
             stop=self.stop.bind(args),
             timeout=None if self.timeout is None else self.timeout.bind(args),
@@ -109,14 +100,62 @@ class ProcstarECSProgram(_ProcstarProgram):
         )
 
     @classmethod
-    def from_jso(cls, jso):
+    def _check_group_id(cls, jso):
+        """Check that group_id is not set for ECS programs."""
         if "group_id" in jso:
             raise ValueError(
                 "group_id cannot be set for procstar-ecs programs. "
                 "ECS tasks require isolated execution - each run automatically gets a unique group ID "
-                "in the format 'ecs-run-{run_id}' to ensure proper isolation and security."
+                "in the format 'aws-ecs-{run_id}' to ensure proper isolation and security."
             )
 
+    def _base_to_jso(self):
+        """Common to_jso logic for ECS programs."""
+        parent_jso = super().to_jso()
+        parent_jso.pop("group_id", None)
+
+        jso = {
+            **parent_jso,
+            "environment": self.environment,
+        }
+        if self.memory is not None:
+            jso["memory"] = self.memory
+        if self.cpu is not None:
+            jso["cpu"] = self.cpu
+        if self.disk_space is not None:
+            jso["disk_space"] = self.disk_space
+        if self.role is not None:
+            jso["role"] = self.role
+        return jso
+
+    def run(self, run_id: str, cfg) -> "RunningProcstarECSProgram":
+        return RunningProcstarECSProgram(run_id, self, cfg)
+
+    def connect(self, run_id: str, run_state: Dict, cfg) -> "RunningProcstarECSProgram":
+        return RunningProcstarECSProgram(run_id, self, cfg, run_state)
+
+
+class ProcstarECSProgram(_BaseProcstarECSProgram):
+    """Program that executes commands on AWS ECS using Procstar agents.
+
+    This program launches an ECS task that runs a Procstar agent, then
+    connects to that agent via websocket to execute the specified command.
+    This follows the proper Procstar architecture for distributed job execution.
+    """
+
+    def __init__(self, command: str, **kwargs):
+        """Initialize ProcstarECSProgram with a shell command."""
+        super().__init__(**kwargs)
+        self.command = command
+
+    def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
+        """Bind template parameters in the program configuration."""
+        argv = ["/usr/bin/bash", "-c", template_expand(self.command, args)]
+        return self._build_bound_program(argv, args)
+
+    @classmethod
+    def from_jso(cls, jso):
+        cls._check_group_id(jso)
         with check_schema(jso) as pop:
             command = pop("command")
             environment = pop("environment", default={})
@@ -137,29 +176,54 @@ class ProcstarECSProgram(_ProcstarProgram):
         )
 
     def to_jso(self):
-        parent_jso = super().to_jso()
-        parent_jso.pop("group_id", None)
-
-        jso = {
-            **parent_jso,
-            "command": self.command,
-            "environment": self.environment,
-        }
-        if self.memory is not None:
-            jso["memory"] = self.memory
-        if self.cpu is not None:
-            jso["cpu"] = self.cpu
-        if self.disk_space is not None:
-            jso["disk_space"] = self.disk_space
-        if self.role is not None:
-            jso["role"] = self.role
+        jso = self._base_to_jso()
+        jso["command"] = self.command
         return jso
 
-    def run(self, run_id: str, cfg) -> "RunningProcstarECSProgram":
-        return RunningProcstarECSProgram(run_id, self, cfg)
 
-    def connect(self, run_id: str, run_state: Dict, cfg) -> "RunningProcstarECSProgram":
-        return RunningProcstarECSProgram(run_id, self, cfg, run_state)
+class ProcstarECSArgvProgram(_BaseProcstarECSProgram):
+    """Program that executes commands on AWS ECS using Procstar agents with argv.
+
+    This is similar to ProcstarECSProgram but uses argv directly instead of a shell command.
+    Useful for restricted execution environments where the executable must be called directly.
+    """
+
+    def __init__(self, argv, **kwargs):
+        """Initialize ProcstarECSArgvProgram with argv list."""
+        super().__init__(**kwargs)
+        self.argv = [str(a) for a in argv]
+
+    def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
+        """Bind template parameters in the program configuration."""
+        argv = tuple(template_expand(a, args) for a in self.argv)
+        return self._build_bound_program(argv, args)
+
+    @classmethod
+    def from_jso(cls, jso):
+        cls._check_group_id(jso)
+        with check_schema(jso) as pop:
+            argv = pop("argv")
+            environment = pop("environment", default={})
+            memory = pop("memory", default=None)
+            cpu = pop("cpu", default=None)
+            disk_space = pop("disk", default=None)
+            role = pop("role", default=None)
+            kw_args = cls._from_jso(pop)
+
+        return cls(
+            argv=argv,
+            environment=environment,
+            memory=memory,
+            cpu=cpu,
+            disk_space=disk_space,
+            role=role,
+            **kw_args,
+        )
+
+    def to_jso(self):
+        jso = self._base_to_jso()
+        jso["argv"] = self.argv
+        return jso
 
 
 # -------------------------------------------------------------------------------
@@ -272,23 +336,31 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         default_disk_space_gb = get_cfg(ecs_cfg, "default_disk_space_gb", 20)
         aws_account_number = get_cfg(ecs_cfg, "aws_account_number", None)
         ebs_volume_role = get_cfg(ecs_cfg, "ebs_volume_role", None)
-        ebs_volume_role_arn = f"arn:aws:iam::{aws_account_number}:role/{ebs_volume_role}"
-        
+        ebs_volume_role_arn = (
+            f"arn:aws:iam::{aws_account_number}:role/{ebs_volume_role}"
+        )
+
         # Construct IAM role ARN from role if specified
         self.iam_role_arn = None
         if self.program.role:
             if not aws_account_number:
-                raise ValueError("aws_account_number must be configured in procstar.ecs config when using role parameter")
-            self.iam_role_arn = f"arn:aws:iam::{aws_account_number}:role/{self.program.role}"
+                raise ValueError(
+                    "aws_account_number must be configured in procstar.ecs config when using role parameter"
+                )
+            self.iam_role_arn = (
+                f"arn:aws:iam::{aws_account_number}:role/{self.program.role}"
+            )
 
         self.task_arn: Optional[str] = None
-        self.ecs_manager = ECSTaskManager(self.cluster_name, self.region, default_disk_space_gb, ebs_volume_role_arn)
+        self.ecs_manager = ECSTaskManager(
+            self.cluster_name, self.region, default_disk_space_gb, ebs_volume_role_arn
+        )
 
         self.proc_id = None
         self.conn_id = None
 
         # Generate unique group_id for this run to ensure perfect isolation
-        self.unique_group_id = f"ecs-run-{self.run_id}"
+        self.unique_group_id = f"aws-ecs-{self.run_id}"
 
     def _get_base_metadata(self):
         return {
@@ -341,7 +413,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             # Start ECS task with Procstar agent
             logger.info(
                 f"Launching ECS task for run {self.run_id} on cluster {self.cluster_name}"
-                )
+            )
             meta = self._get_base_metadata()
             meta["message"] = "Launching ECS task with Procstar agent"
             yield ProgramUpdate(meta=meta)
@@ -349,7 +421,9 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             # Prepare environment for the ECS task
             env_vars = dict(self.program.environment)
             env_vars["APSIS_RUN_ID"] = self.run_id
-            env_vars["PROCSTAR_GROUP_ID"] = self.unique_group_id  # Set unique group for this run
+            env_vars["PROCSTAR_GROUP_ID"] = (
+                self.unique_group_id
+            )  # Set unique group for this run
             # Generate unique proc ID
             self.proc_id = str(uuid.uuid4())
             logger.info(f"Generated proc_id {self.proc_id} for run {self.run_id}")
@@ -407,13 +481,17 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
 
             logger.info(f"ECS task is now RUNNING: {self.task_arn}")
             meta = self._get_base_metadata()
-            meta["message"] = "ECS task is running, waiting for Procstar agent to connect"
+            meta["message"] = (
+                "ECS task is running, waiting for Procstar agent to connect"
+            )
             meta["task_status"] = "RUNNING"
             yield ProgramUpdate(meta=meta)
 
             # Wait for agent to connect to Apsis and start the process
             conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
-            conn_timeout = nparse_duration(conn_timeout) or 300  # 5 minutes for agent connection
+            conn_timeout = (
+                nparse_duration(conn_timeout) or 300
+            )  # 5 minutes for agent connection
             logger.info(
                 f"Waiting for agent connection with timeout {conn_timeout}s for group {self.unique_group_id}"
             )
@@ -432,7 +510,9 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
                 logger.error(msg)
                 # Include task status in error for debugging
                 task_info = await self.ecs_manager.describe_task(self.task_arn)
-                task_status = task_info.get("lastStatus", "UNKNOWN") if task_info else "UNKNOWN"
+                task_status = (
+                    task_info.get("lastStatus", "UNKNOWN") if task_info else "UNKNOWN"
+                )
                 meta = self._get_base_metadata()
                 meta["error"] = "Failed to start process on agent"
                 meta["task_status"] = task_status
@@ -467,7 +547,9 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
                 yield update
 
         except Exception as exc:
-            logger.error(f"Error in _start_new_execution for run {self.run_id}", exc_info=True)
+            logger.error(
+                f"Error in _start_new_execution for run {self.run_id}", exc_info=True
+            )
             meta = self._get_base_metadata()
             meta["error"] = f"Failed to start execution: {exc}"
             meta["error_type"] = type(exc).__name__
@@ -479,7 +561,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         self.proc_id = self.run_state["proc_id"]
         self.task_arn = self.run_state.get("task_arn")
         # Restore the unique group_id for reconnection (fallback to run-specific ID for older runs)
-        self.unique_group_id = self.run_state.get("group_id", f"ecs-run-{self.run_id}")
+        self.unique_group_id = self.run_state.get("group_id", f"aws-ecs-{self.run_id}")
         logger.info(f"restored state for group {self.unique_group_id}")
 
     async def stop(self):
