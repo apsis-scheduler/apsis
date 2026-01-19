@@ -59,13 +59,11 @@ Documentation = "https://apsis-scheduler.readthedocs.io/en/latest/"
 [project.scripts]
 apsis = "apsis.cli:main"
 apsisctl = "apsis.ctl:main"
-apsis-agent = "apsis.agent.cli:main"
 
 [tool.setuptools]
 packages = [
     "apsis",
     "apsis.actions",
-    "apsis.agent",
     "apsis.cond",
     "apsis.lib",
     "apsis.lib.itr",
@@ -79,10 +77,6 @@ packages = [
 package-dir = {"" = "python"}
 
 [tool.setuptools.package-data]
-"apsis.agent" = [
-    "agent.cert",
-    "agent.key",
-]
 "apsis.service" = [
     "vue/*",
     "vue/static/css/*",

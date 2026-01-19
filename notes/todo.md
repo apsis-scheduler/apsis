@@ -2,12 +2,6 @@
 - improve `apsis job` output style
 
 
-# Cleanup
-
-Clean up the classic agents.  If ephemeral agents are required, use Procstar
-(started over SSH?) for this.
-
-
 ### Database schema
 
 - Remove `message` from run JSON and `runs` table.
