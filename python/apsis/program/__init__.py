@@ -9,7 +9,6 @@ from .base import (
 )
 
 from .noop import NoOpProgram
-from .process import ProcessProgram, ShellCommandProgram
 from .procstar.agent import ProcstarProgram, ProcstarShellProgram
 
 # -------------------------------------------------------------------------------
