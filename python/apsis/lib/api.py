@@ -107,6 +107,7 @@ def job_to_jso(job):
     def sched_to_jso(s):
         jso = schedule_to_jso(s)
         jso["str"] = str(s) if s.stop_schedule is None else f"{s}, {s.stop_schedule}"
+        jso["enabled"] = s.enabled
         return jso
 
     return {
