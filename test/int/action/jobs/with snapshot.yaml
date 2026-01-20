@@ -1,5 +1,5 @@
 program:
-  type: shell
+  type: procstar-shell
   command: "echo 'Hello, world!'"
 
 action:

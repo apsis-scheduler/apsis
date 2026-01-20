@@ -1,0 +1,8 @@
+params: [color, exit]
+
+program:
+  type: procstar-shell
+  command: |
+    echo "color={{ color }}"
+    date
+    exit {{ exit }}

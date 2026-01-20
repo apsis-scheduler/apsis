@@ -23,7 +23,7 @@ def test_waiting_max_time(tmp_path):
         res = client.schedule_adhoc(
             "now",
             {
-                "program": "no-op",
+                "program": {"type": "no-op"},
                 "condition": {
                     "type": "const",
                     "value": False,

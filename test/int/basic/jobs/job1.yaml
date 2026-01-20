@@ -1,7 +1,7 @@
 params: [name, value]
 
 program:
-  type: shell
+  type: procstar-shell
   command: >-
     echo "The name is {{ name }}."
     echo $(({{ value }} + 2))

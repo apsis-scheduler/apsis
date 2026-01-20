@@ -1,5 +1,5 @@
 program:
   command: "This is the command"
-  type: shell
+  type: procstar-shell
   command: "Unexpected duplicated command key; this will make the loading of the job to fail."
 

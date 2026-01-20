@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import time
 
-from instance import ApsisService
+from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
 
@@ -19,7 +19,7 @@ JOB_DIR = Path(__file__).parent / "jobs"
 
 @pytest.fixture(scope="function")
 def inst():
-    with closing(ApsisService(job_dir=JOB_DIR)) as inst:
+    with closing(ApsisService(job_dir=JOB_DIR)) as inst, inst.agent():
         inst.create_db()
         inst.write_cfg()
         inst.start_serve()
@@ -124,7 +124,7 @@ def test_max_running_terminate(inst):
 
     JOB = {
         "program": {
-            "type": "program",
+            "type": "procstar",
             "argv": ["/usr/bin/sleep", "3"],
         },
         "condition": {

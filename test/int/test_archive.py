@@ -4,7 +4,7 @@ import sqlite3
 import time
 
 from apsis.service.client import APIError
-from instance import ApsisService
+from procstar_instance import ApsisService
 
 # -------------------------------------------------------------------------------
 
@@ -14,12 +14,15 @@ def test_archive(tmp_path):
     job_dir = tmp_path / "jobs"
     job_dir.mkdir()
 
-    with closing(
-        ApsisService(
-            cfg={"schedule": {"horizon": 1}},
-            job_dir=job_dir,
-        )
-    ) as inst:
+    with (
+        closing(
+            ApsisService(
+                cfg={"schedule": {"horizon": 1}},
+                job_dir=job_dir,
+            )
+        ) as inst,
+        inst.agent(),
+    ):
         inst.create_db()
         inst.write_cfg()
         inst.start_serve()
@@ -35,7 +38,7 @@ def test_archive(tmp_path):
             "now",
             {
                 "program": {
-                    "type": "shell",
+                    "type": "procstar-shell",
                     "command": "echo 'Hello, world!'",
                 }
             },
