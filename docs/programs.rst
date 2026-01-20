@@ -12,8 +12,6 @@ configuration of each program type.
 Apsis provides these program types, and you can extend Apsis with your own.
 
 - `no-op`: Does nothing.
-- `shell`: Executes a shell command, possibly on another host.
-- `program`: Invokes an executable directly, with command line arguments.
 - `procstar`: Invokes an executable directly via a Procstar agent.
 - `procstar-shell`: Executes a shell command via a Procstar agent.
 
@@ -32,18 +30,28 @@ A `no-op` program runs instantly and always succeeds.
         type: no-op
 
 
-Running other programs
-----------------------
+Procstar Programs
+-----------------
+
+`Procstar <https://github.com/apsis-scheduler/procstar>`_ is a system for
+managing running processes.  Apsis can run programs via Procstar agents,
+possibly on other hosts.  For Apsis to do this, at least one Procstar agent with
+the matching group ID must connect to the Apsis server.
+
+Apsis runs the program on one of the Procstar agents with the specified group ID
+that is connected.  If no such agent is connected, Apsis waits for such an agent
+to connect; the run is meanwhile in the *starting* state.
+
 
 Shell commands
 ^^^^^^^^^^^^^^
 
-The `shell` program executes shell command, given in the `command` key. 
+The `procstar-shell` program executes a shell command, given in the `command` key.
 
 .. code:: yaml
 
     program:
-        type: shell
+        type: procstar-shell
         command: /usr/bin/echo 'Hello, world!'
 
 Note the following:
@@ -68,14 +76,14 @@ Note the following:
 Argv invocations
 ^^^^^^^^^^^^^^^^
 
-The `program` program invokes an executable directly, without starting a shell.
+The `procstar` program invokes an executable directly, without starting a shell.
 Instead of a shell command, give `argv`, a list of strings containing the
 arguments.  The first argument is the executable.
 
 .. code:: yaml
 
     program:
-        type: program
+        type: procstar
         argv:
         - /usr/bin/echo
         - Hello, world!
@@ -85,39 +93,35 @@ splitting, or substitution.  Note Apsis still performs :doc:`binding <./jobs>` o
 strings, as described above.
 
 
-Users and hosts
-^^^^^^^^^^^^^^^
+Running as another user
+^^^^^^^^^^^^^^^^^^^^^^^
 
-Apsis can run shell commands and programs as another user, or on another host.
-Specify the `user` and `host` keys.
+The program process runs as whichever user runs the Procstar agent.  To run
+as another user, specify `sudo_user` in the program.  Procstar will attempt to
+run the program under `sudo` as that user.  The host on which the agent is
+running must be configured with an appropriate sudoers configuration that allows
+the user running the Procstar agent to run the command as the sudo user, without
+any explicit password.
 
 .. code:: yaml
 
     program:
-        type: shell
-        user: devacct
-        host: dev3.example.net
-        command: >
-            echo I am $(whoami) and I am running on $(hostname -s). 
-
-The `host` key may specify any host name understood by SSH, or a host group
-name.  Host groups are configured in the Apsis config file.
-
-The remote program is launched via SSH and monitored by an agent program.
-
-FIXME: Document this better.
+        type: procstar-shell
+        group_id: default
+        sudo_user: appuser
+        command: "whoami"
 
 
 Timeouts
 ^^^^^^^^
 
-You can specify a timeout duration for shell command or program.  If the timeout
+You can specify a timeout duration for a Procstar program.  If the timeout
 elapses before the program completes, Apsis sends the program a signal.
 
 .. code:: yaml
 
     program:
-        type: shell
+        type: procstar-shell
         command: /usr/bin/takes-too-long
         timeout:
             duration: 300
@@ -125,42 +129,6 @@ elapses before the program completes, Apsis sends the program a signal.
 
 In this example, Apsis sends SIGTERM to the program after five minutes, if it
 hasn't completed yet.  The `signal` key is optional and defaults to SIGTERM.
-
-
-Procstar Programs
------------------
-
-`Procstar <https://github.com/apsis-scheduler/procstar>` is a system for
-managing running processes.  Apsis can run programs via Procstar agents,
-possibly on other hosts.  For Apsis to do this, at least one Procstar agent with
-the matching group ID must connect to the Apsis server.
-
-.. code:: yaml
-
-    program:
-        type: procstar
-        group_id: default
-        argv: ["/usr/bin/echo", "Hello, world!"]
-
-Apsis runs the program on one of the Procstar agents with group ID "default"
-that is connected.  If no such agent is connected, Apsis waits for such an agent
-to connect; the run is meanwhile in the *starting* state.
-
-To run a shell command,
-
-.. code:: yaml
-
-    program:
-        type: procstar-shell
-        group_id: default
-        command: "echo 'Hello, world!'"
-
-The program process runs as whichever user who runs the Procstar agent.  To run
-as another user, specify `sudo_user` in the program.  Procstar will attempt to
-run the program under `sudo` as that user.  The host on which the agent is
-running must be configured with an appropriate sudoers configuration that allows
-the user running the Procstar agent to run the command as the sudo user, without
-any explicit password.
 
 
 .. _program-stop:
@@ -183,7 +151,7 @@ Before Apsis requests a program to stop, it transitions the run to the
 to the stop request, Apsis transitions the run to *success*; if the program terminates 
 in an unexpected way (non-zero exit code), *failure*.
 
-The program types above that create a UNIX process (`program`, `shell`,
+The program types above that create a UNIX process (
 `procstar`, `procstar-shell`) all implement program stop similarly.  In response
 to a program stop request,
 

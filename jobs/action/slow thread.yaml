@@ -1,7 +1,7 @@
 params: [sleep]
 
 program:
-  type: shell
+  type: procstar-shell
   command: /usr/bin/sleep {{ sleep }}
 
 action:

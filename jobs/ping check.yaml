@@ -1,6 +1,8 @@
 params: [host]
 
-program: ping -n -c 1 {{ host }}
+program:
+  type: procstar-shell
+  command: ping -n -c 1 {{ host }}
 
 schedule:
 - type: interval

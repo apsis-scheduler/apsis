@@ -1,4 +1,6 @@
 metadata:
   labels: [test]
 
-program: exit 1
+program:
+  type: procstar-shell
+  command: exit 1

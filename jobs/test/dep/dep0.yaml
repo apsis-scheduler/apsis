@@ -1,4 +1,6 @@
 params: [label]
 
-program: 'echo "dep0 label={{ label }}"'
+program:
+  type: procstar-shell
+  command: 'echo "dep0 label={{ label }}"'
 

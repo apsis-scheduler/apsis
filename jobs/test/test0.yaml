@@ -21,7 +21,9 @@ schedule:
   calendar: Mon-Thu
   daytime: "16:00:00"
 
-program: $HOME/dev/apsis/jobs/test/test0 '{{ message }}'
+program:
+  type: procstar-shell
+  command: $HOME/dev/apsis/jobs/test/test0 '{{ message }}'
 
 # actions:
 #   condition:

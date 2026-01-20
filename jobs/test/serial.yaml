@@ -1,4 +1,6 @@
-program: /bin/sleep 15
+program:
+  type: procstar-shell
+  command: /bin/sleep 15
 
 condition:
   type: max_running

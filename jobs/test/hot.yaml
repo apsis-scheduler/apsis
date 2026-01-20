@@ -1,4 +1,6 @@
 params: [j]
 schedule:
-program: $HOME/dev/apsis/jobs/test0 'j={{ j }}'
+program:
+  type: procstar-shell
+  command: $HOME/dev/apsis/jobs/test0 'j={{ j }}'
 

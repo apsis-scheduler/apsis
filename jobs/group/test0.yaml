@@ -9,5 +9,7 @@ schedule:
   - "09:30:00"
   - "12:00:00"
 
-program: "echo '{{ message }}' on {{ date }}"
+program:
+  type: procstar-shell
+  command: "echo '{{ message }}' on {{ date }}"
 

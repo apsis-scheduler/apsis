@@ -1,6 +1,8 @@
 params: [date, daytime]
 
-program: echo "running at $(date)"
+program:
+  type: procstar-shell
+  command: echo "running at $(date)"
 
 schedule:
   type: daily-interval

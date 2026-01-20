@@ -5,7 +5,7 @@ metadata:
 params: [date]
 
 program:
-  type: shell
+  type: procstar-shell
   command: |
     date
     echo running for {{ date }}

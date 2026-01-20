@@ -4,5 +4,7 @@ metadata:
 
 params: [tag, time]
 
-program: "sleep {{ time }}; echo '{{ tag }}'"
+program:
+  type: procstar-shell
+  command: "sleep {{ time }}; echo '{{ tag }}'"
 

@@ -158,7 +158,7 @@ For example, consider this job config:
     - fruit
 
     program:
-        type: shell
+        type: procstar-shell
         command: "echo The color of {{ fruit }} is {{ color }}."
 
 When Apsis creates a run with `color: red` and `fruit: apple`, it expands the
@@ -167,7 +167,7 @@ program to,
 .. code:: yaml
 
     program:
-        type: shell
+        type: procstar-shell
         command: "echo The color of apple is red."
 
 The contents of a `{{ ... }}` expansion is evaluated as a `jinja2 expression

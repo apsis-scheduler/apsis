@@ -44,19 +44,3 @@ From Python,
 ```
 
 
-# Agent
-
-Currently, the agent uses the same SSL cert/key for each instance, on any host.
-Generated like this:
-```
-openssl req -new -newkey rsa:4096 -days 10000 -nodes -x509 -subj "/C=XX/ST=XX/L=XX/O=XX/CN=apsis-agent" -keyout agent.key -out agent.cert
-```
-
-Obviously, since the cert doesn't specify the real host name, server
-authentication cannot be used.
-
-One alternate design to improve this would be to use ssh always for interactions
-with the agent initiated by the client, and to use a server running on the
-_client_ (essentially, a webhook) for notifications initiated by the agent.
-
-

@@ -1,7 +1,7 @@
 params: size
 
 program:
-  type: program
+  type: procstar
   argv:
     - /usr/bin/python
     - "-c"

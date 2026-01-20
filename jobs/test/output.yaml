@@ -1,7 +1,7 @@
 params: [count, length]
 
 program:
-  type: shell
+  type: procstar-shell
   command: |
     python -c '
     line = "x" * {{ length }}

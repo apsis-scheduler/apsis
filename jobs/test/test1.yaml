@@ -5,7 +5,9 @@ metadata:
 
 params: [date, message]
 
-program: $HOME/dev/apsis/jobs/test/test1 '{{ message }}'
+program:
+  type: procstar-shell
+  command: $HOME/dev/apsis/jobs/test/test1 '{{ message }}'
 
 # action:
 # - type: extension.EmailAction
