@@ -1,5 +1,7 @@
 params: []
 
-program: >-
-  /bin/sleep 10
+program:
+  type: procstar-shell
+  command: >-
+    /bin/sleep 10
 

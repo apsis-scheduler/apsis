@@ -1,15 +1,17 @@
 params: []
 
-program: >
-  set -x
+program:
+  type: procstar-shell
+  command: >
+    set -x
 
-  echo this is line one
+    echo this is line one
 
-  echo this is line two
+    echo this is line two
 
-  echo this is line three
+    echo this is line three
 
-  return 0
+    return 0
 
 schedule:
 

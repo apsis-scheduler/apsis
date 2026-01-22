@@ -7,8 +7,10 @@ metadata:
     Fails if the trading system is open, and unless the last closed trading date
     is the last calendar date for `strat`.
 
-program: |
-  /home/alex/dev/apsis/jobs/trading/open_day.sh {{ strat }} {{ date }}
+program:
+  type: procstar-shell
+  command: |
+    /home/alex/dev/apsis/jobs/trading/open_day.sh {{ strat }} {{ date }}
 
 condition:
   type: max_running

@@ -1,6 +1,6 @@
 params: [label]
 
 program:
-  type: shell
+  type: procstar-shell
   command: /usr/bin/echo {{ label }}
 

@@ -1,8 +1,8 @@
 params: [color, exit]
 
 program:
-  type: apsis.program.process.ShellCommandProgram
+  type: procstar-shell
   command: |
-    echo "color={{ color }} at $(date -u -Ins)"
+    echo "color={{ color }}"
+    date
     exit {{ exit }}
-

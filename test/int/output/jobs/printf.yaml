@@ -1,8 +1,0 @@
-params: [string]
-
-program:
-  type: program
-  argv:
-    - /usr/bin/printf
-    - "{{ string }}"
-

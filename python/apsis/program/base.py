@@ -278,17 +278,7 @@ class Program(TypedJso):
 
     @classmethod
     def from_jso(cls, jso):
-        # Extend the default JSO typed resolution to accept a str or list.
-        if isinstance(jso, str):
-            from .agent import AgentShellProgram
-
-            return AgentShellProgram(jso)
-        elif isinstance(jso, list):
-            from .agent import AgentProgram
-
-            return AgentProgram(jso)
-        else:
-            return TypedJso.from_jso.__func__(cls, jso)
+        return TypedJso.from_jso.__func__(cls, jso)
 
     def run(self, run_id, cfg) -> RunningProgram:
         """

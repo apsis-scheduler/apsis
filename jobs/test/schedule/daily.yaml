@@ -1,7 +1,7 @@
 params: [date, time, daytime]
 
 program:
-  type: shell
+  type: procstar-shell
   command: |
     date
     echo date={{ date }}

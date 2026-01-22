@@ -1,9 +1,0 @@
-params: ["signal"]
-
-program:
-  type: program
-  argv: ["/usr/bin/sleep", "3"]
-  timeout:
-    duration: 1
-    signal: "{{ signal }}"
-

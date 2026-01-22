@@ -3,5 +3,7 @@ params: [time]
 metadata:
   description: Sleeps for a while.
 
-program: '/bin/sleep {{ time }}'
+program:
+  type: procstar-shell
+  command: '/bin/sleep {{ time }}'
 

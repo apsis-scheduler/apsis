@@ -1,6 +1,6 @@
 params: [date]
 
 program:
-  type: shell
+  type: procstar-shell
   command: /usr/bin/sleep 5
 

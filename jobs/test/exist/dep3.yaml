@@ -1,6 +1,8 @@
 params: [label, label0]
 
-program: 'echo "dep3 label={{ label }} label0={{ label0 }}"'
+program:
+  type: procstar-shell
+  command: 'echo "dep3 label={{ label }} label0={{ label0 }}"'
 
 condition:
 - type: dependency

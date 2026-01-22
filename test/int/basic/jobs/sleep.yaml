@@ -1,9 +1,0 @@
-params: [time]
-
-metadata:
-  description: Sleeps for a while.
-
-program:
-  type: program
-  argv: ["/usr/bin/python", "-c", "import time; time.sleep(float({{ time }}))"]
-

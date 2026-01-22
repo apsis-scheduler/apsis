@@ -28,5 +28,7 @@ metadata:
     non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
 
     
-program: /usr/bin/ech 'Hello world!'
+program:
+  type: procstar-shell
+  command: /usr/bin/ech 'Hello world!'
 

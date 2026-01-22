@@ -1,8 +1,0 @@
-params: ["timeout"]
-
-program:
-  type: program
-  argv: ["/usr/bin/sleep", "3"]
-  timeout:
-    duration: "{{ timeout }}"
-
