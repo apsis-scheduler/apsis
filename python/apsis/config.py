@@ -72,6 +72,25 @@ def check(cfg, base_path: Path):
     _check_duration("program.timeout.duration")
     _check_signal("program.timeout.signal")
 
+    # Validate procstar.agent.ecs config if present
+    ecs_cfg = get_cfg(cfg, "procstar.agent.ecs", None)
+    if ecs_cfg is not None:
+        required_ecs_keys = [
+            "cluster_name",
+            "container_name",
+            "task_definition",
+            "region",
+            "aws_account_number",
+            "ebs_volume_role",
+            "task_startup_timeout",
+            "default_disk_space_gb",
+        ]
+        missing_keys = [key for key in required_ecs_keys if ecs_cfg.get(key) is None]
+        if missing_keys:
+            raise ValueError(
+                f"procstar.agent.ecs config is missing required keys: {', '.join(missing_keys)}"
+            )
+
     # runs_lookback → runs.lookback
     try:
         lookback = cfg["runs_lookback"]
