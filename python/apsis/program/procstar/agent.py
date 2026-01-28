@@ -428,11 +428,9 @@ async def collect_final_fd_data(
 
 
 class BaseRunningProcstarProgram(base.RunningProgram, ABC):
-    """Base class for running Procstar programs with shared functionality."""
-
     def __init__(self, run_id, program, cfg, run_state=None):
         super().__init__(run_id)
-        if hasattr(program, "timeout") and program.timeout is None:
+        if program.timeout is None:
             program.timeout = get_global_runtime_timeout(cfg)
         self.program = program
         self.cfg = get_cfg(cfg, "procstar.agent", {})
