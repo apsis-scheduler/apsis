@@ -19,8 +19,6 @@ TASK_MIN_CPU_UNITS = 1024
 
 
 class ECSTaskManager:
-    """Abstraction layer for managing ECS tasks."""
-
     def __init__(
         self,
         cluster_name: str,
@@ -56,8 +54,6 @@ class ECSTaskManager:
         return self._logs_client
 
     def _create_ebs_volume_config(self, disk_gb: int) -> List[Dict]:
-        """Create EBS volume configuration with specified size."""
-
         return [
             {
                 "name": "procstar-data",
@@ -140,13 +136,11 @@ class ECSTaskManager:
         if tags:
             run_task_params["tags"] = tags
 
-        # Run the task (bridge mode - no network configuration needed)
         response = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: self.ecs_client.run_task(**run_task_params),
         )
 
-        # Check for failures
         if not response.get("tasks"):
             failures = response.get("failures", [])
             failure_details = "; ".join(
@@ -214,6 +208,5 @@ class ECSTaskManager:
             return [event["message"] for event in response.get("events", [])]
 
         except ClientError as e:
-            # If the log stream doesn't exist or other error, log and return empty
             logger.warning(f"Could not retrieve task logs from stream '{log_stream_name}': {e}")
             return []
