@@ -9,6 +9,7 @@ import procstar.spec
 from procstar.agent.exc import (
     NoConnectionError,
     NoOpenConnectionInGroup,
+    ProcessUnknownError,
 )
 from procstar.agent.proc import FdData, Interval, Process, Result
 from signal import Signals
@@ -688,7 +689,9 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
         except asyncio.CancelledError:
             # Don't clean up the proc; we can reconnect.
             self.proc = None
-            raise
+        except ProcessUnknownError:
+            # Don't ask to clean it up; it's already gone.
+            self.proc = None
         except Exception as exc:
             log.error("procstar execution error", exc_info=True)
             yield ProgramError(f"procstar: {exc}")
@@ -791,5 +794,7 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
 
         yield base.ProgramRunning(run_state=self.run_state, meta=self._get_result_metadata(res))
 
-        async for update in self._monitor_procstar_execution(start, update_interval, output_interval):
+        async for update in self._monitor_procstar_execution(
+            start, update_interval, output_interval
+        ):
             yield update
