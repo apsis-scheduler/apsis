@@ -362,13 +362,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         # Restore the unique group_id for reconnection (fallback to run-specific ID for older runs)
         self.unique_group_id = self.run_state.get("group_id", f"aws-ecs-{self.run_id}")
 
-    async def stop(self):
-        """Stop the running program gracefully."""
-        # Call parent stop method first - this sends signals to terminate the process.
-        # Once the process dies and the proc is deleted, the Procstar agent will
-        # exit immediately (via --wait mode), which terminates the ECS task.
-        await super().stop()
-
     def _get_result_metadata(self, res: Result):
         """Override to include ECS-specific metadata."""
         meta = super()._get_result_metadata(res)
