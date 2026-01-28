@@ -11,6 +11,7 @@ import ujson
 
 from .actions.base import Action
 from .cond.base import Condition
+from .exc import SchemaError
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr
 from .lib.timing import Timer
@@ -331,7 +332,12 @@ class RunDB:
             meta,
             run_state,
         ) in cursor:
-            program = None if program is None else Program.from_jso(ujson.loads(program))
+            if program is not None:
+                try:
+                    program = Program.from_jso(ujson.loads(program))
+                except SchemaError as exc:
+                    log.warning(f"unknown program type for run {run_id}: {exc}")
+                    program = None
             conds = None if conds is None else [Condition.from_jso(c) for c in ujson.loads(conds)]
             actions = (
                 None if actions is None else [Action.from_jso(a) for a in ujson.loads(actions)]
