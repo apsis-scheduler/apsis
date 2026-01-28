@@ -1,9 +1,7 @@
-import asyncio
 from abc import ABC, abstractmethod
+import asyncio
 from dataclasses import dataclass
 import logging
-from typing import Any, Dict
-
 import ora
 import procstar.spec
 from procstar.agent.exc import (
@@ -13,6 +11,7 @@ from procstar.agent.exc import (
 )
 from procstar.agent.proc import FdData, Interval, Process, Result
 from signal import Signals
+from typing import Any, Dict
 import uuid
 
 from apsis.lib import asyn
@@ -426,9 +425,6 @@ async def collect_final_fd_data(
 
     # If we get here, the async iterator ended without FdData
     return initial_fd_data
-
-
-# -------------------------------------------------------------------------------
 
 
 class BaseRunningProcstarProgram(base.RunningProgram, ABC):
