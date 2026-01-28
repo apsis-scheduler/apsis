@@ -26,7 +26,6 @@ from apsis.program.base import (
     ProgramSuccess,
     ProgramFailure,
     ProgramError,
-    ProgramUpdate,
     Timeout,
     get_global_runtime_timeout,
 )
@@ -597,14 +596,14 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
                 match update:
                     case FdData():
                         fd_data = _combine_fd_data(fd_data, update)
-                        yield ProgramUpdate(outputs=await _make_outputs(fd_data))
+                        yield base.ProgramUpdate(outputs=await _make_outputs(fd_data))
 
                     case Result() as res:
                         meta = self._get_result_metadata(res)
 
                         if res.state == "running":
                             # Intermediate result.
-                            yield ProgramUpdate(meta=meta)
+                            yield base.ProgramUpdate(meta=meta)
                         else:
                             # Process terminated.
                             break
