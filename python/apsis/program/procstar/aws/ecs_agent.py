@@ -18,7 +18,7 @@ from apsis.program.base import (
     get_global_runtime_timeout,
 )
 from apsis.program.process import BoundStop, Stop
-from apsis.program.procstar.base import BaseRunningProcstarProgram
+from apsis.program.procstar.agent import BaseRunningProcstarProgram, _make_metadata
 from apsis.runs import template_expand
 
 from .ecs import ECSTaskManager
