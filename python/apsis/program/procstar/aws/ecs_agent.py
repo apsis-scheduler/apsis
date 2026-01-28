@@ -368,8 +368,3 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         meta.update(self._get_base_metadata())
         meta["proc_status"] = res.state
         return meta
-
-    # Note: _cleanup is inherited from BaseRunningProcstarProgram.
-    # We don't explicitly stop the ECS task - the Procstar agent is configured
-    # with --wait and --wait-timeout, so it will automatically exit when idle
-    # (after proc deletion or if no work is assigned).
