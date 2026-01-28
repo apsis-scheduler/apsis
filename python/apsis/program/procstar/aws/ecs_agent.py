@@ -26,8 +26,6 @@ log = logging.getLogger(__name__)
 
 
 class _BaseProcstarECSProgram(Program):
-    """Base class for ECS Procstar programs with common functionality."""
-
     def __init__(
         self,
         *,
@@ -38,16 +36,6 @@ class _BaseProcstarECSProgram(Program):
         disk_gb=None,
         role: Optional[str] = None,
     ):
-        """Initialize base ECS program.
-
-        Args:
-            stop: Stop configuration for graceful shutdown
-            timeout: Timeout configuration
-            mem_gb: Memory limit in GiB for the ECS task container
-            vcpu: CPU limit in vCPUs (e.g., 1.0 = 1 vCPU, 0.5 = half vCPU)
-            disk_gb: Ephemeral storage in GiB for the ECS task
-            role: Optional IAM role name to assume (role ARN will be constructed)
-        """
         super().__init__()
         self.stop = stop
         self.timeout = timeout
@@ -57,7 +45,6 @@ class _BaseProcstarECSProgram(Program):
         self.role = role
 
     def _bind(self, argv, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
-        """Common logic for building a bound program."""
         expanded_mem_gb = None
         if self.mem_gb is not None:
             expanded_mem_gb = template_expand(str(self.mem_gb), args)
@@ -84,7 +71,6 @@ class _BaseProcstarECSProgram(Program):
         )
 
     def _base_to_jso(self):
-        """Common to_jso logic for ECS programs."""
         jso = super().to_jso() | ifkey("stop", self.stop.to_jso(), {})
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
@@ -100,7 +86,6 @@ class _BaseProcstarECSProgram(Program):
 
     @staticmethod
     def _from_jso(pop):
-        """Parse ECS-specific fields."""
         return dict(
             stop=pop("stop", Stop.from_jso, Stop()),
             timeout=pop("timeout", Timeout.from_jso, None),
@@ -112,21 +97,13 @@ class _BaseProcstarECSProgram(Program):
 
 
 class ProcstarECSShellProgram(_BaseProcstarECSProgram):
-    """Program that executes shell commands on AWS ECS using Procstar agents.
-
-    This is similar to ProcstarECSProgram but uses a shell command string instead of argv.
-    The command is executed via SHELL -c.
-    """
-
     SHELL = "/usr/bin/bash"
 
     def __init__(self, command: str, **kwargs):
-        """Initialize ProcstarECSShellProgram with a shell command."""
         super().__init__(**kwargs)
         self.command = command
 
     def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
-        """Bind template parameters in the program configuration."""
         argv = [self.SHELL, "-c", template_expand(self.command, args)]
         return self._bind(argv, args)
 
@@ -144,20 +121,11 @@ class ProcstarECSShellProgram(_BaseProcstarECSProgram):
 
 
 class ProcstarECSProgram(_BaseProcstarECSProgram):
-    """Program that executes commands on AWS ECS using Procstar agents with argv.
-
-    This program launches an ECS task that runs a Procstar agent, then
-    connects to that agent via websocket to execute the specified command.
-    This follows the proper Procstar architecture for distributed job execution.
-    """
-
     def __init__(self, argv, **kwargs):
-        """Initialize ProcstarECSProgram with argv list."""
         super().__init__(**kwargs)
         self.argv = [str(a) for a in argv]
 
     def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
-        """Bind template parameters in the program configuration."""
         argv = tuple(template_expand(a, args) for a in self.argv)
         return self._bind(argv, args)
 
@@ -178,8 +146,6 @@ class ProcstarECSProgram(_BaseProcstarECSProgram):
 
 
 class BoundProcstarECSProgram(Program):
-    """Bound version of ProcstarECSProgram with template parameters resolved."""
-
     def __init__(
         self,
         argv,
