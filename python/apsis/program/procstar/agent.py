@@ -694,7 +694,10 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
 
         except Exception as exc:
             log.error("procstar", exc_info=True)
-            yield ProgramError(f"procstar: {exc}", meta={})
+            yield ProgramError(
+                f"procstar: {exc}",
+                meta={},
+            )
         finally:
             # Cleanup resources
             await self._cleanup()
