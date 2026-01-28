@@ -440,6 +440,7 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
         self.stopping = False
         self.stop_signals = []
         self.timed_out = False
+        self._start_time = None
 
     @property
     @abstractmethod
@@ -447,110 +448,31 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
         """Returns the procstar proc spec for the program."""
         pass
 
-    @abstractmethod
-    async def _start_new_execution(self, update_interval, output_interval):
-        """Start new execution. Must yield program updates."""
-        pass
+    @memo.property
+    async def updates(self):
+        """Main entry point for program execution."""
+        run_cfg = get_cfg(self.cfg, "run", {})
+        update_interval = nparse_duration(run_cfg.get("update_interval", None))
+        output_interval = nparse_duration(run_cfg.get("output_interval", None))
 
-    async def _restore_reconnection_state(self):
-        """Restore state needed for reconnection. Subclasses should call super()."""
-        self.conn_id = self.run_state["conn_id"]
-        self.proc_id = self.run_state["proc_id"]
+        if self.run_state is None:
+            async for update in self._start_new():
+                yield update
+                if isinstance(update, ProgramError):
+                    return
+        else:
+            async for update in self._reconnect():
+                yield update
+                if isinstance(update, ProgramError):
+                    return
 
-    async def _start_proc_on_agent(
-        self,
-        group_id: str,
-        extra_run_state: Dict[str, Any] = None,
-    ):
-        """Start a proc on a Procstar agent.
-
-        Connects to an agent in the specified group and starts the proc.
-        Sets self.proc, self.conn_id, self.proc_id, and self.run_state.
-
-        Args:
-            group_id: The Procstar agent group to connect to.
-            extra_run_state: Additional fields to include in run_state.
-
-        Returns:
-            Tuple of (start_time, initial_result) for use in monitoring.
-
-        Raises:
-            NoOpenConnectionInGroup: If no agent connects in time.
-        """
-        conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
-        conn_timeout = nparse_duration(conn_timeout) or 300
-
-        self.proc_id = str(uuid.uuid4())
-
-        # This may raise NoOpenConnectionInGroup
-        self.proc, res = await get_agent_server().start(
-            proc_id=self.proc_id,
-            group_id=group_id,
-            spec=self._spec,
-            conn_timeout=conn_timeout,
-        )
-
-        self.conn_id = self.proc.conn_id
-        log.info(f"started: {self.proc_id} on conn {self.conn_id}")
-
-        start = ora.now()
-        self.run_state = {
-            "conn_id": self.conn_id,
-            "proc_id": self.proc_id,
-            "start": str(start),
-            **(extra_run_state or {}),
-        }
-
-        return start, res
-
-    async def _reconnect_execution(self, update_interval, output_interval):
-        conn_timeout = get_cfg(self.cfg, "connection.reconnect_timeout", None)
-        conn_timeout = nparse_duration(conn_timeout)
-
-        # Hook for subclasses to restore state
-        await self._restore_reconnection_state()
-
-        log.info(f"reconnecting: {self.proc_id} on conn {self.conn_id}")
+        # We now have a proc running on the agent.
+        start = self._start_time
 
         try:
-            self.proc = await get_agent_server().reconnect(
-                conn_id=self.conn_id,
-                proc_id=self.proc_id,
-                conn_timeout=conn_timeout,
-            )
-        except NoConnectionError as exc:
-            msg = f"reconnect failed: {self.proc_id}: {exc}"
-            log.error(msg)
-            yield ProgramError(msg)
-            return
+            tasks = asyn.TaskGroup()
 
-        await self.proc.request_result()
-        log.info(f"reconnected: {self.proc_id} on conn {self.conn_id}")
-
-        # Continue monitoring
-        start = ora.Time(self.run_state["start"])
-        async for update in self._monitor_procstar_execution(
-            start, update_interval, output_interval
-        ):
-            yield update
-
-    async def _cleanup(self):
-        """Cleanup resources after execution. Override for custom cleanup."""
-        if self.proc is not None:
-            # Done with this proc; ask the agent to delete it.
-            try:
-                await self.proc.delete()
-            except Exception as exc:
-                # Just log this; for Apsis, the proc is done.
-                log.error(f"delete {self.proc.proc_id}: {exc}")
-            self.proc = None
-
-    async def _monitor_procstar_execution(self, start, update_interval, output_interval):
-        """Monitor Procstar execution until completion."""
-        tasks = asyn.TaskGroup()
-
-        try:
-            if hasattr(self.program, "timeout") and self.program.timeout is not None:
+            if self.program.timeout is not None:
 
                 async def timeout_handler():
                     elapsed_so_far = ora.now() - start
@@ -657,33 +579,6 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
                     message += f" (timeout after {elapsed:.0f} s)"
                 yield ProgramFailure(message, meta=meta, outputs=outputs)
 
-        finally:
-            # Cancel our helper tasks.
-            await tasks.cancel_all()
-
-    def _get_result_metadata(self, res: Result) -> Dict[str, Any]:
-        """Extract metadata from a proc result. Override for custom metadata."""
-        return _make_metadata(self.proc_id, res)
-
-    @memo.property
-    async def updates(self):
-        """Main entry point for program execution."""
-        run_cfg = get_cfg(self.cfg, "run", {})
-        update_interval = run_cfg.get("update_interval", None)
-        update_interval = nparse_duration(update_interval)
-        output_interval = run_cfg.get("output_interval", None)
-        output_interval = nparse_duration(output_interval)
-
-        try:
-            if self.run_state is None:
-                # Start new execution
-                async for update in self._start_new_execution(update_interval, output_interval):
-                    yield update
-            else:
-                # Reconnect to existing execution
-                async for update in self._reconnect_execution(update_interval, output_interval):
-                    yield update
-
         except asyncio.CancelledError:
             # Don't clean up the proc; we can reconnect.
             self.proc = None
@@ -694,13 +589,19 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
 
         except Exception as exc:
             log.error("procstar", exc_info=True)
-            yield ProgramError(
-                f"procstar: {exc}",
-                meta={},
-            )
+            yield ProgramError(f"procstar: {exc}", meta={})
+
         finally:
-            # Cleanup resources
-            await self._cleanup()
+            # Cancel our helper tasks.
+            await tasks.cancel_all()
+            if self.proc is not None:
+                # Done with this proc; ask the agent to delete it.
+                try:
+                    await self.proc.delete()
+                except Exception as exc:
+                    # Just log this; for Apsis, the proc is done.
+                    log.error(f"delete {self.proc.proc_id}: {exc}")
+                self.proc = None
 
     async def stop(self):
         """Stop the running program gracefully."""
@@ -738,6 +639,82 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
             return
 
         await self.proc.send_signal(int(signal))
+
+    @abstractmethod
+    async def _start_new(self):
+        """Start new execution. Yields updates and sets self._start_time.
+        Should yield ProgramError on failure."""
+        pass
+
+    def _get_result_metadata(self, res: Result) -> Dict[str, Any]:
+        """Extract metadata from a proc result. Override for custom metadata."""
+        return _make_metadata(self.proc_id, res)
+
+    async def _reconnect(self):
+        """Reconnect to existing execution. Yields updates and sets self._start_time.
+        Can be overridden by subclasses to restore additional state."""
+        conn_timeout = get_cfg(self.cfg, "connection.reconnect_timeout", None)
+        conn_timeout = nparse_duration(conn_timeout)
+
+        conn_id = self.run_state["conn_id"]
+        proc_id = self.run_state["proc_id"]
+        self._start_time = ora.Time(self.run_state["start"])
+        log.info(f"reconnecting: {proc_id} on conn {conn_id}")
+
+        try:
+            self.proc = await get_agent_server().reconnect(
+                conn_id=conn_id,
+                proc_id=proc_id,
+                conn_timeout=conn_timeout,
+            )
+        except NoConnectionError as exc:
+            msg = f"reconnect failed: {proc_id}: {exc}"
+            log.error(msg)
+            yield ProgramError(msg)
+            return
+
+        await self.proc.request_result()
+        log.info(f"reconnected: {proc_id} on conn {conn_id}")
+
+    async def _start_proc_on_agent(
+        self,
+        group_id: str,
+        extra_run_state: Dict[str, Any] = None,
+    ):
+        """Start a proc on a Procstar agent. Used by subclasses in _start_new.
+
+        Sets self.proc, self.conn_id, self.proc_id, self.run_state, and self._start_time.
+
+        Returns:
+            Initial result for use in ProgramRunning metadata.
+
+        Raises:
+            NoOpenConnectionInGroup: If no agent connects in time.
+        """
+        conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
+        conn_timeout = nparse_duration(conn_timeout) or 300
+
+        self.proc_id = str(uuid.uuid4())
+
+        self.proc, res = await get_agent_server().start(
+            proc_id=self.proc_id,
+            group_id=group_id,
+            spec=self._spec,
+            conn_timeout=conn_timeout,
+        )
+
+        self.conn_id = self.proc.conn_id
+        log.info(f"started: {self.proc_id} on conn {self.conn_id}")
+
+        self._start_time = ora.now()
+        self.run_state = {
+            "conn_id": self.conn_id,
+            "proc_id": self.proc_id,
+            "start": str(self._start_time),
+            **(extra_run_state or {}),
+        }
+
+        return res
 
 
 # -------------------------------------------------------------------------------
@@ -783,19 +760,14 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
             systemd_properties=systemd,
         )
 
-    async def _start_new_execution(self, update_interval, output_interval):
+    async def _start_new(self):
         """Start new execution by connecting to Procstar agent."""
         try:
-            start, res = await self._start_proc_on_agent(self.program.group_id)
+            res = await self._start_proc_on_agent(self.program.group_id)
         except NoOpenConnectionInGroup as exc:
             msg = f"start failed: {self.proc_id}: {exc}"
             log.warning(msg)
             yield ProgramError(msg)
             return
 
-        yield base.ProgramRunning(run_state=self.run_state, meta=self._get_result_metadata(res))
-
-        async for update in self._monitor_procstar_execution(
-            start, update_interval, output_interval
-        ):
-            yield update
+        yield base.ProgramRunning(run_state=self.run_state, meta=_make_metadata(self.proc_id, res))

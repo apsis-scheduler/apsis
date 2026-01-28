@@ -304,7 +304,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             },
         )
 
-    async def _start_new_execution(self, update_interval, output_interval):
+    async def _start_new(self):
         """Start new execution by launching ECS task and connecting to agent."""
         try:
             log.info(f"Launching ECS task for run {self.run_id} on cluster {self.cluster_name}")
@@ -325,7 +325,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             yield ProgramUpdate(meta=self._get_base_metadata())
 
             # Connect to agent
-            start, res = await self._start_proc_on_agent(
+            res = await self._start_proc_on_agent(
                 self.unique_group_id,
                 extra_run_state={
                     "task_arn": self.task_arn,
@@ -334,11 +334,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             )
 
             yield ProgramRunning(run_state=self.run_state, meta=self._get_result_metadata(res))
-
-            async for update in self._monitor_procstar_execution(
-                start, update_interval, output_interval
-            ):
-                yield update
 
         except NoOpenConnectionInGroup:
             task_id = self.task_arn.split("/")[-1] if self.task_arn else "unknown"
@@ -349,18 +344,20 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             yield ProgramError(msg, meta=meta)
 
         except Exception as exc:
-            log.error(f"Error in _start_new_execution for run {self.run_id}", exc_info=True)
+            log.error(f"Error starting ECS task for run {self.run_id}", exc_info=True)
             meta = self._get_base_metadata()
             meta["error"] = f"Failed to start execution: {exc}"
             meta["error_type"] = type(exc).__name__
             yield ProgramError(f"Failed to start execution: {exc}", meta=meta)
 
-    async def _restore_reconnection_state(self):
-        """Restore state needed for reconnection."""
-        await super()._restore_reconnection_state()
+    async def _reconnect(self):
+        """Reconnect to existing execution, restoring ECS-specific state first."""
+        # Restore ECS-specific state
         self.task_arn = self.run_state.get("task_arn")
-        # Restore the unique group_id for reconnection (fallback to run-specific ID for older runs)
         self.unique_group_id = self.run_state.get("group_id", f"aws-ecs-{self.run_id}")
+        # Call parent reconnect
+        async for update in super()._reconnect():
+            yield update
 
     def _get_result_metadata(self, res: Result):
         """Override to include ECS-specific metadata."""
