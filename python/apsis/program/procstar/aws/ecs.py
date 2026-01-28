@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from datetime import datetime
 from typing import Dict, List, Optional
 
 import boto3
@@ -39,19 +38,12 @@ class ECSTaskManager:
         self.default_vcpu = default_vcpu
         self.default_disk_gb = default_disk_gb
         self._ecs_client = None
-        self._logs_client = None
 
     @property
     def ecs_client(self):
         if self._ecs_client is None:
             self._ecs_client = boto3.client("ecs", region_name=self.region)
         return self._ecs_client
-
-    @property
-    def logs_client(self):
-        if self._logs_client is None:
-            self._logs_client = boto3.client("logs", region_name=self.region)
-        return self._logs_client
 
     def _create_ebs_volume_config(self, disk_gb: int) -> List[Dict]:
         return [
@@ -175,38 +167,3 @@ class ECSTaskManager:
         except ClientError as e:
             logger.error(f"Failed to stop ECS task {task_arn}: {e}")
             return False
-
-    async def get_task_logs(
-        self,
-        log_group: str,
-        task_arn: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        limit: int = 100,
-    ) -> List[str]:
-        try:
-            # If no task_arn provided, we can't get logs
-            if not task_arn:
-                logger.warning("No task ARN provided, cannot retrieve logs")
-                return []
-
-            task_id = task_arn.split("/")[-1]
-            log_stream_name = f"ecs/{self.container_name}/{task_id}"
-
-            kwargs = {
-                "logGroupName": log_group,
-                "logStreamName": log_stream_name,
-                "limit": limit,
-            }
-
-            if start_time:
-                kwargs["startTime"] = int(start_time.timestamp() * 1000)
-
-            response = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self.logs_client.get_log_events(**kwargs)
-            )
-
-            return [event["message"] for event in response.get("events", [])]
-
-        except ClientError as e:
-            logger.warning(f"Could not retrieve task logs from stream '{log_stream_name}': {e}")
-            return []
