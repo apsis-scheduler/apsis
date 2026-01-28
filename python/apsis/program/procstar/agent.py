@@ -565,6 +565,7 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
                         await asyncio.sleep(sleep_duration)
 
                     if not self.stopping and self.proc is not None:
+                        elapsed = ora.now() - start
                         log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
                         timeout_signal = Signals[self.program.timeout.signal]
@@ -577,6 +578,7 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
             fd_data = None
 
             # Start tasks to request periodic updates of results and output.
+
             if update_interval is not None:
                 # Start a task that periodically requests the current result.
                 tasks.add("poll update", asyn.poll(self.proc.request_result, update_interval))
