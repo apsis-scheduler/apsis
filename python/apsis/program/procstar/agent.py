@@ -1,32 +1,19 @@
-import asyncio
 from dataclasses import dataclass
 import logging
-import ora
-import procstar.spec
-from procstar.agent.exc import (
-    NoConnectionError,
-    NoOpenConnectionInGroup,
-    ProcessUnknownError,
-)
-from procstar.agent.proc import FdData, Interval, Process, Result
-from signal import Signals
-import uuid
 
-from apsis.lib import asyn
-from apsis.lib import memo
+import procstar.spec
+from procstar.agent.exc import NoOpenConnectionInGroup
+
 from apsis.lib.json import check_schema, ifkey
-from apsis.lib.parse import nparse_duration
-from apsis.lib.py import or_none, nstr, get_cfg
-from apsis.procstar import get_agent_server
+from apsis.lib.py import get_cfg, nstr, or_none
 from apsis.program import base
 from apsis.program.base import (
-    ProgramSuccess,
-    ProgramFailure,
     ProgramError,
     Timeout,
     get_global_runtime_timeout,
 )
-from apsis.program.process import Stop, BoundStop
+from apsis.program.process import BoundStop, Stop
+from apsis.program.procstar.base import BaseRunningProcstarProgram
 from apsis.runs import join_args, template_expand
 
 log = logging.getLogger(__name__)
@@ -36,8 +23,6 @@ ntemplate_expand = or_none(template_expand)
 # -------------------------------------------------------------------------------
 
 SUDO_ARGV_DEFAULT = ["/usr/bin/sudo", "--preserve-env", "--set-home"]
-
-FD_DATA_TIMEOUT = 60
 
 if_not_none = lambda k, v: {} if v is None else {k: v}
 
@@ -70,116 +55,6 @@ def _make_systemd(cfg, *, resources) -> procstar.spec.Proc.SystemdProperties:
             memory_swap_max=0,
         )
     )
-
-
-def _make_metadata(proc_id, res: dict):
-    """
-    Extracts run metadata from a proc result message.
-
-    - `status`: Process raw status (see `man 2 wait`) and decoded exit code
-      and signal info.
-
-    - `times`: Process timing from the Procstar agent on the host running the
-      program.  `elapsed` is computed from a monotonic clock.
-
-    - `rusage`: Process resource usage.  See `man 2 getrusage` for details.
-
-    - `proc_stat`: Process information collected from `/proc/<pid>/stat`.  See
-      the `proc(5)` man page for details.
-
-    - `proc_statm`: Process memory use collected from `/proc/<pid>/statm`.  See
-      the `proc(5)` man page for details.
-
-    - `proc_id`: The Procstar process ID.
-
-    - `conn`: Connection info the the Procstar agent.
-
-    - `procstar_proc`: Process information about the Procstar agent itself.
-
-    """
-    meta = {
-        "errors": res.errors,
-    } | {
-        k: dict(v.__dict__)
-        for k in (
-            "status",
-            "times",
-            "rusage",
-            "proc_stat",
-            "proc_statm",
-            "cgroup_accounting",
-        )
-        if (v := getattr(res, k, None)) is not None
-    }
-
-    meta["procstar_proc_id"] = proc_id
-    try:
-        meta["procstar_conn"] = dict(res.procstar.conn.__dict__)
-        meta["procstar_agent"] = dict(res.procstar.proc.__dict__)
-    except AttributeError:
-        pass
-
-    return meta
-
-
-def _combine_fd_data(old, new):
-    if old is None:
-        return new
-
-    assert new.fd == old.fd
-    assert new.encoding == old.encoding
-    assert new.interval.start <= new.interval.stop
-    assert new.interval.stop - new.interval.start == len(new.data)
-
-    # FIXME: Should be Interval.__str__().
-    fi = lambda i: f"[{i.start}, {i.stop})"
-
-    # Check for a gap in the data.
-    if old.interval.stop < new.interval.start:
-        raise RuntimeError(f"fd data gap: {fi(old.interval)} + {fi(new.interval)}")
-
-    elif old.interval.stop == new.interval.start:
-        return FdData(
-            fd=old.fd,
-            encoding=old.encoding,
-            interval=Interval(old.interval.start, new.interval.stop),
-            data=old.data + new.data,
-        )
-
-    else:
-        # Partial overlap of data.
-        log.warning(f"fd data overlap: {fi(old.interval)} + {fi(new.interval)}")
-        length = new.interval.stop - old.interval.stop
-        if length > 0:
-            # Partial overlap.  Patch intervals together.
-            interval = Interval(old.interval.start, new.interval.stop)
-            data = old.data + new.data[-length:]
-            assert interval.stop - interval.start == len(data)
-            return FdData(
-                fd=old.fd,
-                encoding=old.encoding,
-                interval=interval,
-                data=data,
-            )
-        else:
-            # Complete overlap.
-            return old
-
-
-async def _make_outputs(fd_data):
-    """
-    Constructs program outputs from combined output fd data.
-    """
-    if fd_data is None:
-        return {}
-
-    assert fd_data.fd == "stdout"
-    assert fd_data.interval.start == 0
-    assert fd_data.encoding is None
-
-    output = fd_data.data
-    length = fd_data.interval.stop
-    return base.program_outputs(output, length=length, compression=None)
 
 
 # -------------------------------------------------------------------------------
@@ -402,46 +277,16 @@ class BoundProcstarProgram(base.Program):
 # -------------------------------------------------------------------------------
 
 
-async def collect_final_fd_data(
-    initial_fd_data: FdData | None, proc: Process, expected_length: int
-) -> FdData | None:
-    async for update in proc.updates:
-        match update:
-            case FdData():
-                fd_data_local = _combine_fd_data(initial_fd_data, update)
-                # Confirm that we've accumulated all the output as
-                # specified in the result.
-                assert fd_data_local.interval.start == 0
-                if fd_data_local.interval.stop != expected_length:
-                    log.warning(
-                        f"FdData length mismatch: expected {expected_length}, got {fd_data_local.interval.stop}."
-                    )
-                return fd_data_local
-
-            case _:
-                log.debug("expected final FdData")
-
-    # If we get here, the async iterator ended without FdData
-    return initial_fd_data
-
-
-class RunningProcstarProgram(base.RunningProgram):
+class RunningProcstarProgram(BaseRunningProcstarProgram):
     def __init__(self, run_id, program, cfg, run_state=None):
         """
         :param res:
           The most recent `Result`, if any.
         """
-        super().__init__(run_id)
         if program.timeout is None:
             program.timeout = get_global_runtime_timeout(cfg)
-        self.program = program
-        self.cfg = get_cfg(cfg, "procstar.agent", {})
-        self.run_state = run_state
-
-        self.proc = None
-        self.stopping = False
-        self.stop_signals = []
-        self.timed_out = False
+        super().__init__(run_id, program, cfg, run_state)
+        self.proc_id = None
 
     @property
     def _spec(self):
@@ -474,247 +319,19 @@ class RunningProcstarProgram(base.RunningProgram):
             systemd_properties=systemd,
         )
 
-    @memo.property
-    async def updates(self):
-        """
-        Handles running `inst` until termination.
-        """
-        run_cfg = get_cfg(self.cfg, "run", {})
-        update_interval = run_cfg.get("update_interval", None)
-        update_interval = nparse_duration(update_interval)
-        output_interval = run_cfg.get("output_interval", None)
-        output_interval = nparse_duration(output_interval)
-
-        if self.run_state is None:
-            # Start the proc.
-
-            conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
-            conn_timeout = nparse_duration(conn_timeout)
-            proc_id = str(uuid.uuid4())
-
-            try:
-                # Start the proc.
-                self.proc, res = await get_agent_server().start(
-                    proc_id=proc_id,
-                    group_id=self.program.group_id,
-                    spec=self._spec,
-                    conn_timeout=conn_timeout,
-                )
-            except NoOpenConnectionInGroup as exc:
-                msg = f"start failed: {proc_id}: {exc}"
-                log.warning(msg)
-                yield ProgramError(msg)
-                return
-
-            conn_id = self.proc.conn_id
-            log.info(f"started: {proc_id} on conn {conn_id}")
-
-            start = ora.now()
-            self.run_state = {
-                "conn_id": conn_id,
-                "proc_id": proc_id,
-                "start": str(start),
-            }
-            yield base.ProgramRunning(run_state=self.run_state, meta=_make_metadata(proc_id, res))
-
-        else:
-            # Reconnect to the proc.
-            conn_timeout = get_cfg(self.cfg, "connection.reconnect_timeout", None)
-            conn_timeout = nparse_duration(conn_timeout)
-
-            conn_id = self.run_state["conn_id"]
-            proc_id = self.run_state["proc_id"]
-            start = ora.Time(self.run_state["start"])
-            log.info(f"reconnecting: {proc_id} on conn {conn_id}")
-
-            try:
-                self.proc = await get_agent_server().reconnect(
-                    conn_id=conn_id,
-                    proc_id=proc_id,
-                    conn_timeout=conn_timeout,
-                )
-            except NoConnectionError as exc:
-                msg = f"reconnect failed: {proc_id}: {exc}"
-                log.error(msg)
-                yield ProgramError(msg)
-                return
-
-            # Request a result immediately.
-            await self.proc.request_result()
-            res = None
-
-            log.info(f"reconnected: {proc_id} on conn {conn_id}")
-
-        # We now have a proc running on the agent.
-
+    async def _start_new_execution(self, update_interval, output_interval):
+        """Start new execution by connecting to Procstar agent."""
         try:
-            tasks = asyn.TaskGroup()
-
-            if self.program.timeout is not None:
-
-                async def timeout_handler():
-                    elapsed_so_far = ora.now() - start
-                    remaining = self.program.timeout.duration - elapsed_so_far
-                    sleep_duration = max(0, remaining)
-
-                    if sleep_duration > 0:
-                        await asyncio.sleep(sleep_duration)
-
-                    if not self.stopping and self.proc is not None:
-                        elapsed = ora.now() - start
-                        log.info(f"{self.run_id}: timeout")
-                        self.timed_out = True
-                        timeout_signal = Signals[self.program.timeout.signal]
-                        self.stop_signals.append(timeout_signal)
-                        await self.proc.send_signal(timeout_signal)
-
-                tasks.add("timeout", timeout_handler())
-
-            # Output collected so far.
-            fd_data = None
-
-            # Start tasks to request periodic updates of results and output.
-
-            if update_interval is not None:
-                # Start a task that periodically requests the current result.
-                tasks.add("poll update", asyn.poll(self.proc.request_result, update_interval))
-
-            if output_interval is not None:
-                # Start a task that periodically requests additional output.
-                def more_output():
-                    # From the current position to the end.
-                    start = 0 if fd_data is None else fd_data.interval.stop
-                    interval = Interval(start, None)
-                    return self.proc.request_fd_data("stdout", interval=interval)
-
-                tasks.add("poll output", asyn.poll(more_output, output_interval))
-
-            # Process further updates, until the process terminates.
-            async for update in self.proc.updates:
-                match update:
-                    case FdData():
-                        fd_data = _combine_fd_data(fd_data, update)
-                        yield base.ProgramUpdate(outputs=await _make_outputs(fd_data))
-
-                    case Result() as res:
-                        meta = _make_metadata(proc_id, res)
-
-                        if res.state == "running":
-                            # Intermediate result.
-                            yield base.ProgramUpdate(meta=meta)
-                        else:
-                            # Process terminated.
-                            break
-
-            else:
-                # Proc was deleted--but we didn't delete it.
-                assert False, "proc deleted"
-
-            # Stop update tasks.
-            await tasks.cancel_all()
-
-            # Do we have the complete output?
-            length = res.fds.stdout.length
-            if length > 0 and (fd_data is None or fd_data.interval.stop < length):
-                # Request any remaining output.
-                await self.proc.request_fd_data(
-                    "stdout",
-                    interval=Interval(0 if fd_data is None else fd_data.interval.stop, None),
-                )
-                try:
-                    fd_data = await asyncio.wait_for(
-                        collect_final_fd_data(fd_data, self.proc, length),
-                        timeout=FD_DATA_TIMEOUT,
-                    )
-                except asyncio.TimeoutError:
-                    error_msg = (
-                        f"Timeout waiting for final FdData after {FD_DATA_TIMEOUT}s."
-                        f"Run completed with exit_code={res.status.exit_code}."
-                    )
-                    log.error(error_msg)
-                    yield ProgramError(
-                        error_msg,
-                        meta=_make_metadata(proc_id, res),
-                        outputs=await _make_outputs(fd_data),
-                    )
-                    return
-
-            outputs = await _make_outputs(fd_data)
-            meta["stop"] = {"signals": [s.name for s in self.stop_signals]}
-
-            if res.status.exit_code == 0 and not self.timed_out:
-                # The process terminated successfully.
-                yield ProgramSuccess(meta=meta, outputs=outputs)
-            else:
-                message = (
-                    f"exit code {res.status.exit_code}"
-                    if res.status.signal is None
-                    else f"killed by {res.status.signal}"
-                )
-                if self.timed_out:
-                    elapsed = ora.now() - start
-                    message += f" (timeout after {elapsed:.0f} s)"
-                yield ProgramFailure(message, meta=meta, outputs=outputs)
-
-        except asyncio.CancelledError:
-            # Don't clean up the proc; we can reconnect.
-            self.proc = None
-
-        except ProcessUnknownError:
-            # Don't ask to clean it up; it's already gone.
-            self.proc = None
-
-        except Exception as exc:
-            log.error("procstar", exc_info=True)
-            yield ProgramError(
-                f"procstar: {exc}",
-                meta={} if res is None else _make_metadata(proc_id, res),
-            )
-
-        finally:
-            # Cancel our helper tasks.
-            await tasks.cancel_all()
-            if self.proc is not None:
-                # Done with this proc; ask the agent to delete it.
-                try:
-                    # Request deletion.
-                    await self.proc.delete()
-                except Exception as exc:
-                    # Just log this; for Apsis, the proc is done.
-                    log.error(f"delete {self.proc.proc_id}: {exc}")
-                self.proc = None
-
-    async def stop(self):
-        if self.proc is None:
-            log.warning("no more proc to stop")
+            start, res = await self._start_proc_on_agent(self.program.group_id)
+        except NoOpenConnectionInGroup as exc:
+            msg = f"start failed: {self.proc_id}: {exc}"
+            log.warning(msg)
+            yield ProgramError(msg)
             return
 
-        stop = self.program.stop
-        self.stopping = True
+        yield base.ProgramRunning(run_state=self.run_state, meta=self._get_result_metadata(res))
 
-        # Send the stop signal.
-        self.stop_signals.append(stop.signal)
-        await self.signal(stop.signal)
-
-        if stop.grace_period is not None:
-            try:
-                # Wait for the grace period to expire.
-                await asyncio.sleep(stop.grace_period)
-            except asyncio.CancelledError:
-                # That's what we were hoping for.
-                pass
-            else:
-                # Send a kill signal.
-                try:
-                    self.stop_signals.append(Signals.SIGKILL)
-                    await self.signal(Signals.SIGKILL)
-                except ValueError:
-                    # Proc is gone; that's OK.
-                    pass
-
-    async def signal(self, signal):
-        if self.proc is None:
-            log.warning("no more proc to signal")
-            return
-
-        await self.proc.send_signal(int(signal))
+        async for update in self._monitor_procstar_execution(
+            start, update_interval, output_interval
+        ):
+            yield update
