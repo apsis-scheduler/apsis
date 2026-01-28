@@ -627,7 +627,8 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
                 )
                 try:
                     fd_data = await asyncio.wait_for(
-                        collect_final_fd_data(fd_data, self.proc, length), timeout=FD_DATA_TIMEOUT
+                        collect_final_fd_data(fd_data, self.proc, length),
+                        timeout=FD_DATA_TIMEOUT,
                     )
                 except asyncio.TimeoutError:
                     error_msg = (
