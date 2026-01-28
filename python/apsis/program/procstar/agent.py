@@ -689,12 +689,14 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
         except asyncio.CancelledError:
             # Don't clean up the proc; we can reconnect.
             self.proc = None
+
         except ProcessUnknownError:
             # Don't ask to clean it up; it's already gone.
             self.proc = None
+
         except Exception as exc:
-            log.error("procstar execution error", exc_info=True)
-            yield ProgramError(f"procstar: {exc}")
+            log.error("procstar", exc_info=True)
+            yield ProgramError(f"procstar: {exc}", meta={})
         finally:
             # Cleanup resources
             await self._cleanup()
