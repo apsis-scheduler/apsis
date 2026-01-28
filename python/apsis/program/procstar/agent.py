@@ -436,6 +436,8 @@ class BaseRunningProcstarProgram(base.RunningProgram, ABC):
 
     def __init__(self, run_id, program, cfg, run_state=None):
         super().__init__(run_id)
+        if hasattr(program, "timeout") and program.timeout is None:
+            program.timeout = get_global_runtime_timeout(cfg)
         self.program = program
         self.cfg = get_cfg(cfg, "procstar.agent", {})
         self.run_state = run_state
@@ -750,8 +752,6 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
         :param res:
           The most recent `Result`, if any.
         """
-        if program.timeout is None:
-            program.timeout = get_global_runtime_timeout(cfg)
         super().__init__(run_id, program, cfg, run_state)
         self.proc_id = None
 

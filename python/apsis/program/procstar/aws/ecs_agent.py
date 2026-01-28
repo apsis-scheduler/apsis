@@ -15,7 +15,6 @@ from apsis.program.base import (
     ProgramRunning,
     ProgramUpdate,
     Timeout,
-    get_global_runtime_timeout,
 )
 from apsis.program.process import BoundStop, Stop
 from apsis.program.procstar.agent import BaseRunningProcstarProgram, _make_metadata
@@ -254,8 +253,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         cfg,
         run_state: Optional[Dict] = None,
     ):
-        if hasattr(program, "timeout") and program.timeout is None:
-            program.timeout = get_global_runtime_timeout(cfg)
         super().__init__(run_id, program, cfg, run_state)
 
         ecs_cfg = get_cfg(cfg, "procstar.agent.ecs", None)
