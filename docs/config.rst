@@ -294,3 +294,94 @@ updates for a run from the agent running it.  If null or omitted, Apsis does not
 retrieve process metadata and output while the run is running, only once it
 terminates.
 
+
+Procstar ECS
+~~~~~~~~~~~~
+
+The ``procstar.agent.ecs`` section configures how Apsis runs programs on AWS ECS
+(Elastic Container Service). See :ref:`programs` for details on ECS program
+types.
+
+.. code:: yaml
+
+    procstar:
+      agent:
+        ecs:
+          cluster_name: my-ecs-cluster
+          task_definition: procstar-agent-task
+          container_name: procstar-agent
+          capacity_provider: procstar
+          region: us-east-1
+          aws_account_number: "123456789012"
+          ebs_volume_role: my-ebs-volume-role
+          log_group: /ecs/procstar-agent
+          log_stream_prefix: procstar
+          default_mem_gb: 2
+          default_vcpu: 1
+          default_disk_gb: 20
+
+Configuration options (all required):
+
+- ``cluster_name``: The name of the ECS cluster where tasks will be launched.
+
+- ``task_definition``: The name or ARN of the ECS task definition containing
+  the Procstar agent container.
+
+- ``container_name``: The name of the container running the Procstar agent
+  within the ECS task definition. This must match the container name defined
+  in your task definition.
+
+- ``capacity_provider``: The name of the ECS capacity provider to use for
+  launching tasks.
+
+- ``region``: AWS region for ECS operations.
+
+- ``aws_account_number``: AWS account ID. Apsis uses this to construct IAM role
+  ARNs for EBS volume management and task roles.
+
+- ``ebs_volume_role``: IAM role name for EBS volume management.
+
+- ``log_group``: CloudWatch Logs group name where ECS task logs are written.
+  Used for constructing log stream URLs in run metadata.
+
+- ``log_stream_prefix``: Prefix for CloudWatch log stream names. The full log
+  stream name is ``{log_stream_prefix}/{task_id}``.
+
+- ``default_mem_gb``: Default memory allocation in GiB for ECS tasks when not
+  specified in the program.
+
+- ``default_vcpu``: Default vCPU allocation for ECS tasks when not specified
+  in the program (e.g., ``1.0`` for 1 vCPU).
+
+- ``default_disk_gb``: Default ephemeral EBS storage size in GiB for ECS
+  tasks when not specified in the program.
+
+
+AWS Prerequisites
+^^^^^^^^^^^^^^^^^
+
+To use Procstar ECS programs, you need:
+
+1. **ECS Cluster**: An ECS cluster with EC2 capacity providers or Fargate.
+
+2. **Task Definition**: An ECS task definition with:
+
+   - A container running the Procstar agent image (the container name must match
+     the ``container_name`` setting in the Apsis configuration)
+   - The agent started with ``--wait`` and ``--wait-timeout`` flags
+   - Network access to reach the Apsis Procstar server
+
+3. **IAM Roles**:
+
+   - Task execution role with permissions to pull container images
+   - (Optional) Task role for AWS API access from within containers
+   - (Optional) EBS volume role for attaching storage
+
+4. **Network Configuration**:
+
+   - The ECS tasks must be able to establish WebSocket connections to the Apsis
+     server on the configured Procstar agent port
+
+See :ref:`programs` for detailed task definition requirements and the
+``--wait``/``--wait-timeout`` flag configuration.
+
