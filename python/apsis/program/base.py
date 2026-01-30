@@ -43,7 +43,7 @@ class Output:
           Information about the data.
         :param data:
           The data bytes; these may be compressed.
-        :pamam compression:
+        :param compression:
           The compresison type, or `None` for uncompressed.
         """
         if not isinstance(data, bytes):
