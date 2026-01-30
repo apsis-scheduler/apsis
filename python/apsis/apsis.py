@@ -636,8 +636,6 @@ class Apsis:
         Collects latency measurements.
         """
         while True:
-            num_tasks = len(asyncio.all_tasks())
-
             # Wake up on the next round 10 seconds.
             t = now()
             next_second = t.EPOCH + math.ceil((t - t.EPOCH + 0.01) / 10) * 10
