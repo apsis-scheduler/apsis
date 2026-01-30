@@ -1,10 +1,12 @@
-"""ProcstarECS program implementations for executing jobs on AWS ECS with Procstar agents."""
+"""ProcstarECS program implementation for executing jobs on AWS ECS with Procstar agents."""
 
 import logging
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Union
 
 from procstar.agent.proc import Result
 
+from apsis.exc import SchemaError
 from apsis.lib.json import check_schema, ifkey
 from apsis.lib.py import get_cfg, or_none
 from apsis.program.base import (
@@ -19,11 +21,42 @@ from .ecs import ECSTaskManager
 
 log = logging.getLogger(__name__)
 
+SHELL = "/usr/bin/bash"
 
-class _ProcstarECSProgram(Program):
+
+@dataclass(frozen=True)
+class ShellCommand:
+    command: str
+
+    def get_argv(self, args: Dict[str, Any]) -> list[str]:
+        return [SHELL, "-c", template_expand(self.command, args)]
+
+    def to_jso(self) -> dict:
+        return {"command": self.command}
+
+
+@dataclass(frozen=True)
+class Argv:
+    argv: tuple[str, ...]
+
+    def __init__(self, argv):
+        object.__setattr__(self, "argv", tuple(str(a) for a in argv))
+
+    def get_argv(self, args: Dict[str, Any]) -> list[str]:
+        return [template_expand(a, args) for a in self.argv]
+
+    def to_jso(self) -> dict:
+        return {"argv": list(self.argv)}
+
+
+RunSpec = Union[ShellCommand, Argv]
+
+
+class ProcstarECSProgram(Program):
     def __init__(
         self,
         *,
+        run_spec: RunSpec,
         stop=Stop(),
         timeout=None,
         mem_gb=None,
@@ -32,6 +65,7 @@ class _ProcstarECSProgram(Program):
         role: Optional[str] = None,
     ):
         super().__init__()
+        self.run_spec = run_spec
         self.stop = stop
         self.timeout = timeout
         self.mem_gb = mem_gb
@@ -65,8 +99,46 @@ class _ProcstarECSProgram(Program):
             role=or_none(template_expand)(self.role, args),
         )
 
-    def _base_to_jso(self):
-        jso = super().to_jso() | ifkey("stop", self.stop.to_jso(), {})
+    def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
+        return self._bind(self.run_spec.get_argv(args), args)
+
+    @classmethod
+    def from_jso(cls, jso):
+        with check_schema(jso) as pop:
+            command = pop("command", default=None)
+            argv = pop("argv", default=None)
+            stop = pop("stop", Stop.from_jso, Stop())
+            timeout = pop("timeout", Timeout.from_jso, None)
+            mem_gb = pop("mem_gb", default=None)
+            vcpu = pop("vcpu", default=None)
+            disk_gb = pop("disk_gb", default=None)
+            role = pop("role", default=None)
+
+        if command is not None and argv is not None:
+            raise SchemaError("specify either 'command' or 'argv', not both")
+        if command is not None:
+            run_spec = ShellCommand(command)
+        elif argv is not None:
+            run_spec = Argv(argv)
+        else:
+            raise SchemaError("must specify either 'command' or 'argv'")
+
+        return cls(
+            run_spec=run_spec,
+            stop=stop,
+            timeout=timeout,
+            mem_gb=mem_gb,
+            vcpu=vcpu,
+            disk_gb=disk_gb,
+            role=role,
+        )
+
+    def to_jso(self):
+        jso = super().to_jso()
+        jso.update(self.run_spec.to_jso())
+        stop_jso = self.stop.to_jso()
+        if stop_jso:
+            jso["stop"] = stop_jso
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
         if self.mem_gb is not None:
@@ -77,63 +149,6 @@ class _ProcstarECSProgram(Program):
             jso["disk_gb"] = self.disk_gb
         if self.role is not None:
             jso["role"] = self.role
-        return jso
-
-    @staticmethod
-    def _from_jso(pop):
-        return dict(
-            stop=pop("stop", Stop.from_jso, Stop()),
-            timeout=pop("timeout", Timeout.from_jso, None),
-            mem_gb=pop("mem_gb", default=None),
-            vcpu=pop("vcpu", default=None),
-            disk_gb=pop("disk_gb", default=None),
-            role=pop("role", default=None),
-        )
-
-
-class ProcstarECSShellProgram(_ProcstarECSProgram):
-    SHELL = "/usr/bin/bash"
-
-    def __init__(self, command: str, **kwargs):
-        super().__init__(**kwargs)
-        self.command = command
-
-    def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
-        argv = [self.SHELL, "-c", template_expand(self.command, args)]
-        return self._bind(argv, args)
-
-    @classmethod
-    def from_jso(cls, jso):
-        with check_schema(jso) as pop:
-            command = pop("command")
-            kw_args = cls._from_jso(pop)
-        return cls(command=command, **kw_args)
-
-    def to_jso(self):
-        jso = self._base_to_jso()
-        jso["command"] = self.command
-        return jso
-
-
-class ProcstarECSProgram(_ProcstarECSProgram):
-    def __init__(self, argv, **kwargs):
-        super().__init__(**kwargs)
-        self.argv = [str(a) for a in argv]
-
-    def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
-        argv = tuple(template_expand(a, args) for a in self.argv)
-        return self._bind(argv, args)
-
-    @classmethod
-    def from_jso(cls, jso):
-        with check_schema(jso) as pop:
-            argv = pop("argv")
-            kw_args = cls._from_jso(pop)
-        return cls(argv=argv, **kw_args)
-
-    def to_jso(self):
-        jso = self._base_to_jso()
-        jso["argv"] = self.argv
         return jso
 
 

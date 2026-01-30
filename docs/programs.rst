@@ -14,8 +14,7 @@ Apsis provides these program types, and you can extend Apsis with your own.
 - `no-op`: Does nothing.
 - `procstar`: Invokes an executable directly via a Procstar agent.
 - `procstar-shell`: Executes a shell command via a Procstar agent.
-- `procstar-ecs`: Invokes an executable directly on AWS ECS via a Procstar agent.
-- `procstar-ecs-shell`: Executes a shell command on AWS ECS via a Procstar agent.
+- `procstar-ecs`: Runs a program on AWS ECS via a Procstar agent.
 
 Additionally, Apsis includes several internal program types, which deal with its
 own internal housekeeping.
@@ -141,27 +140,32 @@ agents running inside ECS tasks. Unlike standard Procstar programs that connect
 to pre-existing agents, ECS programs launch a new ECS task for each run,
 providing complete isolation between runs.
 
+The ``procstar-ecs`` program type accepts either a shell command or an argument
+vector:
+
 .. code:: yaml
 
+    # Shell command form
     program:
-        type: procstar-ecs-shell
+        type: procstar-ecs
         command: "echo 'Hello from ECS!' && date"
         mem_gb: 2
         vcpu: 1
 
-This launches an ECS task, waits for the Procstar agent inside to connect, then
-executes the shell command. When the command completes, the ECS task
-automatically terminates.
-
-To run an executable directly without a shell:
-
 .. code:: yaml
 
+    # Argv form (direct execution without shell)
     program:
         type: procstar-ecs
         argv: ["/usr/bin/python", "script.py", "--verbose"]
         mem_gb: 4
         vcpu: 2
+
+This launches an ECS task, waits for the Procstar agent inside to connect, then
+executes the program. When the program completes, the ECS task automatically
+terminates.
+
+Exactly one of ``command`` or ``argv`` must be specified.
 
 
 Resource Configuration
@@ -176,7 +180,7 @@ ECS programs support the following resource parameters:
 .. code:: yaml
 
     program:
-        type: procstar-ecs-shell
+        type: procstar-ecs
         command: "python train_model.py"
         mem_gb: 8
         vcpu: 4
@@ -191,7 +195,7 @@ Specify an IAM role for the ECS task to assume:
 .. code:: yaml
 
     program:
-        type: procstar-ecs-shell
+        type: procstar-ecs
         command: "aws s3 sync s3://bucket/data /data"
         role: my-ecs-task-role
         mem_gb: 2
@@ -210,7 +214,7 @@ Procstar programs:
 .. code:: yaml
 
     program:
-        type: procstar-ecs-shell
+        type: procstar-ecs
         command: "python long_running_job.py"
         mem_gb: 4
         timeout:
