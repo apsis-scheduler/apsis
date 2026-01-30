@@ -313,5 +313,4 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
     def _get_result_metadata(self, res: Result):
         meta = super()._get_result_metadata(res)
         meta.update(self._get_base_metadata())
-        meta["proc_status"] = res.state
         return meta
