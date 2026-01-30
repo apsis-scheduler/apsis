@@ -183,22 +183,6 @@ ECS programs support the following resource parameters:
         disk_gb: 100
 
 
-Environment Variables
-^^^^^^^^^^^^^^^^^^^^^
-
-Pass environment variables to the ECS container:
-
-.. code:: yaml
-
-    program:
-        type: procstar-ecs-shell
-        command: "python process.py"
-        environment:
-            AWS_DEFAULT_REGION: us-east-1
-            LOG_LEVEL: DEBUG
-            DATA_PATH: /data/input
-
-
 IAM Roles
 ^^^^^^^^^
 
