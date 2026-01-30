@@ -6,6 +6,7 @@ from .base import (
     ProgramError,
     ProgramSuccess,
     ProgramFailure,
+    UnknownProgram,
 )
 
 from .noop import NoOpProgram

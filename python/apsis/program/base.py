@@ -1,6 +1,8 @@
+import logging
 from dataclasses import dataclass
 from signal import Signals
 
+from apsis.exc import SchemaError
 from apsis.lib import memo
 from apsis.lib.api import decompress
 from apsis.lib.json import TypedJso, check_schema
@@ -8,6 +10,8 @@ from apsis.lib.parse import parse_duration
 from apsis.lib.py import format_repr, get_cfg
 from apsis.lib.sys import to_signal
 from apsis.runs import template_expand
+
+log = logging.getLogger(__name__)
 
 TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
@@ -278,7 +282,18 @@ class Program(TypedJso):
 
     @classmethod
     def from_jso(cls, jso):
-        return TypedJso.from_jso.__func__(cls, jso)
+        try:
+            return TypedJso.from_jso.__func__(cls, jso)
+        except SchemaError as exc:
+            if "bad type" in str(exc):
+                # Unknown program type - create a placeholder instead of failing.
+                # This allows Apsis to start even with runs of unknown program
+                # types in the database (e.g., after a rollback or when a plugin
+                # is missing).
+                type_name = jso.pop("type", "unknown")
+                log.warning(f"unknown program type: {type_name}")
+                return UnknownProgram(type_name=type_name, raw_jso=jso)
+            raise
 
     def run(self, run_id, cfg) -> RunningProgram:
         """
@@ -308,6 +323,36 @@ class Program(TypedJso):
           Async iterator that yields `Program*` objects.
         """
         return LegacyRunningProgram(run_id, self, cfg, run_state)
+
+
+# -------------------------------------------------------------------------------
+
+
+@dataclass
+class UnknownProgram(Program):
+    """
+    Placeholder for program types that cannot be deserialized.
+
+    This allows Apsis to start and display historical runs even when
+    the program type is not recognized (e.g., after a rollback or
+    when a plugin is missing).
+    """
+
+    type_name: str  # The original type name that wasn't recognized
+    raw_jso: dict   # The original JSON, preserved for re-serialization
+
+    def to_jso(self):
+        # Preserve the original JSON so we don't corrupt the database
+        return {"type": self.type_name, **self.raw_jso}
+
+    def bind(self, args):
+        raise ProgramError(f"cannot bind program of unknown type: {self.type_name}")
+
+    def run(self, run_id, cfg) -> RunningProgram:
+        raise ProgramError(f"cannot run program of unknown type: {self.type_name}")
+
+    def connect(self, run_id, run_state, cfg) -> RunningProgram:
+        raise ProgramError(f"cannot reconnect to program of unknown type: {self.type_name}")
 
 
 # -------------------------------------------------------------------------------
