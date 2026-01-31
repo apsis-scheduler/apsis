@@ -427,10 +427,6 @@ async def collect_final_fd_data(
 
 class RunningProcstarProgram(base.RunningProgram):
     def __init__(self, run_id, program, cfg, run_state=None):
-        """
-        :param res:
-          The most recent `Result`, if any.
-        """
         super().__init__(run_id)
         if program.timeout is None:
             program.timeout = get_global_runtime_timeout(cfg)
@@ -561,7 +557,6 @@ class RunningProcstarProgram(base.RunningProgram):
                         await asyncio.sleep(sleep_duration)
 
                     if not self.stopping and self.proc is not None:
-                        elapsed = ora.now() - start
                         log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
                         timeout_signal = Signals[self.program.timeout.signal]
