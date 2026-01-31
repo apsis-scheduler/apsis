@@ -10,6 +10,7 @@ from procstar.agent.exc import (
 )
 from procstar.agent.proc import FdData, Interval, Process, Result
 from signal import Signals
+from typing import Any, Dict
 import uuid
 
 from apsis.lib import asyn
@@ -425,7 +426,7 @@ async def collect_final_fd_data(
     return initial_fd_data
 
 
-class RunningProcstarProgram(base.RunningProgram):
+class BaseRunningProcstarProgram(base.RunningProgram):
     def __init__(self, run_id, program, cfg, run_state=None):
         super().__init__(run_id)
         if program.timeout is None:
@@ -440,14 +441,22 @@ class RunningProcstarProgram(base.RunningProgram):
         self.timed_out = False
 
     @property
+    def _spec_argv(self):
+        """Returns the argv for the procstar spec. Override to customize."""
+        return self.program.argv
+
+    @property
+    def _spec_systemd_properties(self):
+        """Returns systemd properties for the procstar spec. Override to customize."""
+        return None
+
+    @property
     def _spec(self):
         """
         Returns the procstar proc spec for the program.
         """
-        argv = _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user)
-        systemd = _make_systemd(self.cfg, resources=self.program.resources)
         return procstar.spec.Proc(
-            argv,
+            self._spec_argv,
             env=procstar.spec.Proc.Env(
                 vars={
                     "APSIS_RUN_ID": self.run_id,
@@ -464,10 +473,10 @@ class RunningProcstarProgram(base.RunningProgram):
                     # Don't attach output to results, so we can poll quickly.
                     attached=False,
                 ),
-                # Merge stderr into stdin.
+                # Merge stderr into stdout.
                 "stderr": procstar.spec.Proc.Fd.Dup(1),
             },
-            systemd_properties=systemd,
+            systemd_properties=self._spec_systemd_properties,
         )
 
     @memo.property
@@ -487,6 +496,10 @@ class RunningProcstarProgram(base.RunningProgram):
             conn_timeout = get_cfg(self.cfg, "connection.start_timeout", 0)
             conn_timeout = nparse_duration(conn_timeout)
             proc_id = str(uuid.uuid4())
+
+            pre_start_meta = await self._pre_start(proc_id)
+            if pre_start_meta is not None:
+                yield base.ProgramUpdate(meta=pre_start_meta)
 
             try:
                 # Start the proc.
@@ -510,8 +523,9 @@ class RunningProcstarProgram(base.RunningProgram):
                 "conn_id": conn_id,
                 "proc_id": proc_id,
                 "start": str(start),
+                **self._get_extra_run_state(),
             }
-            yield base.ProgramRunning(run_state=self.run_state, meta=_make_metadata(proc_id, res))
+            yield base.ProgramRunning(run_state=self.run_state, meta=self._get_result_metadata(res))
 
         else:
             # Reconnect to the proc.
@@ -592,7 +606,7 @@ class RunningProcstarProgram(base.RunningProgram):
                         yield base.ProgramUpdate(outputs=await _make_outputs(fd_data))
 
                     case Result() as res:
-                        meta = _make_metadata(proc_id, res)
+                        meta = self._get_result_metadata(res)
 
                         if res.state == "running":
                             # Intermediate result.
@@ -629,7 +643,7 @@ class RunningProcstarProgram(base.RunningProgram):
                     log.error(error_msg)
                     yield ProgramError(
                         error_msg,
-                        meta=_make_metadata(proc_id, res),
+                        meta=self._get_result_metadata(res),
                         outputs=await _make_outputs(fd_data),
                     )
                     return
@@ -663,7 +677,7 @@ class RunningProcstarProgram(base.RunningProgram):
             log.error("procstar", exc_info=True)
             yield ProgramError(
                 f"procstar: {exc}",
-                meta={} if res is None else _make_metadata(proc_id, res),
+                meta={} if res is None else self._get_result_metadata(res),
             )
 
         finally:
@@ -713,3 +727,34 @@ class RunningProcstarProgram(base.RunningProgram):
             return
 
         await self.proc.send_signal(int(signal))
+
+    async def _pre_start(self, proc_id) -> Dict[str, Any] | None:
+        """Pre-start hook called before connecting to agent. Override to do setup.
+
+        Returns metadata to yield as ProgramUpdate, or None.
+        """
+        return None
+
+    def _get_result_metadata(self, res: Result) -> Dict[str, Any]:
+        """Extract metadata from a proc result. Override for custom metadata."""
+        return _make_metadata(self.run_state["proc_id"], res)
+
+    def _get_extra_run_state(self) -> Dict[str, Any]:
+        """Return extra fields to include in run_state. Override for custom fields."""
+        return {}
+
+
+# -------------------------------------------------------------------------------
+
+
+class RunningProcstarProgram(BaseRunningProcstarProgram):
+    def __init__(self, run_id, program, cfg, run_state=None):
+        super().__init__(run_id, program, cfg, run_state)
+
+    @property
+    def _spec_argv(self):
+        return _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user)
+
+    @property
+    def _spec_systemd_properties(self):
+        return _make_systemd(self.cfg, resources=self.program.resources)
