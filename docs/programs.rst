@@ -135,10 +135,11 @@ hasn't completed yet.  The `signal` key is optional and defaults to SIGTERM.
 Procstar ECS Programs
 ---------------------
 
-Apsis can run programs on AWS ECS (Elastic Container Service) using Procstar
-agents running inside ECS tasks. Unlike standard Procstar programs that connect
-to pre-existing agents, ECS programs launch a new ECS task for each run,
-providing complete isolation between runs.
+Apsis can run programs on AWS ECS (Elastic Container Service). Unlike standard
+Procstar programs that connect to long-running, pre-existing agents, ECS programs
+launch a dedicated ECS task for each run. The task runs a container with an
+ephemeral Procstar agent that connects to Apsis, executes the program, and exits
+when complete, terminating the task. This provides complete isolation between runs.
 
 The ``procstar-ecs`` program type accepts either a shell command or an argument
 vector:
