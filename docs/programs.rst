@@ -176,7 +176,9 @@ ECS programs support the following resource parameters:
 
 - ``mem_gb``: Memory allocation in GiB for the container (e.g., 2 for 2 GB)
 - ``vcpu``: vCPU allocation for the container (e.g., 1 for 1 vCPU)
-- ``disk_gb``: Ephemeral EBS storage in GiB (default configured globally)
+- ``disk_gb``: Ephemeral EBS storage in GiB
+
+All three parameters have global defaults configured in the Apsis configuration.
 
 .. code:: yaml
 
