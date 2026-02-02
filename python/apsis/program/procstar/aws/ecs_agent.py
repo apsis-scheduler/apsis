@@ -15,7 +15,7 @@ from apsis.program.base import (
 )
 from apsis.program.process import BoundStop, Stop
 from apsis.program.procstar.agent import BaseRunningProcstarProgram
-from apsis.runs import template_expand
+from apsis.runs import join_args, template_expand
 
 from .ecs import ECSTaskManager
 
@@ -178,7 +178,7 @@ class BoundProcstarECSProgram(Program):
         self.group_id = None
 
     def __str__(self):
-        return self.argv[2] if len(self.argv) >= 3 else " ".join(self.argv)
+        return join_args(self.argv)
 
     def to_jso(self):
         jso = (
