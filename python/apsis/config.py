@@ -68,7 +68,7 @@ def check(cfg, base_path: Path):
             "task_definition",
             "capacity_provider",
             "region",
-            "aws_account_number",
+            "aws_account_id",
             "ebs_volume_role",
             "log_group",
             "log_stream_prefix",

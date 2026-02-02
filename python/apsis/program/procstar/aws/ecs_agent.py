@@ -242,12 +242,12 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         self.capacity_provider = ecs_cfg["capacity_provider"]
         self.log_group = ecs_cfg["log_group"]
         self.log_stream_prefix = ecs_cfg["log_stream_prefix"]
-        self.aws_account_number = ecs_cfg["aws_account_number"]
+        self.aws_account_id = ecs_cfg["aws_account_id"]
         ebs_volume_role = ecs_cfg["ebs_volume_role"]
-        ebs_volume_role_arn = f"arn:aws:iam::{self.aws_account_number}:role/{ebs_volume_role}"
+        ebs_volume_role_arn = f"arn:aws:iam::{self.aws_account_id}:role/{ebs_volume_role}"
         self.iam_role_arn = None
         if self.program.role:
-            self.iam_role_arn = f"arn:aws:iam::{self.aws_account_number}:role/{self.program.role}"
+            self.iam_role_arn = f"arn:aws:iam::{self.aws_account_id}:role/{self.program.role}"
 
         default_mem_gb = ecs_cfg["default_mem_gb"]
         default_vcpu = ecs_cfg["default_vcpu"]
@@ -272,7 +272,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
 
         return {
             "aws_ecs": {
-                "account": self.aws_account_number,
+                "account": self.aws_account_id,
                 "region": self.region,
                 "cluster_name": self.cluster_name,
                 "capacity_provider": self.capacity_provider,
