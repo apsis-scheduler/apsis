@@ -180,6 +180,10 @@ ECS programs support the following resource parameters:
 
 All three parameters have global defaults configured in the Apsis configuration.
 
+The EBS volume is intended for temporary working data during job execution. By
+default, volumes are deleted when the task terminates. To retain volumes after
+task completion set ``retain_ebs: true`` in the Apsis ECS configuration.
+
 .. code:: yaml
 
     program:

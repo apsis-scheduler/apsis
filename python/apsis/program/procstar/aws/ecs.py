@@ -28,6 +28,7 @@ class ECSTaskManager:
         default_mem_gb: float,
         default_vcpu: float,
         default_disk_gb: int,
+        retain_ebs: bool = False,
     ):
         self.cluster_name = cluster_name
         self.region = region
@@ -37,6 +38,7 @@ class ECSTaskManager:
         self.default_mem_gb = default_mem_gb
         self.default_vcpu = default_vcpu
         self.default_disk_gb = default_disk_gb
+        self.retain_ebs = retain_ebs
         self._ecs_client = None
 
     @property
@@ -57,9 +59,9 @@ class ECSTaskManager:
                     "encrypted": True,
                     "filesystemType": "ext4",
                     "roleArn": self.ebs_volume_role_arn,
-                    # TODO: check if we want to retain volumes instead
-                    # For the moment, just delete them to avoid extra costs during development and testing
-                    "terminationPolicy": {"deleteOnTermination": True},
+                    "terminationPolicy": {
+                        "deleteOnTermination": not self.retain_ebs
+                    },
                 },
             }
         ]

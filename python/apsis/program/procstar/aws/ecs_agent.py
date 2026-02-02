@@ -252,6 +252,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         default_mem_gb = ecs_cfg["default_mem_gb"]
         default_vcpu = ecs_cfg["default_vcpu"]
         default_disk_gb = ecs_cfg["default_disk_gb"]
+        retain_ebs = ecs_cfg.get("retain_ebs", False)
 
         self.task_arn: Optional[str] = run_state.get("task_arn") if run_state else None
         self.ecs_manager = ECSTaskManager(
@@ -263,6 +264,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             default_mem_gb=default_mem_gb,
             default_vcpu=default_vcpu,
             default_disk_gb=default_disk_gb,
+            retain_ebs=retain_ebs,
         )
         self.program.group_id = f"aws-ecs-{self.run_id}"
 
