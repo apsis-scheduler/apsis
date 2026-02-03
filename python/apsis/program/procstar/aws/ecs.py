@@ -74,9 +74,7 @@ class ECSTaskManager:
                     "encrypted": True,
                     "filesystemType": "ext4",
                     "roleArn": self.ebs_volume_role_arn,
-                    "terminationPolicy": {
-                        "deleteOnTermination": not self.retain_ebs
-                    },
+                    "terminationPolicy": {"deleteOnTermination": not self.retain_ebs},
                 },
             }
         ]
