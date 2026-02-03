@@ -184,6 +184,15 @@ The EBS volume is intended for temporary working data during job execution. By
 default, volumes are deleted when the task terminates. To retain volumes after
 task completion set ``retain_ebs: true`` in the Apsis ECS configuration.
 
+EBS volumes use the gp3 volume type with IOPS and throughput automatically
+scaled to the maximum allowed for the volume size:
+
+- **IOPS**: 500 per GiB, up to 16,000 max
+- **Throughput**: 0.25 MiB/s per IOPS, up to 1,000 MiB/s max
+
+For example, a 32 GiB volume gets 16,000 IOPS and 1,000 MiB/s throughput (both
+at maximum), while a 10 GiB volume gets 5,000 IOPS and 1,000 MiB/s throughput.
+
 .. code:: yaml
 
     program:

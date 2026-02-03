@@ -16,6 +16,11 @@ TASK_CPU_OVERHEAD_UNITS = 256
 TASK_MIN_MEMORY_MIB = 2048
 TASK_MIN_CPU_UNITS = 1024
 
+GP3_MAX_IOPS = 16000
+GP3_IOPS_PER_GIB = 500  # Max ratio: 500 IOPS per GiB
+GP3_MAX_THROUGHPUT_MIB = 1000  # MiB/s
+GP3_THROUGHPUT_PER_IOPS = 0.25  # Max ratio: 0.25 MiB/s per IOPS
+
 
 class ECSTaskManager:
     def __init__(
@@ -46,14 +51,17 @@ class ECSTaskManager:
         return self._ecs_client
 
     def _create_ebs_volume_config(self, disk_gb: int) -> List[Dict]:
+        # Use maximum IOPS and throughput allowed for the volume size
+        iops = min(GP3_IOPS_PER_GIB * disk_gb, GP3_MAX_IOPS)
+        throughput = min(int(iops * GP3_THROUGHPUT_PER_IOPS), GP3_MAX_THROUGHPUT_MIB)
         return [
             {
                 "name": "procstar-data",
                 "managedEBSVolume": {
                     "sizeInGiB": disk_gb,
                     "volumeType": "gp3",
-                    "iops": 3000,
-                    "throughput": 125,
+                    "iops": iops,
+                    "throughput": throughput,
                     "encrypted": True,
                     "filesystemType": "ext4",
                     "roleArn": self.ebs_volume_role_arn,
