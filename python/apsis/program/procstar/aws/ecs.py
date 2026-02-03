@@ -5,9 +5,18 @@ import logging
 from typing import Dict, List, Optional
 
 import boto3
-from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
+
+
+class ECSTaskStartError(Exception):
+    def __init__(self, failures: list):
+        self.failures = failures
+        details = "; ".join(
+            f"{f.get('reason', 'Unknown')}: {f.get('detail', 'No details')}" for f in failures
+        )
+        super().__init__(f"ECS task failed to start: {details}")
+
 
 # Task-level resource overhead to account for ECS agent and container runtime
 TASK_MEMORY_OVERHEAD_MIB = 512
@@ -134,19 +143,7 @@ class ECSTaskManager:
         )
 
         if not response.get("tasks"):
-            failures = response.get("failures", [])
-            failure_details = "; ".join(
-                f"{f.get('reason', 'Unknown')}: {f.get('detail', 'No details')}" for f in failures
-            )
-            raise ClientError(
-                {
-                    "Error": {
-                        "Code": "TaskCreationFailed",
-                        "Message": failure_details,
-                    }
-                },
-                "RunTask",
-            )
+            raise ECSTaskStartError(response.get("failures", []))
 
         task_arn = response["tasks"][0]["taskArn"]
         logger.info(f"Started ECS task: {task_arn}")
