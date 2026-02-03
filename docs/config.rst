@@ -320,6 +320,7 @@ types.
           default_disk_gb: 20
           max_mem_gb: 16
           max_vcpu: 4
+          retain_ebs: false
 
 Configuration options (all required):
 
@@ -364,6 +365,8 @@ Optional configuration:
   validates resource requests before launching ECS tasks and fails immediately
   if the requested vCPU exceeds this limit.
 
+- ``retain_ebs``: If ``true``, EBS volumes are retained after task termination
+  instead of being deleted. Default is ``false``.
 
 AWS Prerequisites
 ^^^^^^^^^^^^^^^^^
