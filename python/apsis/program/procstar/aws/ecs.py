@@ -24,7 +24,6 @@ class ECSTaskManager:
         region: str,
         ebs_volume_role_arn: str,
         container_name: str,
-        capacity_provider: str,
         default_mem_gb: float,
         default_vcpu: float,
         default_disk_gb: int,
@@ -34,7 +33,6 @@ class ECSTaskManager:
         self.region = region
         self.ebs_volume_role_arn = ebs_volume_role_arn
         self.container_name = container_name
-        self.capacity_provider = capacity_provider
         self.default_mem_gb = default_mem_gb
         self.default_vcpu = default_vcpu
         self.default_disk_gb = default_disk_gb
@@ -116,13 +114,6 @@ class ECSTaskManager:
             "cluster": self.cluster_name,
             "taskDefinition": task_definition,
             "volumeConfigurations": volume_configurations,
-            "capacityProviderStrategy": [
-                {
-                    "capacityProvider": self.capacity_provider,
-                    "weight": 1,
-                    "base": 0,
-                }
-            ],
             "overrides": overrides,
         }
 

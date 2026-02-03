@@ -239,7 +239,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         self.container_name = ecs_cfg["container_name"]
         self.task_definition = ecs_cfg["task_definition"]
         self.region = ecs_cfg["region"]
-        self.capacity_provider = ecs_cfg["capacity_provider"]
         self.log_group = ecs_cfg["log_group"]
         self.log_stream_prefix = ecs_cfg["log_stream_prefix"]
         self.aws_account_id = ecs_cfg["aws_account_id"]
@@ -260,7 +259,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
             self.region,
             ebs_volume_role_arn,
             self.container_name,
-            self.capacity_provider,
             default_mem_gb=default_mem_gb,
             default_vcpu=default_vcpu,
             default_disk_gb=default_disk_gb,
@@ -277,7 +275,6 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
                 "account": self.aws_account_id,
                 "region": self.region,
                 "cluster_name": self.cluster_name,
-                "capacity_provider": self.capacity_provider,
                 "task_definition": self.task_definition,
                 "task_id": task_id,
                 "container_name": self.container_name,

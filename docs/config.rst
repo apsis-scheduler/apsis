@@ -310,7 +310,6 @@ types.
           cluster_name: my-ecs-cluster
           task_definition: procstar-agent-task
           container_name: procstar-agent
-          capacity_provider: procstar
           region: us-east-1
           aws_account_number: "123456789012"
           ebs_volume_role: my-ebs-volume-role
@@ -330,9 +329,6 @@ Configuration options (all required):
 - ``container_name``: The name of the container running the Procstar agent
   within the ECS task definition. This must match the container name defined
   in your task definition.
-
-- ``capacity_provider``: The name of the ECS capacity provider to use for
-  launching tasks.
 
 - ``region``: AWS region for ECS operations.
 

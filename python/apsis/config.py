@@ -66,7 +66,6 @@ def check(cfg, base_path: Path):
             "cluster_name",
             "container_name",
             "task_definition",
-            "capacity_provider",
             "region",
             "aws_account_id",
             "ebs_volume_role",
