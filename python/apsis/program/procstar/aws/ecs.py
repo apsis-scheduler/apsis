@@ -86,19 +86,16 @@ class ECSTaskManager:
     async def start_task(
         self,
         task_definition: str,
+        mem_gb: float,
+        vcpu: float,
+        disk_gb: int,
         environment_overrides: Optional[Dict[str, str]] = None,
         command_override: Optional[List[str]] = None,
-        mem_gb: Optional[float] = None,
-        vcpu: Optional[float] = None,
-        disk_gb: Optional[int] = None,
         tags: Optional[List[Dict[str, str]]] = None,
         task_role_arn: Optional[str] = None,
     ) -> str:
-        actual_mem_gb = mem_gb if mem_gb is not None else self.default_mem_gb
-        actual_vcpu = vcpu if vcpu is not None else self.default_vcpu
-        actual_disk_gb = disk_gb if disk_gb is not None else self.default_disk_gb
-        memory_mib = int(actual_mem_gb * GB_TO_MIB)
-        cpu_units = int(actual_vcpu * 1024)
+        memory_mib = int(mem_gb * GB_TO_MIB)
+        cpu_units = int(vcpu * 1024)
 
         container_override = {
             "name": self.container_name,
@@ -127,7 +124,7 @@ class ECSTaskManager:
             overrides["taskRoleArn"] = task_role_arn
             logger.info(f"Overriding task role to: {task_role_arn}")
 
-        volume_configurations = self._create_ebs_volume_config(actual_disk_gb)
+        volume_configurations = self._create_ebs_volume_config(disk_gb)
 
         run_task_params = {
             "cluster": self.cluster_name,

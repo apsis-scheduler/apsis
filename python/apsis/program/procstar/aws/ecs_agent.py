@@ -252,6 +252,8 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         default_vcpu = ecs_cfg["default_vcpu"]
         default_disk_gb = ecs_cfg["default_disk_gb"]
         retain_ebs = ecs_cfg.get("retain_ebs", False)
+        self.max_mem_gb = ecs_cfg.get("max_mem_gb")
+        self.max_vcpu = ecs_cfg.get("max_vcpu")
 
         self.task_arn: Optional[str] = run_state.get("task_arn") if run_state else None
         self.ecs_manager = ECSTaskManager(
@@ -285,6 +287,17 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
 
     async def _pre_start(self, proc_id):
         """Start ECS task before connecting to agent."""
+        mem_gb = self.program.mem_gb or self.ecs_manager.default_mem_gb
+        vcpu = self.program.vcpu or self.ecs_manager.default_vcpu
+        disk_gb = self.program.disk_gb or self.ecs_manager.default_disk_gb
+
+        if self.max_mem_gb is not None and mem_gb > self.max_mem_gb:
+            raise ValueError(
+                f"Requested memory {mem_gb} GB exceeds cluster maximum {self.max_mem_gb} GB"
+            )
+        if self.max_vcpu is not None and vcpu > self.max_vcpu:
+            raise ValueError(f"Requested vCPU {vcpu} exceeds cluster maximum {self.max_vcpu}")
+
         log.info(f"Launching ECS task for run {self.run_id} on cluster {self.cluster_name}")
         env_vars = {
             "APSIS_RUN_ID": self.run_id,
@@ -293,9 +306,9 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
         self.task_arn = await self.ecs_manager.start_task(
             task_definition=self.task_definition,
             environment_overrides=env_vars,
-            mem_gb=self.program.mem_gb,
-            vcpu=self.program.vcpu,
-            disk_gb=self.program.disk_gb,
+            mem_gb=mem_gb,
+            vcpu=vcpu,
+            disk_gb=disk_gb,
             tags=[{"key": "apsis-run-id", "value": self.run_id}],
             task_role_arn=self.iam_role_arn,
         )

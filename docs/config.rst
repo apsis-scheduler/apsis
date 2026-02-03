@@ -318,6 +318,8 @@ types.
           default_mem_gb: 2
           default_vcpu: 1
           default_disk_gb: 20
+          max_mem_gb: 16
+          max_vcpu: 4
 
 Configuration options (all required):
 
@@ -351,6 +353,16 @@ Configuration options (all required):
 
 - ``default_disk_gb``: Default ephemeral EBS storage size in GB for ECS
   tasks when not specified in the program.
+
+Optional configuration:
+
+- ``max_mem_gb``: Maximum memory in GB that the cluster can provide. If set,
+  Apsis validates resource requests before launching ECS tasks and fails
+  immediately if the requested memory exceeds this limit.
+
+- ``max_vcpu``: Maximum vCPU that the cluster can provide. If set, Apsis
+  validates resource requests before launching ECS tasks and fails immediately
+  if the requested vCPU exceeds this limit.
 
 
 AWS Prerequisites
