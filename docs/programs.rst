@@ -174,11 +174,17 @@ Resource Configuration
 
 ECS programs support the following resource parameters:
 
-- ``mem_gb``: Memory allocation in GiB for the container (e.g., 2 for 2 GB)
+- ``mem_gb``: Memory allocation in GB for the container (e.g., 2 for 2 GB)
 - ``vcpu``: vCPU allocation for the container (e.g., 1 for 1 vCPU)
-- ``disk_gb``: Ephemeral EBS storage in GiB
+- ``disk_gb``: Ephemeral EBS storage in GB
 
 All three parameters have global defaults configured in the Apsis configuration.
+
+.. note::
+
+   Values are specified in GB (gigabyte, SI decimal, 1000³ bytes) and converted
+   to GiB (gibibyte, binary, 1024³ bytes) for AWS. For example, ``mem_gb: 2``
+   provides approximately 1.86 GiB (1907 MiB) to the container.
 
 The EBS volume is intended for temporary working data during job execution. By
 default, volumes are deleted when the task terminates. To retain volumes after

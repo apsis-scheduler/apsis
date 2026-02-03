@@ -18,6 +18,9 @@ class ECSTaskStartError(Exception):
         super().__init__(f"ECS task failed to start: {details}")
 
 
+GB_TO_GIB = (1000**3) / (1024**3)
+GB_TO_MIB = GB_TO_GIB * 1024
+
 # Task-level resource overhead to account for ECS agent and container runtime
 TASK_MEMORY_OVERHEAD_MIB = 512
 TASK_CPU_OVERHEAD_UNITS = 256
@@ -60,14 +63,15 @@ class ECSTaskManager:
         return self._ecs_client
 
     def _create_ebs_volume_config(self, disk_gb: int) -> List[Dict]:
+        disk_gib = int(disk_gb * GB_TO_GIB)
         # Use maximum IOPS and throughput allowed for the volume size
-        iops = min(GP3_IOPS_PER_GIB * disk_gb, GP3_MAX_IOPS)
+        iops = min(GP3_IOPS_PER_GIB * disk_gib, GP3_MAX_IOPS)
         throughput = min(int(iops * GP3_THROUGHPUT_PER_IOPS), GP3_MAX_THROUGHPUT_MIB)
         return [
             {
                 "name": "procstar-data",
                 "managedEBSVolume": {
-                    "sizeInGiB": disk_gb,
+                    "sizeInGiB": disk_gib,
                     "volumeType": "gp3",
                     "iops": iops,
                     "throughput": throughput,
@@ -93,7 +97,7 @@ class ECSTaskManager:
         actual_mem_gb = mem_gb if mem_gb is not None else self.default_mem_gb
         actual_vcpu = vcpu if vcpu is not None else self.default_vcpu
         actual_disk_gb = disk_gb if disk_gb is not None else self.default_disk_gb
-        memory_mib = int(actual_mem_gb * 1024)
+        memory_mib = int(actual_mem_gb * GB_TO_MIB)
         cpu_units = int(actual_vcpu * 1024)
 
         container_override = {

@@ -343,13 +343,13 @@ Configuration options (all required):
 - ``log_stream_prefix``: Prefix for CloudWatch log stream names. The full log
   stream name is ``{log_stream_prefix}/{task_id}``.
 
-- ``default_mem_gb``: Default memory allocation in GiB for ECS tasks when not
+- ``default_mem_gb``: Default memory allocation in GB for ECS tasks when not
   specified in the program.
 
 - ``default_vcpu``: Default vCPU allocation for ECS tasks when not specified
   in the program (e.g., ``1.0`` for 1 vCPU).
 
-- ``default_disk_gb``: Default ephemeral EBS storage size in GiB for ECS
+- ``default_disk_gb``: Default ephemeral EBS storage size in GB for ECS
   tasks when not specified in the program.
 
 
