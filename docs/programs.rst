@@ -14,6 +14,7 @@ Apsis provides these program types, and you can extend Apsis with your own.
 - `no-op`: Does nothing.
 - `procstar`: Invokes an executable directly via a Procstar agent.
 - `procstar-shell`: Executes a shell command via a Procstar agent.
+- `procstar-ecs`: Runs a program on AWS ECS via a Procstar agent.
 
 Additionally, Apsis includes several internal program types, which deal with its
 own internal housekeeping.
@@ -129,6 +130,178 @@ elapses before the program completes, Apsis sends the program a signal.
 
 In this example, Apsis sends SIGTERM to the program after five minutes, if it
 hasn't completed yet.  The `signal` key is optional and defaults to SIGTERM.
+
+
+Procstar ECS Programs
+---------------------
+
+Apsis can run programs on AWS ECS (Elastic Container Service). Unlike standard
+Procstar programs that connect to long-running, pre-existing agents, ECS programs
+launch a dedicated ECS task for each run. The task runs a container with an
+ephemeral Procstar agent that connects to Apsis, executes the program, and exits
+when complete, terminating the task. This provides complete isolation between runs.
+
+The ``procstar-ecs`` program type accepts either a shell command or an argument
+vector:
+
+.. code:: yaml
+
+    # Shell command form
+    program:
+        type: procstar-ecs
+        command: "echo 'Hello from ECS!' && date"
+        mem_gb: 2
+        vcpu: 1
+
+.. code:: yaml
+
+    # Argv form (direct execution without shell)
+    program:
+        type: procstar-ecs
+        argv: ["/usr/bin/python", "script.py", "--verbose"]
+        mem_gb: 4
+        vcpu: 2
+
+This launches an ECS task, waits for the Procstar agent inside to connect, then
+executes the program. When the program completes, the ECS task automatically
+terminates.
+
+Exactly one of ``command`` or ``argv`` must be specified.
+
+
+Resource Configuration
+^^^^^^^^^^^^^^^^^^^^^^
+
+ECS programs support the following resource parameters:
+
+- ``mem_gb``: Memory allocation in GB for the container (e.g., 2 for 2 GB)
+- ``vcpu``: vCPU allocation for the container (e.g., 1 for 1 vCPU)
+- ``disk_gb``: Ephemeral EBS storage in GB
+
+All three parameters have global defaults configured in the Apsis configuration.
+
+.. note::
+
+   Values are specified in GB (gigabyte, SI decimal, 1000³ bytes) and converted
+   to GiB (gibibyte, binary, 1024³ bytes) for AWS. For example, ``mem_gb: 2``
+   provides approximately 1.86 GiB (1907 MiB) to the container.
+
+The EBS volume is intended for temporary working data during job execution. By
+default, volumes are deleted when the task terminates. To retain volumes after
+task completion set ``retain_ebs: true`` in the Apsis ECS configuration.
+
+EBS volumes use the gp3 volume type with IOPS and throughput automatically
+scaled to the maximum allowed for the volume size:
+
+- **IOPS**: 500 per GiB, up to 16,000 max
+- **Throughput**: 0.25 MiB/s per IOPS, up to 1,000 MiB/s max
+
+For example, a 32 GiB volume gets 16,000 IOPS and 1,000 MiB/s throughput (both
+at maximum), while a 10 GiB volume gets 5,000 IOPS and 1,000 MiB/s throughput.
+
+.. code:: yaml
+
+    program:
+        type: procstar-ecs
+        command: "python train_model.py"
+        mem_gb: 8
+        vcpu: 4
+        disk_gb: 100
+
+
+IAM Roles
+^^^^^^^^^
+
+Specify an IAM role for the ECS task to assume:
+
+.. code:: yaml
+
+    program:
+        type: procstar-ecs
+        command: "aws s3 sync s3://bucket/data /data"
+        role: my-ecs-task-role
+        mem_gb: 2
+
+The ``role`` parameter specifies the IAM role name (not the full ARN). Apsis
+constructs the full ARN using the ``aws_account_id`` from the ECS
+configuration.
+
+
+Timeouts and Stop
+^^^^^^^^^^^^^^^^^
+
+ECS programs support the same ``timeout`` and ``stop`` configuration as standard
+Procstar programs:
+
+.. code:: yaml
+
+    program:
+        type: procstar-ecs
+        command: "python long_running_job.py"
+        mem_gb: 4
+        timeout:
+            duration: 3600      # 1 hour timeout
+            signal: SIGTERM
+        stop:
+            signal: SIGTERM
+            grace_period: 30s
+
+
+ECS Task Definition Requirements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ECS task definition used by Apsis must meet these requirements:
+
+1. **Container name**: The container running the Procstar agent must have a name
+   that matches the ``container_name`` setting in the Apsis configuration (under
+   ``procstar.agent.ecs.container_name``).
+
+2. **Procstar agent flags**: The Procstar agent must be started with ``--wait``
+   and ``--wait-timeout`` flags. This ensures:
+
+   - The agent exits immediately after the job completes (via ``--wait``)
+   - The agent exits if no work is assigned within the timeout period (via
+     ``--wait-timeout``), preventing orphaned tasks if Apsis fails to connect,
+     crashes during startup, or encounters any error before assigning work
+
+   Example container command:
+
+   .. code:: json
+
+       ["--wait", "--wait-timeout", "900"]
+
+   This configures a 15-minute timeout for initial work assignment.
+
+3. **Environment variables**: Apsis sets these environment variables
+   automatically:
+
+   - ``PROCSTAR_GROUP_ID``: Unique identifier for this run (format:
+     ``aws-ecs-{run_id}``)
+   - ``APSIS_RUN_ID``: The Apsis run ID
+
+4. **Network access**: The container must be able to connect to the Apsis
+   Procstar agent server via WebSocket.
+
+.. warning::
+
+    Always configure ``--wait`` and ``--wait-timeout`` in your Procstar agent
+    container. Without these flags, ECS tasks will continue running indefinitely
+    after job completion or if Apsis fails to assign work, resulting in
+    unnecessary AWS costs.
+
+
+Isolation Model
+^^^^^^^^^^^^^^^
+
+Each ECS run gets a unique ``group_id`` in the format ``aws-ecs-{run_id}``. This
+ensures:
+
+- Complete isolation between runs
+- No cross-run interference
+- Automatic cleanup when the run completes
+
+Unlike standard Procstar programs, you cannot specify a custom ``group_id`` for
+ECS programs - attempting to do so will raise an error.
 
 
 .. _program-stop:
