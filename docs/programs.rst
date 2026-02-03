@@ -208,7 +208,7 @@ Specify an IAM role for the ECS task to assume:
         mem_gb: 2
 
 The ``role`` parameter specifies the IAM role name (not the full ARN). Apsis
-constructs the full ARN using the ``aws_account_number`` from the ECS
+constructs the full ARN using the ``aws_account_id`` from the ECS
 configuration.
 
 

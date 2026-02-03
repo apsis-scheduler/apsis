@@ -311,7 +311,7 @@ types.
           task_definition: procstar-agent-task
           container_name: procstar-agent
           region: us-east-1
-          aws_account_number: "123456789012"
+          aws_account_id: "123456789012"
           ebs_volume_role: my-ebs-volume-role
           log_group: /ecs/procstar-agent
           log_stream_prefix: procstar
@@ -332,7 +332,7 @@ Configuration options (all required):
 
 - ``region``: AWS region for ECS operations.
 
-- ``aws_account_number``: AWS account ID. Apsis uses this to construct IAM role
+- ``aws_account_id``: AWS account ID. Apsis uses this to construct IAM role
   ARNs for EBS volume management and task roles.
 
 - ``ebs_volume_role``: IAM role name for EBS volume management.
