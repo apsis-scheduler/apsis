@@ -308,7 +308,7 @@ types.
       agent:
         ecs:
           cluster_name: my-ecs-cluster
-          task_definition: procstar-agent-task
+          default_task_definition: procstar-agent-prod
           container_name: procstar-agent
           region: us-east-1
           aws_account_id: "123456789012"
@@ -326,8 +326,9 @@ Configuration options (all required):
 
 - ``cluster_name``: The name of the ECS cluster where tasks will be launched.
 
-- ``task_definition``: The name or ARN of the ECS task definition containing
-  the Procstar agent container.
+- ``default_task_definition``: The default ECS task definition to use when
+  a job does not specify one. Jobs can override this with the ``task_definition``
+  parameter.
 
 - ``container_name``: The name of the container running the Procstar agent
   within the ECS task definition. This must match the container name defined

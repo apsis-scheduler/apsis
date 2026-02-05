@@ -227,6 +227,25 @@ constructs the full ARN using the ``aws_account_id`` from the ECS
 configuration.
 
 
+Task Definition
+^^^^^^^^^^^^^^^
+
+By default, ECS programs use the task definition specified in
+``default_task_definition`` in the Apsis configuration. You can override this
+per-job to use a different task definition (and thus a different container image):
+
+.. code:: yaml
+
+    program:
+        type: procstar-ecs
+        command: "python run_tests.py"
+        task_definition: procstar-ose-qa
+        mem_gb: 2
+
+This is useful when you have multiple task definitions with different container
+images (e.g., production vs. QA environments).
+
+
 Timeouts and Stop
 ^^^^^^^^^^^^^^^^^
 

@@ -65,7 +65,7 @@ def check(cfg, base_path: Path):
         required_ecs_keys = [
             "cluster_name",
             "container_name",
-            "task_definition",
+            "default_task_definition",
             "region",
             "aws_account_id",
             "ebs_volume_role",

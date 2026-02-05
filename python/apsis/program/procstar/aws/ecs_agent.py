@@ -63,6 +63,7 @@ class ProcstarECSProgram(Program):
         vcpu=None,
         disk_gb=None,
         role: Optional[str] = None,
+        task_definition: Optional[str] = None,
     ):
         super().__init__()
         self.run_spec = run_spec
@@ -72,6 +73,7 @@ class ProcstarECSProgram(Program):
         self.vcpu = vcpu
         self.disk_gb = disk_gb
         self.role = role
+        self.task_definition = task_definition
 
     def _bind(self, argv, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
         expanded_mem_gb = None
@@ -97,6 +99,7 @@ class ProcstarECSProgram(Program):
             vcpu=expanded_vcpu,
             disk_gb=expanded_disk_gb,
             role=or_none(template_expand)(self.role, args),
+            task_definition=or_none(template_expand)(self.task_definition, args),
         )
 
     def bind(self, args: Dict[str, Any]) -> "BoundProcstarECSProgram":
@@ -113,6 +116,7 @@ class ProcstarECSProgram(Program):
             vcpu = pop("vcpu", default=None)
             disk_gb = pop("disk_gb", default=None)
             role = pop("role", default=None)
+            task_definition = pop("task_definition", default=None)
 
         if command is not None and argv is not None:
             raise SchemaError("specify either 'command' or 'argv', not both")
@@ -131,6 +135,7 @@ class ProcstarECSProgram(Program):
             vcpu=vcpu,
             disk_gb=disk_gb,
             role=role,
+            task_definition=task_definition,
         )
 
     def to_jso(self):
@@ -149,6 +154,8 @@ class ProcstarECSProgram(Program):
             jso["disk_gb"] = self.disk_gb
         if self.role is not None:
             jso["role"] = self.role
+        if self.task_definition is not None:
+            jso["task_definition"] = self.task_definition
         return jso
 
 
@@ -166,6 +173,7 @@ class BoundProcstarECSProgram(Program):
         vcpu: Optional[float] = None,
         disk_gb: Optional[int] = None,
         role: Optional[str] = None,
+        task_definition: Optional[str] = None,
     ):
         self.argv = [str(a) for a in argv]
         self.stop = stop
@@ -174,6 +182,7 @@ class BoundProcstarECSProgram(Program):
         self.vcpu = vcpu
         self.disk_gb = disk_gb
         self.role = role
+        self.task_definition = task_definition
         # ECS programs don't have a predefined group_id - it's generated per-run
         self.group_id = None
 
@@ -189,6 +198,7 @@ class BoundProcstarECSProgram(Program):
             | ifkey("vcpu", self.vcpu, None)
             | ifkey("disk_gb", self.disk_gb, None)
             | ifkey("role", self.role, None)
+            | ifkey("task_definition", self.task_definition, None)
         )
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
@@ -204,6 +214,7 @@ class BoundProcstarECSProgram(Program):
             vcpu = pop("vcpu", default=None)
             disk_gb = pop("disk_gb", default=None)
             role = pop("role", default=None)
+            task_definition = pop("task_definition", default=None)
         return cls(
             argv,
             stop=stop,
@@ -212,6 +223,7 @@ class BoundProcstarECSProgram(Program):
             vcpu=vcpu,
             disk_gb=disk_gb,
             role=role,
+            task_definition=task_definition,
         )
 
     def run(self, run_id: str, cfg) -> "RunningProcstarECSProgram":
@@ -237,7 +249,7 @@ class RunningProcstarECSProgram(BaseRunningProcstarProgram):
 
         self.cluster_name = ecs_cfg["cluster_name"]
         self.container_name = ecs_cfg["container_name"]
-        self.task_definition = ecs_cfg["task_definition"]
+        self.task_definition = self.program.task_definition or ecs_cfg["default_task_definition"]
         self.region = ecs_cfg["region"]
         self.log_group = ecs_cfg["log_group"]
         self.log_stream_prefix = ecs_cfg["log_stream_prefix"]
