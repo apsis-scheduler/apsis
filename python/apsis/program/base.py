@@ -200,38 +200,6 @@ class RunningProgram:
         raise NotImplementedError("not implemented: signal()")
 
 
-class LegacyRunningProgram(RunningProgram):
-    def __init__(self, run_id, program, cfg, run_state=None):
-        super().__init__(run_id)
-        self.program = program
-        self.cfg = cfg
-        self.run_state = run_state
-
-    @memo.property
-    async def updates(self):
-        if self.run_state is None:
-            # Starting.
-            try:
-                running, done = await self.program.start(self.run_id, self.cfg)
-            except ProgramError as err:
-                yield err
-            else:
-                assert isinstance(running, ProgramRunning)
-                yield running
-
-        else:
-            done = self.program.reconnect(self.run_id, self.run_state)
-
-        # Running.
-        try:
-            success = await done
-        except (ProgramError, ProgramFailure) as err:
-            yield err
-        else:
-            assert isinstance(success, ProgramSuccess), f"wrong result msg: {success!r}"
-            yield success
-
-
 # -------------------------------------------------------------------------------
 
 
@@ -248,22 +216,6 @@ class Program(TypedJso):
         """
 
     # FIXME: Find a better way to get run_id into logging without passing it in.
-
-    async def start(self, run_id, cfg):
-        """
-        Starts the run.
-
-        :deprecated:
-          Implement `run()` instead.
-        """
-
-    def reconnect(self, run_id, run_state):
-        """
-        Reconnects to an already running run.
-
-        :deprecated:
-          Implement `connect()` instead.
-        """
 
     async def signal(self, run_id, run_state, signal):
         """
@@ -284,53 +236,26 @@ class Program(TypedJso):
         """
         Runs the program.
 
-        The default implementation is a facade for `start()`, for legacy
-        compatibility.  Subclasses should override this method.
+        Subclasses must override this method.
 
         :param run_id:
           Used for logging only.
         :return:
           `RunningProgram` instance.
         """
-        return LegacyRunningProgram(run_id, self, cfg)
+        raise NotImplementedError(f"{self.__class__.__name__} must implement run()")
 
     # FIXME: Remove `run_id` from API; the running program carries it.
     def connect(self, run_id, run_state, cfg) -> RunningProgram:
         """
         Connects to the running program specified by `run_state`.
 
-        The default implementation is a facade for `reconnect()`, for backward
-        compatibility.  Subclasses should override this method.
+        Subclasses must override this method.
 
         :param run_id:
           Used for logging only.
         :return:
-          Async iterator that yields `Program*` objects.
+          `RunningProgram` instance.
         """
-        return LegacyRunningProgram(run_id, self, cfg, run_state)
+        raise NotImplementedError(f"{self.__class__.__name__} must implement connect()")
 
-
-# -------------------------------------------------------------------------------
-
-
-class _InternalProgram(Program):
-    """
-    Program type for internal use.
-
-    Not API.  Do not use in extension code.
-    """
-
-    def bind(self, args):
-        pass
-
-    def start(self, run_id, apsis):
-        pass
-
-    def reconnect(self, run_id, run_state):
-        pass
-
-    async def signal(self, run_id, signum: str):
-        pass
-
-    async def stop(self):
-        pass

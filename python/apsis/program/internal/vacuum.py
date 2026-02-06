@@ -1,6 +1,6 @@
 import logging
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess
+from ..base import Program, RunningProgram, ProgramRunning, ProgramSuccess, memo
 from apsis.lib.json import check_schema
 from apsis.lib.timing import Timer
 
@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 # -------------------------------------------------------------------------------
 
 
-class VacuumProgram(_InternalProgram):
+class VacuumProgram(Program):
     """
     A program that defragments the Apsis database.
 
@@ -32,12 +32,39 @@ class VacuumProgram(_InternalProgram):
             pass
         return cls()
 
-    async def start(self, run_id, apsis):
-        return ProgramRunning({}), self.wait(apsis)
+    def run(self, run_id, cfg):
+        """Start a new vacuum operation."""
+        # For internal programs, cfg is the apsis instance
+        return RunningVacuumProgram(run_id, self, cfg, run_state=None)
 
-    async def wait(self, apsis):
+    def connect(self, run_id, run_state, cfg):
+        """Reconnect to an existing vacuum operation."""
+        # For internal programs, cfg is the apsis instance
+        return RunningVacuumProgram(run_id, self, cfg, run_state=run_state)
+
+
+class RunningVacuumProgram(RunningProgram):
+    """A running instance of the vacuum program."""
+
+    def __init__(self, run_id, program, cfg, run_state):
+        super().__init__(run_id)
+        self.program = program
+        self.run_state = run_state
+        # For internal programs, cfg IS the apsis instance
+        self.apsis = cfg
+
+    @memo.property
+    async def updates(self):
+        """Async generator that yields program state updates."""
+        if self.run_state is None:
+            # Starting fresh
+            self.run_state = {}
+            yield ProgramRunning(self.run_state)
+        # If reconnecting, just restart (vacuum is idempotent)
+
+        # Perform the vacuum operation
         # FIXME: Private attributes.
-        db = apsis._Apsis__db
+        db = self.apsis._Apsis__db
 
         with Timer() as timer:
             db.vacuum()
@@ -45,4 +72,12 @@ class VacuumProgram(_InternalProgram):
         meta = {
             "time": timer.elapsed,
         }
-        return ProgramSuccess(meta=meta)
+        yield ProgramSuccess(meta=meta)
+
+    async def stop(self):
+        """Vacuum cannot be stopped once started."""
+        pass
+
+    async def signal(self, signal):
+        """Vacuum ignores signals."""
+        pass

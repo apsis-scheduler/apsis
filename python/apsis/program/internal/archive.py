@@ -1,8 +1,9 @@
 import asyncio
 import logging
+
 import ora
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess
+from ..base import Program, RunningProgram, ProgramRunning, ProgramSuccess, memo
 from apsis.lib.json import check_schema, nkey
 from apsis.lib.parse import parse_duration
 from apsis.lib.timing import Timer
@@ -13,7 +14,7 @@ log = logging.getLogger(__name__)
 # -------------------------------------------------------------------------------
 
 
-class ArchiveProgram(_InternalProgram):
+class ArchiveProgram(Program):
     """
     A program that archives old runs from the Apsis database to an archive
     database.
@@ -90,14 +91,47 @@ class ArchiveProgram(_InternalProgram):
             **nkey("chunk_sleep", self.__chunk_sleep),
         }
 
-    async def start(self, run_id, apsis):
-        return ProgramRunning({}), self.wait(apsis)
+    def run(self, run_id, cfg):
+        """Start a new archive operation."""
+        # For internal programs, cfg is the apsis instance
+        return RunningArchiveProgram(run_id, self, cfg, run_state=None)
 
-    async def wait(self, apsis):
+    def connect(self, run_id, run_state, cfg):
+        """Reconnect to an existing archive operation."""
+        # For internal programs, cfg is the apsis instance
+        return RunningArchiveProgram(run_id, self, cfg, run_state=run_state)
+
+
+class RunningArchiveProgram(RunningProgram):
+    """A running instance of the archive program."""
+
+    def __init__(self, run_id, program, cfg, run_state):
+        super().__init__(run_id)
+        self.program = program
+        self.run_state = run_state
+        # For internal programs, cfg IS the apsis instance
+        self.apsis = cfg
+
+    @memo.property
+    async def updates(self):
+        """Async generator that yields program state updates."""
+        if self.run_state is None:
+            # Starting fresh
+            self.run_state = {}
+            yield ProgramRunning(self.run_state)
+        # If reconnecting, just restart from beginning (same as legacy behavior)
+
+        # Access private attributes from program
+        age = self.program._ArchiveProgram__age
+        path = self.program._ArchiveProgram__path
+        count = self.program._ArchiveProgram__count
+        chunk_size = self.program._ArchiveProgram__chunk_size
+        chunk_sleep = self.program._ArchiveProgram__chunk_sleep
+
         # FIXME: Private attributes.
-        db = apsis._Apsis__db
+        db = self.apsis._Apsis__db
 
-        if not (self.__chunk_size is None or 0 < self.__chunk_size):
+        if not (chunk_size is None or 0 < chunk_size):
             raise ValueError("nonpositive chunk size")
 
         row_counts = {}
@@ -111,10 +145,12 @@ class ArchiveProgram(_InternalProgram):
             },
         }
 
-        archive_cutoff = ora.now() - self.__age
-        count = self.__count
-        while count > 0:
-            chunk = count if self.__chunk_size is None else min(count, self.__chunk_size)
+        archive_cutoff = ora.now() - age
+        remaining_count = count
+
+        while remaining_count > 0:
+            chunk = remaining_count if chunk_size is None else min(remaining_count, chunk_size)
+
             with Timer() as timer:
                 run_ids = db.get_archive_run_ids(
                     before=archive_cutoff,
@@ -123,18 +159,18 @@ class ArchiveProgram(_InternalProgram):
             meta["time"]["get runs"] += timer.elapsed
 
             if not run_ids:
-                # all eligible runs have been archived
+                # All eligible runs have been archived
                 break
 
-            count -= chunk
+            remaining_count -= chunk
 
             # Make sure all runs are retired; else skip them.
-            run_ids = [r for r in run_ids if apsis.run_store.retire(r)]
+            run_ids = [r for r in run_ids if self.apsis.run_store.retire(r)]
 
             if len(run_ids) > 0:
                 # Archive these runs.
                 with Timer() as timer:
-                    chunk_row_counts = db.archive(self.__path, run_ids)
+                    chunk_row_counts = db.archive(path, run_ids)
                 # Accumulate metadata.
                 meta["run count"] += len(run_ids)
                 meta["run_ids"].append(run_ids)
@@ -142,11 +178,17 @@ class ArchiveProgram(_InternalProgram):
                     row_counts[key] = row_counts.get(key, 0) + value
                 meta["time"]["archive runs"] += timer.elapsed
 
-            if count > 0 and self.__chunk_sleep is not None:
+            if remaining_count > 0 and chunk_sleep is not None:
                 # Yield to the event loop.
-                await asyncio.sleep(self.__chunk_sleep)
+                await asyncio.sleep(chunk_sleep)
 
-        return ProgramSuccess(meta=meta)
+        yield ProgramSuccess(meta=meta)
 
-    def reconnect(self, run_id, run_state, apsis):
-        return asyncio.ensure_future(self.wait(apsis))
+    async def stop(self):
+        """Archive operation cannot be stopped once started."""
+        # Could potentially implement graceful stop between chunks
+        pass
+
+    async def signal(self, signal):
+        """Archive operation ignores signals."""
+        pass

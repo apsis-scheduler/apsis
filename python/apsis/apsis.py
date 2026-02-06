@@ -19,7 +19,6 @@ from .lib.asyn import TaskGroup, Publisher, KeyPublisher
 from .lib.py import more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
-from .program.base import _InternalProgram
 from .program.base import Output, OutputMetadata
 from . import runs
 from .run_log import RunLog
@@ -238,9 +237,11 @@ class Apsis:
         self.run_log.record(run, "starting")
         self._transition(run, State.starting)
         # Call the program.  This produces an async iterator of updates.
+        # For internal programs, pass the apsis instance; otherwise pass config
+        is_internal = run.program.__class__.__module__.startswith("apsis.program.internal")
         run._running_program = run.program.run(
             run.run_id,
-            self if isinstance(run.program, _InternalProgram) else self.cfg,
+            self if is_internal else self.cfg,
         )
         # Start a task to process updates from the program.
         run_task = _process_updates(self, run)
@@ -258,10 +259,12 @@ class Apsis:
         assert run._running_program is None
         self.run_log.record(run, "reconnecting")
         # Connect to the program.  This produces an async iterator of updates.
+        # For internal programs, pass the apsis instance; otherwise pass config
+        is_internal = run.program.__class__.__module__.startswith("apsis.program.internal")
         run._running_program = run.program.connect(
             run.run_id,
             run.run_state,
-            self if isinstance(run.program, _InternalProgram) else self.cfg,
+            self if is_internal else self.cfg,
         )
         # Start a task to process updates from the program.
         run_task = _process_updates(self, run)

@@ -1,8 +1,7 @@
-import asyncio
 import json
 import logging
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess, program_outputs
+from ..base import Program, RunningProgram, ProgramRunning, ProgramSuccess, program_outputs, memo
 from apsis.lib.json import check_schema
 from apsis.lib.py import or_none, nstr
 from apsis.runs import template_expand
@@ -12,7 +11,7 @@ log = logging.getLogger(__name__)
 # -------------------------------------------------------------------------------
 
 
-class StatsProgram(_InternalProgram):
+class StatsProgram(Program):
     """
     A program that collects and dumps Apsis internal stats in JSON format.
     """
@@ -42,19 +41,52 @@ class StatsProgram(_InternalProgram):
             "path": self.__path,
         }
 
-    async def start(self, run_id, apsis):
-        run_state = {}
-        return ProgramRunning(run_state), self.wait(apsis)
+    def run(self, run_id, cfg):
+        """Start a new stats collection run."""
+        # For internal programs, cfg is the apsis instance
+        return RunningStatsProgram(run_id, self, cfg, run_state=None)
 
-    async def wait(self, apsis):
-        stats = json.dumps(apsis.get_stats())
-        if self.__path is not None:
-            with open(self.__path, "a") as file:
+    def connect(self, run_id, run_state, cfg):
+        """Reconnect to an existing stats collection run."""
+        # For internal programs, cfg is the apsis instance
+        return RunningStatsProgram(run_id, self, cfg, run_state=run_state)
+
+
+class RunningStatsProgram(RunningProgram):
+    """A running instance of the stats program."""
+
+    def __init__(self, run_id, program, cfg, run_state):
+        super().__init__(run_id)
+        self.program = program
+        self.run_state = run_state
+        # For internal programs, cfg IS the apsis instance
+        self.apsis = cfg
+
+    @memo.property
+    async def updates(self):
+        """Async generator that yields program state updates."""
+        if self.run_state is None:
+            # Starting fresh
+            self.run_state = {}
+            yield ProgramRunning(self.run_state)
+        # If reconnecting, run_state already exists, but we just restart
+        # (same behavior as the legacy reconnect() which just called wait() again)
+
+        # Collect stats (this is the main work)
+        stats = json.dumps(self.apsis.get_stats())
+
+        # Write to file if path is specified
+        if self.program._StatsProgram__path is not None:
+            with open(self.program._StatsProgram__path, "a") as file:
                 print(stats, file=file)
-        return ProgramSuccess(outputs=program_outputs(stats.encode()))
 
-    def reconnect(self, run_id, run_state, apsis):
-        return asyncio.ensure_future(self.wait(apsis))
+        # Return success with the stats as output
+        yield ProgramSuccess(outputs=program_outputs(stats.encode()))
 
-    async def signal(self, run_state, signum):
+    async def stop(self):
+        """Stats collection cannot be stopped - it's instantaneous."""
+        pass
+
+    async def signal(self, signal):
+        """Stats collection ignores signals."""
         pass
