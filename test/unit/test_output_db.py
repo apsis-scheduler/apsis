@@ -13,7 +13,7 @@ def test_basic(tmp_path):
     SqliteDB.create(path=path)
     db = SqliteDB.open(path).output_db
 
-    len(db.get_metadata("r42")) == 0
+    assert len(db.get_metadata("r42")) == 0
 
     with pytest.raises(LookupError):
         db.get_output("r42", "output")
