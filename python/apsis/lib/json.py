@@ -178,7 +178,7 @@ class TypedJso:
             except KeyError:
                 try:
                     return import_fqname(name)
-                except ImportError as exc:
+                except (ImportError, AttributeError) as exc:
                     raise LookupError(exc)
 
         def get_name(self, type):

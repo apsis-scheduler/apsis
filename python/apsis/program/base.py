@@ -1,6 +1,8 @@
+import logging
 from dataclasses import dataclass
 from signal import Signals
 
+from apsis.exc import SchemaError
 from apsis.lib import memo
 from apsis.lib.api import decompress
 from apsis.lib.json import TypedJso, check_schema
@@ -8,6 +10,8 @@ from apsis.lib.parse import parse_duration
 from apsis.lib.py import format_repr, get_cfg
 from apsis.lib.sys import to_signal
 from apsis.runs import template_expand
+
+log = logging.getLogger(__name__)
 
 TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
@@ -242,6 +246,11 @@ class Program(TypedJso):
 
     TYPE_NAMES = TypedJso.TypeNames()
 
+    # Program types that can be safely rolled back. See UnavailableProgram.
+    ROLLBACKABLE_PROGRAM_TYPES = frozenset(
+        ("apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",)
+    )
+
     def bind(self, args):
         """
         Returns a new program with parameters bound to `args`.
@@ -278,7 +287,27 @@ class Program(TypedJso):
 
     @classmethod
     def from_jso(cls, jso):
-        return TypedJso.from_jso.__func__(cls, jso)
+        try:
+            type_name = jso.pop("type")
+        except KeyError:
+            raise SchemaError("missing type")
+
+        try:
+            type_cls = cls.TYPE_NAMES.get_type(type_name)
+        except LookupError:
+            if type_name in cls.ROLLBACKABLE_PROGRAM_TYPES:
+                # Known-but-unavailable program type - return placeholder.
+                # This allows Apsis to start even if there are runs in the database
+                # with program types that are not available (e.g., after rollback).
+                log.warning(f"unavailable program type: {type_name}")
+                return UnavailableProgram(type_name, jso)
+            else:
+                raise SchemaError(f"unknown program type: {type_name}")
+
+        if not issubclass(type_cls, cls):
+            raise SchemaError(f"type {type_cls} not a {cls}")
+
+        return type_cls.from_jso(jso)
 
     def run(self, run_id, cfg) -> RunningProgram:
         """
@@ -334,3 +363,61 @@ class _InternalProgram(Program):
 
     async def stop(self):
         pass
+
+
+class _UnavailableRunningProgram(RunningProgram):
+    """Running program that immediately yields an error for unavailable program types."""
+
+    def __init__(self, run_id, type_name):
+        super().__init__(run_id)
+        self.type_name = type_name
+
+    @memo.property
+    async def updates(self):
+        yield ProgramError(f"cannot run unavailable program type: {self.type_name}")
+
+
+class UnavailableProgram(Program):
+    """
+    Placeholder for known program types that cannot be loaded.
+
+    This is a safety net for rollback scenarios. When a program type is listed
+    in ROLLBACKABLE_PROGRAM_TYPES but cannot be loaded (e.g., after rolling
+    back a feature), this placeholder is used instead of crashing Apsis.
+
+    IMPORTANT: This only applies to types explicitly listed in
+    ROLLBACKABLE_PROGRAM_TYPES. Unknown/unexpected types will still raise
+    SchemaError - we never silently ignore truly unknown program types.
+
+    To add rollback support for a new program type:
+    1. Add the fully-qualified type name to ROLLBACKABLE_PROGRAM_TYPES
+    2. Deploy this change BEFORE deploying the feature that introduces the type
+    3. If the feature is later rolled back, existing runs will be loaded as
+       UnavailableProgram instead of crashing
+
+    Behavior:
+    - Runs are visible in the UI with their original metadata
+    - Attempting to run/restart transitions the run to error state
+    - Original program data is preserved in the database (via to_jso)
+    - Once the feature is re-deployed, runs will work normally again
+    """
+
+    def __init__(self, type_name: str, jso: dict):
+        self.type_name = type_name
+        self._jso = jso
+
+    def __str__(self):
+        return f"UnavailableProgram({self.type_name})"
+
+    def bind(self, args):
+        raise ProgramError(f"cannot bind unavailable program type: {self.type_name}")
+
+    def run(self, run_id, cfg):
+        return _UnavailableRunningProgram(run_id, self.type_name)
+
+    def connect(self, run_id, run_state, cfg):
+        return _UnavailableRunningProgram(run_id, self.type_name)
+
+    def to_jso(self):
+        # Preserve original data so it can be serialized back to the database
+        return {"type": self.type_name, **self._jso}
