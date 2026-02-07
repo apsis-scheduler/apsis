@@ -11,6 +11,16 @@ from apsis.program.base import (
 )
 
 
+@pytest.fixture
+def rollbackable_types(monkeypatch):
+    """Override Program.ROLLBACKABLE_PROGRAM_TYPES for testing."""
+    monkeypatch.setattr(
+        Program,
+        "ROLLBACKABLE_PROGRAM_TYPES",
+        frozenset(("apsis.program.future.RolledBackProgram",)),
+    )
+
+
 class TestUnavailableProgram:
     def test_normal_program_loading(self):
         """Test that normal program types still load correctly."""
@@ -34,10 +44,9 @@ class TestUnavailableProgram:
             Program.from_jso(jso)
         assert "unknown program type: completely.unknown.program.Type" in str(exc_info.value)
 
-    def test_rollbackable_unavailable_program_loads(self):
-        # This simulates the ECS program type being unavailable after rollback
+    def test_rollbackable_unavailable_program_loads(self, rollbackable_types):
         jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py"],
             "mem_gb": 4,
             "vcpu": 2,
@@ -47,11 +56,11 @@ class TestUnavailableProgram:
         # Should return UnavailableProgram, not raise an error
         program = Program.from_jso(jso)
         assert isinstance(program, UnavailableProgram)
-        assert program.type_name == "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram"
+        assert program.type_name == "apsis.program.future.RolledBackProgram"
 
-    def test_unavailable_program_preserves_data(self):
+    def test_unavailable_program_preserves_data(self, rollbackable_types):
         original_jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py"],
             "mem_gb": 4,
             "vcpu": 2,
@@ -66,9 +75,9 @@ class TestUnavailableProgram:
         restored_jso = program.to_jso()
         assert restored_jso == original_jso
 
-    def test_unavailable_program_bind_raises_error(self):
+    def test_unavailable_program_bind_raises_error(self, rollbackable_types):
         jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py"],
         }
 
@@ -80,9 +89,9 @@ class TestUnavailableProgram:
             program.bind({"arg": "value"})
         assert "cannot bind unavailable program type" in str(exc_info.value)
 
-    def test_unavailable_program_run_returns_error_runner(self):
+    def test_unavailable_program_run_returns_error_runner(self, rollbackable_types):
         jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py"],
         }
 
@@ -92,11 +101,11 @@ class TestUnavailableProgram:
         # Running should return _UnavailableRunningProgram
         runner = program.run("test_run_id", {})
         assert isinstance(runner, _UnavailableRunningProgram)
-        assert runner.type_name == "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram"
+        assert runner.type_name == "apsis.program.future.RolledBackProgram"
 
-    def test_unavailable_program_connect_returns_error_runner(self):
+    def test_unavailable_program_connect_returns_error_runner(self, rollbackable_types):
         jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py"],
         }
 
@@ -106,20 +115,17 @@ class TestUnavailableProgram:
         # Connecting should return _UnavailableRunningProgram
         runner = program.connect("test_run_id", {"some": "state"}, {})
         assert isinstance(runner, _UnavailableRunningProgram)
-        assert runner.type_name == "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram"
+        assert runner.type_name == "apsis.program.future.RolledBackProgram"
 
-    def test_unavailable_program_str_representation(self):
+    def test_unavailable_program_str_representation(self, rollbackable_types):
         jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py"],
         }
 
         program = Program.from_jso(jso)
         assert isinstance(program, UnavailableProgram)
-        assert (
-            str(program)
-            == "UnavailableProgram(apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram)"
-        )
+        assert str(program) == "UnavailableProgram(apsis.program.future.RolledBackProgram)"
 
     @pytest.mark.asyncio
     async def test_unavailable_running_program_yields_error(self):
@@ -136,35 +142,31 @@ class TestUnavailableProgram:
         with pytest.raises(StopAsyncIteration):
             await updates.__anext__()
 
-    def test_multiple_rollbackable_types(self):
-        # Temporarily add another type to test
-        original_types = Program.ROLLBACKABLE_PROGRAM_TYPES
-        try:
-            # Add a second rollbackable type
-            Program.ROLLBACKABLE_PROGRAM_TYPES = frozenset(
+    def test_multiple_rollbackable_types(self, monkeypatch):
+        monkeypatch.setattr(
+            Program,
+            "ROLLBACKABLE_PROGRAM_TYPES",
+            frozenset(
                 [
-                    "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+                    "apsis.program.future.RolledBackProgram",
                     "another.future.feature.BoundProgram",
                 ]
-            )
+            ),
+        )
 
-            # Both should return UnavailableProgram
-            jso1 = {"type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram"}
-            program1 = Program.from_jso(jso1)
-            assert isinstance(program1, UnavailableProgram)
+        # Both should return UnavailableProgram
+        jso1 = {"type": "apsis.program.future.RolledBackProgram"}
+        program1 = Program.from_jso(jso1)
+        assert isinstance(program1, UnavailableProgram)
 
-            jso2 = {"type": "another.future.feature.BoundProgram"}
-            program2 = Program.from_jso(jso2)
-            assert isinstance(program2, UnavailableProgram)
+        jso2 = {"type": "another.future.feature.BoundProgram"}
+        program2 = Program.from_jso(jso2)
+        assert isinstance(program2, UnavailableProgram)
 
-            # Unknown type should still raise error
-            jso3 = {"type": "not.in.rollbackable.list"}
-            with pytest.raises(SchemaError):
-                Program.from_jso(jso3)
-
-        finally:
-            # Restore original types
-            Program.ROLLBACKABLE_PROGRAM_TYPES = original_types
+        # Unknown type should still raise error
+        jso3 = {"type": "not.in.rollbackable.list"}
+        with pytest.raises(SchemaError):
+            Program.from_jso(jso3)
 
     def test_missing_type_key_raises_error(self):
         jso = {
@@ -175,10 +177,10 @@ class TestUnavailableProgram:
             Program.from_jso(jso)
         assert "missing type" in str(exc_info.value)
 
-    def test_from_jso_preserves_all_fields(self):
+    def test_from_jso_preserves_all_fields(self, rollbackable_types):
         """Test that all fields are preserved through serialization/deserialization."""
         jso = {
-            "type": "apsis.program.procstar.aws.ecs_agent.BoundProcstarECSProgram",
+            "type": "apsis.program.future.RolledBackProgram",
             "argv": ["/usr/bin/python", "script.py", "--verbose"],
             "stop": {"signal": "SIGTERM", "grace_period": 30},
             "timeout": {"duration": 3600, "signal": "SIGTERM"},
@@ -196,3 +198,17 @@ class TestUnavailableProgram:
         # All fields should be preserved
         restored = program.to_jso()
         assert restored == jso
+
+    def test_ecs_program_loads_normally_when_available(self):
+        """Test that ECS program loads normally when it's available in the codebase."""
+        # The ECS program is actually available, so it should load normally
+        jso = {
+            "type": "procstar-ecs",
+            "argv": ["/usr/bin/python", "script.py"],
+            "stop": {"signal": "SIGTERM"},
+        }
+
+        program = Program.from_jso(jso)
+        # It should load as the actual ECS program, not UnavailableProgram
+        assert program.__class__.__name__ == "ProcstarECSProgram"
+        assert not isinstance(program, UnavailableProgram)
