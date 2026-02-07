@@ -19,6 +19,7 @@ classifiers = [
 requires-python = "==3.10.*"
 dependencies = [
     "aiohttp",
+    "boto3",
     "brotli",
     "httpx",
     "jinja2",
@@ -70,6 +71,7 @@ packages = [
     "apsis.program",
     "apsis.program.internal",
     "apsis.program.procstar",
+    "apsis.program.procstar.aws",
     "apsis.schedule",
     "apsis.service",
 ]
