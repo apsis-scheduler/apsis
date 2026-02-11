@@ -148,6 +148,65 @@ def test_to_error(client):
     assert res["state"] == "running"
 
 
+def test_parametrized_dependency(client):
+    """
+    Tests that a dependency with a templated job_id resolves correctly.
+
+    "region dep" depends on "region/{{ region }}" with args date={{ date }}.
+    We schedule a "region dep" run with region=us, which should wait for
+    "region/us" to succeed.
+    """
+    # Schedule a run that depends on region/us.
+    res = client.schedule("region dep", {"region": "us", "date": "2024-01-01"})
+    run_id = res["run_id"]
+
+    # It should be waiting for its dependency.
+    res = client.get_run(run_id)
+    assert res["state"] == "waiting"
+
+    # Satisfy the dependency by scheduling and completing region/us.
+    res = client.schedule("region/us", {"date": "2024-01-01"})
+    dep_run_id = res["run_id"]
+
+    # The dependency run completes immediately (no-op, duration 0).
+    time.sleep(0.5)
+
+    # The dependent run should now have succeeded.
+    res = client.get_run(dep_run_id)
+    assert res["state"] == "success"
+    res = client.get_run(run_id)
+    assert res["state"] == "success"
+
+
+def test_parametrized_dependency_different_regions(client):
+    """
+    Tests that different parameter values resolve to different dependency jobs.
+    """
+    # Schedule runs for two different regions.
+    res_us = client.schedule("region dep", {"region": "us", "date": "2024-01-01"})
+    run_us = res_us["run_id"]
+    res_eu = client.schedule("region dep", {"region": "eu", "date": "2024-01-01"})
+    run_eu = res_eu["run_id"]
+
+    # Both should be waiting.
+    assert client.get_run(run_us)["state"] == "waiting"
+    assert client.get_run(run_eu)["state"] == "waiting"
+
+    # Satisfy only the US dependency.
+    client.schedule("region/us", {"date": "2024-01-01"})
+    time.sleep(0.5)
+
+    # Only the US run should proceed; EU remains waiting.
+    assert client.get_run(run_us)["state"] == "success"
+    assert client.get_run(run_eu)["state"] == "waiting"
+
+    # Now satisfy the EU dependency.
+    client.schedule("region/eu", {"date": "2024-01-01"})
+    time.sleep(0.5)
+
+    assert client.get_run(run_eu)["state"] == "success"
+
+
 def test_thread_cond(inst):
     client = inst.client
 
