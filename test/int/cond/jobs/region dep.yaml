@@ -1,0 +1,19 @@
+params: [region, date]
+
+program:
+  type: no-op
+  duration: 0
+
+schedule:
+  - type: daily
+    tz: UTC
+    daytime: "00:00:00"
+    args:
+      region: us
+      date: "2024-01-01"
+
+condition:
+  - type: dependency
+    job_id: "region/{{ region }}"
+    args:
+      date: "{{ date }}"

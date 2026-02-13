@@ -2,7 +2,7 @@ import logging
 
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
-from apsis.runs import Instance, get_bind_args
+from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State, reachable
 from .base import RunStoreCondition, _bind
 
@@ -90,11 +90,12 @@ class Dependency(RunStoreCondition):
             )
 
     def bind(self, run, jobs):
-        job = jobs[self.job_id]
         bind_args = get_bind_args(run)
+        job_id = template_expand(self.job_id, bind_args)
+        job = jobs[job_id]
         args = _bind(job, self.args, run.inst.args, bind_args)
         return type(self)(
-            self.job_id,
+            job_id,
             args,
             states=self.states,
             exist=self.exist,
