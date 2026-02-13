@@ -14,6 +14,8 @@ JOBS = {
     "testjob1": Job("testjob1", {"foo", "bar"}, (), None),
     "dep/us": Job("dep/us", {"date"}, (), None),
     "dep/eu": Job("dep/eu", {"date"}, (), None),
+    "ingest/market data": Job("ingest/market data", set(), (), None),
+    "risk/compute var": Job("risk/compute var", set(), (), None),
 }
 
 
@@ -118,6 +120,23 @@ def test_bind_literal_job_id_unchanged():
 
     assert bound.job_id == "testjob0"
     assert bound.args == {"foo": "banana"}
+
+
+def test_bind_parametrized_job_id_full_name():
+    # The parameter IS the entire dependency job_id — two schedules of the same
+    # job can depend on completely unrelated jobs by passing the dependency name
+    # as a parameter.
+    dep = Dependency("{{ prerequisite }}", {})
+
+    # One schedule passes prerequisite="ingest/market data".
+    run_a = Run(Instance("testjob0", {"foo": "x", "prerequisite": "ingest/market data"}))
+    bound_a = dep.bind(run_a, JOBS)
+    assert bound_a.job_id == "ingest/market data"
+
+    # Another schedule passes prerequisite="risk/compute var".
+    run_b = Run(Instance("testjob0", {"foo": "x", "prerequisite": "risk/compute var"}))
+    bound_b = dep.bind(run_b, JOBS)
+    assert bound_b.job_id == "risk/compute var"
 
 
 def test_bind_parametrized_job_id_jso_roundtrip():

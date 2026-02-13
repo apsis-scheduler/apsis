@@ -207,6 +207,39 @@ def test_parametrized_dependency_different_regions(client):
     assert client.get_run(run_eu)["state"] == "success"
 
 
+def test_parametrized_dependency_full_job_id(client):
+    """
+    Tests that the entire dependency job_id can come from a parameter.
+
+    "full name dep" has a single param `prerequisite` and a dependency on
+    "{{ prerequisite }}".  Two schedules can pass completely unrelated job
+    names as the dependency.
+    """
+    # Schedule two runs depending on completely different jobs.
+    res_a = client.schedule("full name dep", {"prerequisite": "ingest market data"})
+    run_a = res_a["run_id"]
+    res_b = client.schedule("full name dep", {"prerequisite": "risk compute var"})
+    run_b = res_b["run_id"]
+
+    # Both should be waiting.
+    assert client.get_run(run_a)["state"] == "waiting"
+    assert client.get_run(run_b)["state"] == "waiting"
+
+    # Satisfy only the first dependency.
+    client.schedule("ingest market data", {})
+    time.sleep(0.5)
+
+    # Only run_a proceeds; run_b still waits for a different job.
+    assert client.get_run(run_a)["state"] == "success"
+    assert client.get_run(run_b)["state"] == "waiting"
+
+    # Satisfy the second dependency.
+    client.schedule("risk compute var", {})
+    time.sleep(0.5)
+
+    assert client.get_run(run_b)["state"] == "success"
+
+
 def test_thread_cond(inst):
     client = inst.client
 
