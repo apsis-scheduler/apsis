@@ -13,17 +13,17 @@ module.exports = {
     proxyTable: {
       // Proxy all requests starting with /api.
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://rd14.asd:5000',
         changeOrigin: true,
       },
       '/api': {
-         target: 'ws://localhost:5000',
+         target: 'ws://rd14.asd:5000',
          ws: true
       },
     },
 
     // Various Dev Server settings
-    host: 'localhost', // can be overwritten by process.env.HOST
+    host: 'rd14.asd', // can be overwritten by process.env.HOST
     port: 8080, // can be overwritten by process.env.PORT, if port is in use, a free one will be determined
     autoOpenBrowser: false,
     errorOverlay: true,

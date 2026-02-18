@@ -42,13 +42,53 @@ div.component
 
       tr
         th conditions
-        td(v-if="job.condition.length > 0")
-          .condition(v-for="cond in job.condition" :key="cond.str")
-            span(v-if="cond.type === 'dependency'")
-              span dependency: 
-              Job(:job-id="cond.job_id")
-              span  is {{ join(cond.states, '|') }}
-            span(v-else) {{ cond.str }}
+        td(v-if="hasConditions")
+          .condition-section(v-if="hasParameterized")
+            .section-label Definitions
+            ul.condition-list
+              li(v-for="cond in job.condition" :key="'def-' + cond.str")
+                template(v-if="cond.type === 'dependency'")
+                  span
+                    span.dep-chrome dependency&nbsp;
+                    span.dep-job-id {{ cond.job_id }}
+                    span.dep-chrome  is {{ join(cond.states || ['success'], '|') }}
+                  ul.enable-if-list(v-if="cond.enabled != null")
+                    li
+                      span.enable-if enabled: {{ cond.enabled }}
+                span(v-else) {{ cond.str }}
+          .condition-section(v-if="job.common_conditions && job.common_conditions.length > 0")
+            .section-label(v-if="hasParameterized") Dependencies Common to All Arg Sets
+            ul.condition-list
+              li(v-for="cond in job.common_conditions" :key="cond.str")
+                span(v-if="cond.type === 'dependency'")
+                  | dependency:&nbsp;
+                  Job(:job-id="cond.job_id")
+                  span.dep-args(v-if="cond.resolved_args && Object.keys(cond.resolved_args).length > 0")
+                    |  (
+                    RunArgs(:args="cond.resolved_args")
+                    | )
+                  |  is {{ join(cond.states || ['success'], '|') }}
+                span(v-else) {{ cond.str }}
+          .condition-section(v-if="hasParameterized")
+            .section-label Dependencies (by scheduled arg sets)
+            ul.condition-list
+              li(v-for="(group, gi) in job.resolved_conditions" :key="'group-' + gi")
+                span.schedule-args
+                  | (
+                  RunArgs(:args="group.schedule_args")
+                  | )
+                ul
+                  li(v-for="(cond, ci) in group.conditions" :key="'resolved-' + gi + '-' + ci")
+                    span(v-if="cond.type === 'dependency'")
+                      | dependency:&nbsp;
+                      Job(v-if="cond.resolved_job_id" :job-id="cond.resolved_job_id")
+                      span(v-else) {{ cond.job_id }}
+                      span.dep-args(v-if="cond.resolved_args && Object.keys(cond.resolved_args).length > 0")
+                        |  (
+                        RunArgs(:args="cond.resolved_args")
+                        | )
+                      |  is {{ join(cond.states || ['success'], '|') }}
+                    span(v-else) {{ cond.str }}
         td(v-else) No conditions.
 
       tr
@@ -108,6 +148,7 @@ import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
+import RunArgs from '@/components/RunArgs'
 import RunsList from '@/components/RunsList'
 import showdown from 'showdown'
 import store from '@/store'
@@ -123,6 +164,7 @@ export default {
     JobLabel,
     Program,
     Run,
+    RunArgs,
     RunsList,
   },
 
@@ -151,6 +193,15 @@ export default {
         this.job.metadata,
         (v, k) => k !== 'description' && k !== 'labels'
       )
+    },
+
+    hasConditions() {
+      if (!this.job) return false
+      return this.job.condition.length > 0
+    },
+
+    hasParameterized() {
+      return this.job && this.job.resolved_conditions && this.job.resolved_conditions.length > 0
     },
 
     scheduleReady() {
@@ -245,6 +296,56 @@ export default {
 .disabled {
   color: $global-light-color;
 }
+
+.condition-section {
+  &:first-child {
+    margin-top: 0.5em;
+  }
+  &:not(:first-child) {
+    margin-top: 0.75em;
+  }
+}
+
+.section-label {
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.condition-list {
+  margin: 0.15em 0 0 0;
+  padding-left: 1.5em;
+}
+
+.dep-chrome {
+  color: #999;
+  font-size: 0.9em;
+}
+
+.dep-job-id {
+  font-weight: 500;
+}
+
+.dep-args {
+  color: #666;
+  margin: 0 0.25em;
+}
+
+.schedule-args {
+  color: #888;
+}
+
+.enable-if {
+  color: #888;
+  font-style: italic;
+}
+
+.enable-if-list {
+  margin: 0.1em 0 0 0;
+  padding-left: 1.5em;
+}
+
 
 .schedule {
   border-spacing: 8px 4px;

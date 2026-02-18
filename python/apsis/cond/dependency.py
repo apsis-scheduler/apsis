@@ -2,7 +2,7 @@ import logging
 
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
-from apsis.runs import Instance, get_bind_args
+from apsis.runs import Instance, arg_to_bool, get_bind_args, template_expand
 from apsis.states import State, reachable
 from .base import RunStoreCondition, _bind
 
@@ -29,6 +29,7 @@ class Dependency(RunStoreCondition):
         *,
         states=DEFAULT_STATE,
         exist=None,
+        enabled=None,
     ):
         args = {str(k): str(v) for k, v in args.items()}
         states = frozenset(iterize(states))
@@ -42,6 +43,7 @@ class Dependency(RunStoreCondition):
         self.args = args
         self.states = states
         self.exist = exist
+        self.enabled = enabled
 
     def __repr__(self):
         return format_ctor(
@@ -50,13 +52,15 @@ class Dependency(RunStoreCondition):
             self.args,
             states=self.states,
             exist=self.exist,
+            enabled=self.enabled,
         )
 
     def __str__(self):
         inst = Instance(self.job_id, self.args)
         states = join_states(self.states)
         exist = "" if self.exist is None else ", must exist as " + join_states(self.exist)
-        return f"dependency {inst} is {states}{exist}"
+        enable = "" if self.enabled is None else f" [if {self.enabled}]"
+        return f"dependency {inst} is {states}{exist}{enable}"
 
     def to_jso(self):
         jso = {
@@ -68,6 +72,8 @@ class Dependency(RunStoreCondition):
             jso["states"] = [s.name for s in self.states]
         if self.exist is not None:
             jso["exist"] = [s.name for s in self.exist]
+        if self.enabled is not None:
+            jso["enabled"] = self.enabled
         return jso
 
     @classmethod
@@ -82,19 +88,39 @@ class Dependency(RunStoreCondition):
                 exist = {s for s in State if reachable(s) & states}
             elif exist is not None:
                 exist = {State[s] for s in iterize(exist)}
+            enabled = pop("enabled", default=None)
+            if enabled is not None and not isinstance(enabled, (bool, str)):
+                raise TypeError(
+                    "enabled must be a bool or a quoted string in YAML"
+                    ' (e.g. enabled: false or enabled: "{{ expr }}")'
+                    f"; got {enabled!r}"
+                )
             return cls(
                 pop("job_id"),
                 pop("args", default={}),
                 states=states,
                 exist=exist,
+                enabled=enabled,
             )
 
     def bind(self, run, jobs):
-        job = jobs[self.job_id]
         bind_args = get_bind_args(run)
+
+        # Evaluate enabled; if it resolves to false, skip this condition.
+        if self.enabled is not None:
+            if isinstance(self.enabled, bool):
+                if not self.enabled:
+                    return None
+            else:
+                result = template_expand(self.enabled, bind_args)
+                if not arg_to_bool(result):
+                    return None
+
+        job_id = template_expand(self.job_id, bind_args)
+        job = jobs[job_id]
         args = _bind(job, self.args, run.inst.args, bind_args)
         return type(self)(
-            self.job_id,
+            job_id,
             args,
             states=self.states,
             exist=self.exist,

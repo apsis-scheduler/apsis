@@ -3,8 +3,10 @@ import gzip
 import logging
 import sanic
 import zlib
+import jinja2 as _j2
 
 from apsis.cond.dependency import Dependency
+from apsis.runs import arg_to_bool, template_expand
 from apsis.schedule import schedule_to_jso
 
 log = logging.getLogger(__name__)
@@ -103,12 +105,205 @@ def _to_jsos(objs):
     return [] if objs is None else [_to_jso(o) for o in objs]
 
 
-def job_to_jso(job):
+def job_to_jso(job, jobs=None):
     def sched_to_jso(s):
         jso = schedule_to_jso(s)
         jso["str"] = str(s) if s.stop_schedule is None else f"{s}, {s.stop_schedule}"
         jso["enabled"] = s.enabled
         return jso
+
+    def _display_expand(template, args):
+        """Best-effort Jinja2 expansion for display purposes.
+
+        Substitutes known variables while rendering unknown ones as
+        ``{{ name }}`` placeholders.  Supports attribute access, function
+        calls, and arithmetic on unknown values so that complex expressions
+        like ``{{ get_calendar("strat/" ~ strat).before(Date(date) - 1) }}``
+        partially resolve (e.g. to
+        ``{{ get_calendar("strat/eu").before(Date(date) - 1) }}``).
+        """
+
+        class _Passthrough(_j2.Undefined):
+            """An Undefined that is chainable and renders as {{ name }}."""
+
+            def __str__(self):
+                return "{{ " + self._undefined_name + " }}"
+
+            def __getattr__(self, name):
+                if name.startswith("_"):
+                    raise AttributeError(name)
+                return type(self)(name=f"{self._undefined_name}.{name}")
+
+            def __call__(self, *a, **kw):
+                parts = []
+                for v in a:
+                    if isinstance(v, _j2.Undefined):
+                        parts.append(v._undefined_name)
+                    else:
+                        parts.append(repr(v))
+                for k, v in kw.items():
+                    rhs = v._undefined_name if isinstance(v, _j2.Undefined) else repr(v)
+                    parts.append(f"{k}={rhs}")
+                return type(self)(
+                    name=f"{self._undefined_name}({', '.join(parts)})"
+                )
+
+            # Arithmetic — keep as symbolic expression.
+            def __sub__(self, other):
+                return type(self)(name=f"{self._undefined_name} - {other}")
+
+            def __rsub__(self, other):
+                return type(self)(name=f"{other} - {self._undefined_name}")
+
+            def __add__(self, other):
+                return type(self)(name=f"{self._undefined_name} + {other}")
+
+            def __radd__(self, other):
+                return type(self)(name=f"{other} + {self._undefined_name}")
+
+        env = _j2.Environment(undefined=_Passthrough)
+        try:
+            tmpl = env.from_string(str(template))
+            return tmpl.render(args)
+        except Exception:
+            return str(template)
+
+    def _expand_value(val, sched_args):
+        """Try a full Jinja2 expansion; on failure fall back to display."""
+        try:
+            return template_expand(val, sched_args)
+        except Exception:
+            return _display_expand(val, sched_args)
+
+    def _resolve_dep_args(dep, resolved_job_id, sched_args):
+        """Build a resolved args dict for a dependency.
+
+        If the target job can be looked up, iterate over all its params:
+        - Explicit args from the dependency are expanded with sched_args.
+        - Inherited params (not in dep.args) use the sched_args value if
+          available, otherwise show ``{{ param }}``.
+
+        If the target job can't be looked up, fall back to expanding
+        just the dependency's explicit args.
+        """
+        target_params = None
+        if jobs is not None and resolved_job_id is not None:
+            try:
+                target_params = jobs.get_job(resolved_job_id).params
+            except LookupError:
+                pass
+
+        resolved = {}
+        if target_params is not None:
+            for param in sorted(target_params):
+                if param in dep.args:
+                    resolved[param] = _expand_value(dep.args[param], sched_args)
+                elif param in sched_args:
+                    resolved[param] = sched_args[param]
+                else:
+                    resolved[param] = "{{ " + param + " }}"
+        else:
+            # Fallback: just expand the explicit args.
+            for key, val in sorted(dep.args.items()):
+                resolved[key] = _expand_value(val, sched_args)
+        return resolved
+
+    # Collect unique schedule arg sets.
+    sched_arg_sets = []
+    for sched in job.schedules:
+        if sched.args not in sched_arg_sets:
+            sched_arg_sets.append(sched.args)
+
+    def _eval_enabled(dep, sched_args):
+        """Evaluate enabled for a dependency given schedule args."""
+        if dep.enabled is None:
+            return True
+        if isinstance(dep.enabled, bool):
+            return dep.enabled
+        try:
+            result = _expand_value(dep.enabled, sched_args)
+            return arg_to_bool(result)
+        except Exception:
+            return True  # If we can't evaluate, assume enabled.
+
+    def _is_variable_dep(dep):
+        """Does this dependency resolve differently across schedule arg sets?"""
+        if "{{" in dep.job_id:
+            return True
+        if dep.enabled is not None and len(sched_arg_sets) > 1:
+            # Check if enabled evaluates differently across arg sets.
+            first = _eval_enabled(dep, sched_arg_sets[0])
+            if any(_eval_enabled(dep, sa) != first for sa in sched_arg_sets[1:]):
+                return True
+        if len(sched_arg_sets) <= 1:
+            return False
+        # Check if the resolved args differ across schedule arg sets.
+        first = _resolve_dep_args(dep, dep.job_id, sched_arg_sets[0])
+        return any(
+            _resolve_dep_args(dep, dep.job_id, sa) != first
+            for sa in sched_arg_sets[1:]
+        )
+
+    # Separate dependency conditions into common (same for all arg sets) and
+    # variable.  Non-dependency conditions are omitted here — they appear only
+    # in the "condition" (Definitions) list.  Dependencies unconditionally
+    # disabled (enabled=False) are also omitted.
+    common_conds = []
+    variable_deps = []
+    for cond in job.conds:
+        if isinstance(cond, Dependency):
+            if cond.enabled is False:
+                pass  # Unconditionally disabled; show only in Definitions.
+            elif _is_variable_dep(cond):
+                variable_deps.append(cond)
+            else:
+                common_conds.append(cond)
+
+    # Resolve variable dependencies, grouped by unique schedule args set.
+    resolved_groups = []
+    if variable_deps:
+        for sched_args in sched_arg_sets:
+            group_conds = []
+            for dep in variable_deps:
+                if not _eval_enabled(dep, sched_args):
+                    continue
+                entry = {**_to_jso(dep)}
+                if "{{" in dep.job_id:
+                    try:
+                        resolved_job_id = template_expand(
+                            dep.job_id, sched_args
+                        )
+                        entry["resolved_job_id"] = resolved_job_id
+                    except NameError:
+                        resolved_job_id = None
+                        entry["resolved_job_id"] = None
+                else:
+                    resolved_job_id = dep.job_id
+                    entry["resolved_job_id"] = dep.job_id
+                entry["resolved_args"] = _resolve_dep_args(
+                    dep, resolved_job_id, sched_args
+                )
+                group_conds.append(entry)
+            resolved_groups.append({
+                "schedule_args": sched_args,
+                "conditions": group_conds,
+            })
+
+    # Build common conditions JSO with resolved args (using first sched
+    # arg set — they're guaranteed to be the same across all sets).
+    first_sched_args = sched_arg_sets[0] if sched_arg_sets else {}
+    common_conds_jso = []
+    for cond in common_conds:
+        if isinstance(cond, Dependency):
+            entry = {**_to_jso(cond)}
+            resolved = _resolve_dep_args(
+                cond, cond.job_id, first_sched_args
+            )
+            if resolved:
+                entry["resolved_args"] = resolved
+            common_conds_jso.append(entry)
+        else:
+            common_conds_jso.append(_to_jso(cond))
 
     return {
         "job_id": job.job_id,
@@ -116,6 +311,8 @@ def job_to_jso(job):
         "schedule": [sched_to_jso(s) for s in job.schedules],
         "program": _to_jso(job.program),
         "condition": [_to_jso(c) for c in job.conds],
+        "common_conditions": common_conds_jso,
+        "resolved_conditions": resolved_groups,
         "action": [_to_jso(a) for a in job.actions],
         "metadata": job.meta,
         "ad_hoc": job.ad_hoc,
