@@ -1,0 +1,16 @@
+params: [prerequisite]
+
+program:
+  type: no-op
+  duration: 0
+
+schedule:
+  - type: daily
+    tz: UTC
+    daytime: "00:00:00"
+    args:
+      prerequisite: ingest market data
+
+condition:
+  - type: dependency
+    job_id: "{{ prerequisite }}"

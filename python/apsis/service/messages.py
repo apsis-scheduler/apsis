@@ -17,17 +17,17 @@ def make_agent_conn_delete(conn_id):
     }
 
 
-def make_job(job):
+def make_job(job, jobs=None):
     return {
         "type": "job",
-        "job": job_to_jso(job),
+        "job": job_to_jso(job, jobs=jobs),
     }
 
 
-def make_job_add(job):
+def make_job_add(job, jobs=None):
     return {
         "type": "job_add",
-        "job": job_to_jso(job),
+        "job": job_to_jso(job, jobs=jobs),
     }
 
 

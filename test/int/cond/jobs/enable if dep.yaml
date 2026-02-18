@@ -1,0 +1,12 @@
+params: [date, strat]
+
+program:
+  type: no-op
+  duration: 0
+
+condition:
+  - type: dependency
+    job_id: dependency
+    args:
+      flavor: vanilla
+    enabled: "{{ strat == 'us' }}"

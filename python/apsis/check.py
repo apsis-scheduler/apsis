@@ -135,6 +135,9 @@ def check_job_dependencies_scheduled(
         for dep in deps:
             # Bind the dependency to get the precise args that match.
             dep = dep.bind(run, jobs)
+            if dep is None:
+                # Dependency disabled by `enabled` condition.
+                continue
 
             # Look at scheduled runs of the dependency job.  Check if any
             # matches the dependency args.
