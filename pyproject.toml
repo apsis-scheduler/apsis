@@ -38,6 +38,13 @@ dependencies = [
     "websockets >=14",
 ]
 
+[project.optional-dependencies]
+doc = [
+    "sphinx",
+    "readthedocs-sphinx-ext",
+    "sphinx-rtd-theme",
+]
+
 [dependency-groups]
 dev = [
     "build",
@@ -50,7 +57,7 @@ dev = [
 docs = [
     "sphinx",
     "readthedocs-sphinx-ext",
-    "sphinx-rtd-theme"
+    "sphinx-rtd-theme",
 ]
 
 [project.urls]
