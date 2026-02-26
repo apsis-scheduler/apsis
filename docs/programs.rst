@@ -62,7 +62,7 @@ Note the following:
   characters.  See, for example,
   `yaml-multiline.info <https://yaml-multiline.info/>`_.
 
-- The command actually a short program, executed by a new shell instance.
+- The command is actually a short program, executed by a new shell instance.
   The shell is
   `bash <https://www.gnu.org/software/bash/manual/bash.html>`_.  All shell
   quoting, escaping, variable expansion, etc. rules apply.
@@ -367,7 +367,7 @@ only wait 15 seconds before sending `SIGKILL`.
             grace_period: 15s
 
 Only if the process terminates with zero exit code the run will be considered as 
-successfull.
+successful.
 
 
 Internal Programs
@@ -406,7 +406,7 @@ Archive
 
 An `ArchiveProgram` program moves data pertaining to older runs out of the Apsis
 database file, into a separate archive file.  Keeping the main Apsis database
-file from growing too large can avoid performance degredation.
+file from growing too large can avoid performance degradation.
 
 The archive program retires a run from Apsis's memory before archiving it.  The
 run is no longer visible through any UI.  A run that is not completed cannot be

@@ -9,7 +9,7 @@ Typically, the programs or tasks are recurring: the same program will run
 periodically.  Various schedules may specify the recurrence, such as every 15
 minutes, or at 10:00 New York time every Wednesday.
 
-The individual instances of the recurring program are usually very similiar.
+The individual instances of the recurring program are usually very similar.
 The identical program may run, or it might be parameterized by the date, time,
 or other information.
 
@@ -46,7 +46,7 @@ host to run for using a param, and in fact you can specify different schedules
 for each.
 
 When Apsis creates a run, it fills in the params with values as **arguments**
-(or "args").  The run filles each of the job's params with an arg.
+(or "args").  The run fills each of the job's params with an arg.
 
 For example, the job `cleanup(date, host)` takes two parameters, "date" and
 "host".  A particular run `cleanup(date=2020-11-06, host=server7.example.com)`
@@ -56,7 +56,7 @@ Params are unordered, so args may also be specified in any order.  Arg values
 are always strings.
 
 A job need not have params.  You may schedule a job with no params to run
-periodially.  You may also run multiple runs with the same args.  However,
+periodically.  You may also run multiple runs with the same args.  However,
 params make it easier to track programs that need to be run exactly once for
 each param value, for example a job that needs to be run once a day.
 
@@ -101,8 +101,8 @@ Each run, once created, is in one of these states:
 - **running**: The run has started and is currently running.
 - **stopping**: Apsis is stopping the run.
 - **success**: The run has completed successfully.
-- **failure**: The run has completed unsuccesfully.
-- **error**: Some other problem has occured with the run.  This can include a
+- **failure**: The run has completed unsuccessfully.
+- **error**: Some other problem has occurred with the run.  This can include a
   problem with Apsis itself; with the job configuration; or the runtime
   environment (for instance, a host is unresponsive).  The run may or may not
   have started or completed, depending on the nature of the error.
@@ -123,7 +123,7 @@ Apsis transitions a run among these state as follows:
   **waiting**.
 
 - Apsis periodically checks for the conditions of a **waiting** run.  When all
-  of them have been satisified, it starts the run's program and transitions it
+  of them have been satisfied, it starts the run's program and transitions it
   to **starting**.  If a run has no conditions, this happens immediately.
 
 - Before a run has started, it may be manually or automatically **skipped**
@@ -153,7 +153,7 @@ You can apply the following operations, to induce transitions explicitly:
 - You can *stop* a **running** run.  Apsis requests that the run shut down in an
   orderly manner.  How this works depends on the run's program.  For a program
   that runs a (local or remote) UNIX process, this entails sending a termination
-  signal (usuall SIGTERM), then waiting for a grace period and then sending
+  signal (usually SIGTERM), then waiting for a grace period and then sending
   SIGKILL if the process has not terminated.  While Apsis is waiting for the run
   to terminate, it is in the **stopping** state.
 

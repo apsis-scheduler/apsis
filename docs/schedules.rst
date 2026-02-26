@@ -21,7 +21,7 @@ Args
 ----
 
 Each schedule has an `args` key, which specifies the arg values corresponding to
-the job's params.  For example, when you schedul ethe job `check
+the job's params.  For example, when you schedule the job `check
 host(hostname)`, you must provide an arg value for `hostname`.
 
 .. code:: yaml
@@ -88,8 +88,8 @@ You can provide multiple daytimes.
           - 16:30:00
         tz: Europe/Berlin
 
-You can limit the dates that Apsis will schedule the run on, by specify a
-_calendar_, which contains only certain dates.  For instances, the calendar
+You can limit the dates that Apsis will schedule the run on, by specifying a
+_calendar_, which contains only certain dates.  For instance, the calendar
 `Mon-Fri` contains all Mondays through Fridays, but not Saturdays or Sundays.
 
 .. code:: yaml
@@ -176,7 +176,7 @@ Apsis schedule a run every half hour (1800 seconds) from noon until 5 PM, Tokyo
 time.  The stop time is not inclusive, so the last scheduled run will be at 4:30
 PM.
 
-As with the daily schedule, speficy a calendar to run on certain days only.
+As with the daily schedule, specify a calendar to run on certain days only.
 
 .. code:: yaml
 
@@ -240,7 +240,7 @@ This instructs Apsis to run the program for 30 minutes after the schedule time,
 namely 11:00 Europe/Berlin.
 
 The `daytime` stop schedule type instructs Apsis to stop the run at the next
-occurence of a specific daytime after the schedule time.  The following example
+occurrence of a specific daytime after the schedule time.  The following example
 has the same effect as the previous:
 
 .. code:: yaml

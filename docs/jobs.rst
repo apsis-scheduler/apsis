@@ -125,7 +125,7 @@ Any other metadata keys are preserved but ignored by Apsis.
 Conditions
 ----------
 
-The `condition` key describes zero or more conditions that must be satisified
+The `condition` key describes zero or more conditions that must be satisfied
 before Apsis starts the run's program.  Apsis provides several types of
 conditions, and you may extend Apsis with additional condition types as well.
 

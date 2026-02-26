@@ -6,7 +6,7 @@ Configuring Apsis
 Configure the Apsis server by writing a YAML configuration file and specifying
 it with the `\--config` command line option.  You can override individual
 configurations using the `\--override NAME=VALUE` command line option; use dotted
-names like `runs.lookback=86400` to specify heirarchical configuration names.
+names like `runs.lookback=86400` to specify hierarchical configuration names.
 
 A sample file illustrating all config variables and their default values is
 below.  Relative paths are interpreted relative to the path containing the
@@ -91,7 +91,7 @@ Apsis running at the time.
 nominal schedule time.  Apsis fails if it ever tries to schedule a run older
 than this.  This prevents very old runs from running spuriously.
 
-`schedule.horizon` specified how far foward in time, in seconds, to schedule new
+`schedule.horizon` specifies how far forward in time, in seconds, to schedule new
 runs.
 
 
@@ -224,7 +224,7 @@ This configures the server.
 
 - `tls.cert_path` and `tls.key_path` are paths to TLS cert and corresponding key
   files.  If not configured, Apsis uses the `PROCSTAR_AGENT_CERT` and
-  `PROCSTAR_AGENT_KEY` enviornment variables.  By default, uses a cert from the
+  `PROCSTAR_AGENT_KEY` environment variables.  By default, uses a cert from the
   system cert bundle.
 
 
@@ -287,7 +287,7 @@ default memory limit is applied.
       agent:
         run:
           update_interval: "1 min"
-          output_interval" "15 sec"
+          output_interval: "15 sec"
 
 This configures how often Apsis requests process (including metadata) and output
 updates for a run from the agent running it.  If null or omitted, Apsis does not

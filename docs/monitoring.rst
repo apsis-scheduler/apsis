@@ -49,7 +49,7 @@ The statistics object contains these fields:
   one task per waiting run.
 - `tasks.num_running`: The number of async tasks for running runs.  Apsis uses
   one task per running run.
-- `tasks.num_action`: The number of async tasks for executiong actions.  Apsis
+- `tasks.num_action`: The number of async tasks for executing actions.  Apsis
   uses one task per action; a run may trigger multiple actions.
 - `len_runlogdb_cache`: The number of cached run log entries.
 - `run_store.num_runs`: The number of runs stored in memory.
