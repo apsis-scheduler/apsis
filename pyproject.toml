@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apsis"
-version = "2.0.1"
+version = "2.0.2"
 description = "Easy-to-use task scheduler"
 readme = "README.md"
 license = {text = "MIT License"}
@@ -96,7 +96,7 @@ lint.select = ["F"]
 line-length = 100
 
 [tool.bumpversion]
-current_version = "2.0.1"
+current_version = "2.0.2"
 commit = true
 tag = true
 tag_name = "v{new_version}"
