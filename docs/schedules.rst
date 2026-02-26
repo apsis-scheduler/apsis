@@ -14,7 +14,7 @@ Enabled
 -------
 
 Each schedule has an `enabled` key.  If set to false, the schedule is disabled
-and Apsis schedules no runs with it.  If omitted, the schedule is eabnled.
+and Apsis schedules no runs with it.  If omitted, the schedule is enabled.
 
 
 Args
