@@ -148,6 +148,98 @@ def test_to_error(client):
     assert res["state"] == "running"
 
 
+def test_parametrized_dependency(client):
+    """
+    Tests that a dependency with a templated job_id resolves correctly.
+
+    "region dep" depends on "region/{{ region }}" with args date={{ date }}.
+    We schedule a "region dep" run with region=us, which should wait for
+    "region/us" to succeed.
+    """
+    # Schedule a run that depends on region/us.
+    res = client.schedule("region dep", {"region": "us", "date": "2024-01-01"})
+    run_id = res["run_id"]
+
+    # It should be waiting for its dependency.
+    res = client.get_run(run_id)
+    assert res["state"] == "waiting"
+
+    # Satisfy the dependency by scheduling and completing region/us.
+    res = client.schedule("region/us", {"date": "2024-01-01"})
+    dep_run_id = res["run_id"]
+
+    # The dependency run completes immediately (no-op, duration 0).
+    time.sleep(0.5)
+
+    # The dependent run should now have succeeded.
+    res = client.get_run(dep_run_id)
+    assert res["state"] == "success"
+    res = client.get_run(run_id)
+    assert res["state"] == "success"
+
+
+def test_parametrized_dependency_different_regions(client):
+    """
+    Tests that different parameter values resolve to different dependency jobs.
+    """
+    # Schedule runs for two different regions.
+    res_us = client.schedule("region dep", {"region": "us", "date": "2024-01-01"})
+    run_us = res_us["run_id"]
+    res_eu = client.schedule("region dep", {"region": "eu", "date": "2024-01-01"})
+    run_eu = res_eu["run_id"]
+
+    # Both should be waiting.
+    assert client.get_run(run_us)["state"] == "waiting"
+    assert client.get_run(run_eu)["state"] == "waiting"
+
+    # Satisfy only the US dependency.
+    client.schedule("region/us", {"date": "2024-01-01"})
+    time.sleep(0.5)
+
+    # Only the US run should proceed; EU remains waiting.
+    assert client.get_run(run_us)["state"] == "success"
+    assert client.get_run(run_eu)["state"] == "waiting"
+
+    # Now satisfy the EU dependency.
+    client.schedule("region/eu", {"date": "2024-01-01"})
+    time.sleep(0.5)
+
+    assert client.get_run(run_eu)["state"] == "success"
+
+
+def test_parametrized_dependency_full_job_id(client):
+    """
+    Tests that the entire dependency job_id can come from a parameter.
+
+    "full name dep" has a single param `prerequisite` and a dependency on
+    "{{ prerequisite }}".  Two schedules can pass completely unrelated job
+    names as the dependency.
+    """
+    # Schedule two runs depending on completely different jobs.
+    res_a = client.schedule("full name dep", {"prerequisite": "ingest market data"})
+    run_a = res_a["run_id"]
+    res_b = client.schedule("full name dep", {"prerequisite": "risk compute var"})
+    run_b = res_b["run_id"]
+
+    # Both should be waiting.
+    assert client.get_run(run_a)["state"] == "waiting"
+    assert client.get_run(run_b)["state"] == "waiting"
+
+    # Satisfy only the first dependency.
+    client.schedule("ingest market data", {})
+    time.sleep(0.5)
+
+    # Only run_a proceeds; run_b still waits for a different job.
+    assert client.get_run(run_a)["state"] == "success"
+    assert client.get_run(run_b)["state"] == "waiting"
+
+    # Satisfy the second dependency.
+    client.schedule("risk compute var", {})
+    time.sleep(0.5)
+
+    assert client.get_run(run_b)["state"] == "success"
+
+
 def test_thread_cond(inst):
     client = inst.client
 
@@ -184,3 +276,81 @@ def test_thread_cond_start(inst):
         client.start(run_id)
     for run_id in run_ids:
         assert client.get_run(run_id)["state"] == "success"
+
+
+def test_enabled_disabled(inst):
+    """
+    Tests that a dependency with enabled is skipped when the condition
+    evaluates to false.
+
+    "enable if dep" depends on dependency(flavor=vanilla) with
+    enabled="{{ strat == 'us' }}".  When strat=eu, the dependency should
+    be skipped entirely and the run should succeed without waiting.
+    """
+    client = inst.client
+
+    res = client.schedule("enable if dep", {"date": "2024-01-01", "strat": "eu"})
+    run_id = res["run_id"]
+
+    # With strat=eu, enabled evaluates to false.  The dependency is skipped,
+    # so the run should proceed immediately to success.
+    res = inst.wait_run(run_id, timeout=5)
+    assert res["state"] == "success"
+
+
+def test_enabled_enabled(inst):
+    """
+    Tests that a dependency with enabled is active when the condition
+    evaluates to true.
+
+    "enable if dep" depends on dependency(flavor=vanilla) with
+    enabled="{{ strat == 'us' }}".  When strat=us, the dependency should
+    be active and the run should wait for it.
+    """
+    client = inst.client
+
+    res = client.schedule("enable if dep", {"date": "2024-01-01", "strat": "us"})
+    run_id = res["run_id"]
+
+    # With strat=us, enabled evaluates to true.  The run should be waiting
+    # for dependency(date=2024-01-01, flavor=vanilla).
+    res = client.get_run(run_id)
+    assert res["state"] == "waiting"
+
+    # Satisfy the dependency.
+    dep_res = client.schedule("dependency", {"date": "2024-01-01", "flavor": "vanilla"})
+    inst.wait_run(dep_res["run_id"])
+
+    # Now the dependent run should succeed.
+    res = inst.wait_run(run_id)
+    assert res["state"] == "success"
+
+
+def test_enabled_both_args(inst):
+    """
+    Tests enabled with two runs: one where the condition is true and one
+    where it is false, running concurrently.
+    """
+    client = inst.client
+
+    # Schedule both runs.
+    res_eu = client.schedule("enable if dep", {"date": "2024-01-01", "strat": "eu"})
+    run_eu = res_eu["run_id"]
+    res_us = client.schedule("enable if dep", {"date": "2024-01-01", "strat": "us"})
+    run_us = res_us["run_id"]
+
+    # EU run should succeed immediately (dependency disabled).
+    res = inst.wait_run(run_eu, timeout=5)
+    assert res["state"] == "success"
+
+    # US run should still be waiting (dependency enabled).
+    res = client.get_run(run_us)
+    assert res["state"] == "waiting"
+
+    # Satisfy the US dependency.
+    dep_res = client.schedule("dependency", {"date": "2024-01-01", "flavor": "vanilla"})
+    inst.wait_run(dep_res["run_id"])
+
+    # US run should now succeed.
+    res = inst.wait_run(run_us)
+    assert res["state"] == "success"

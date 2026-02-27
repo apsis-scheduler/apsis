@@ -2,7 +2,7 @@ import logging
 
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
-from apsis.runs import Instance, get_bind_args
+from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State, reachable
 from .base import RunStoreCondition, _bind
 
@@ -29,6 +29,7 @@ class Dependency(RunStoreCondition):
         *,
         states=DEFAULT_STATE,
         exist=None,
+        enabled=None,
     ):
         args = {str(k): str(v) for k, v in args.items()}
         states = frozenset(iterize(states))
@@ -42,6 +43,7 @@ class Dependency(RunStoreCondition):
         self.args = args
         self.states = states
         self.exist = exist
+        self.enabled = enabled
 
     def __repr__(self):
         return format_ctor(
@@ -50,13 +52,14 @@ class Dependency(RunStoreCondition):
             self.args,
             states=self.states,
             exist=self.exist,
+            enabled=self.enabled,
         )
 
     def __str__(self):
         inst = Instance(self.job_id, self.args)
         states = join_states(self.states)
         exist = "" if self.exist is None else ", must exist as " + join_states(self.exist)
-        return f"dependency {inst} is {states}{exist}"
+        return f"dependency {inst} is {states}{exist}{self._enabled_str()}"
 
     def to_jso(self):
         jso = {
@@ -82,19 +85,26 @@ class Dependency(RunStoreCondition):
                 exist = {s for s in State if reachable(s) & states}
             elif exist is not None:
                 exist = {State[s] for s in iterize(exist)}
+            enabled = pop("enabled", default=None)
+            cls._validate_enabled(enabled)
             return cls(
                 pop("job_id"),
                 pop("args", default={}),
                 states=states,
                 exist=exist,
+                enabled=enabled,
             )
 
     def bind(self, run, jobs):
-        job = jobs[self.job_id]
+        if not self._eval_enabled(run):
+            return None
+
         bind_args = get_bind_args(run)
+        job_id = template_expand(self.job_id, bind_args)
+        job = jobs[job_id]
         args = _bind(job, self.args, run.inst.args, bind_args)
         return type(self)(
-            self.job_id,
+            job_id,
             args,
             states=self.states,
             exist=self.exist,

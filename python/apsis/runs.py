@@ -318,7 +318,7 @@ def bind(run, job, jobs):
         # FIXME: Actions aren't bound, but may be in the future.
         run.actions = list(job.actions)
     if run.conds is None:
-        run.conds = [c.bind(run, jobs) for c in job.conds]
+        run.conds = [bc for c in job.conds if (bc := c.bind(run, jobs)) is not None]
     if run.program is None:
         run.program = job.program.bind(get_bind_args(run))
 

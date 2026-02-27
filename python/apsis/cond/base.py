@@ -6,7 +6,7 @@ import logging
 from apsis.lib import py
 from apsis.lib.json import TypedJso, check_schema
 from apsis.lib.timing import LogSlow
-from apsis.runs import template_expand
+from apsis.runs import arg_to_bool, get_bind_args, template_expand
 from apsis.states import State
 
 log = logging.getLogger(__name__)
@@ -21,6 +21,39 @@ class Condition(TypedJso):
     """
 
     TYPE_NAMES = TypedJso.TypeNames()
+
+    enabled = None
+
+    @staticmethod
+    def _validate_enabled(enabled):
+        if enabled is not None and not isinstance(enabled, (bool, str)):
+            raise TypeError(
+                "enabled must be a bool or a quoted string in YAML"
+                ' (e.g. enabled: false or enabled: "{{ expr }}")'
+                f"; got {enabled!r}"
+            )
+        return enabled
+
+    def _eval_enabled(self, run):
+        """Evaluate enabled; returns True if active, False if skipped."""
+        if self.enabled is None:
+            return True
+        if isinstance(self.enabled, bool):
+            return self.enabled
+        bind_args = get_bind_args(run)
+        result = template_expand(self.enabled, bind_args)
+        return arg_to_bool(result)
+
+    def _enabled_str(self):
+        if self.enabled is None:
+            return ""
+        return f" [if {self.enabled}]"
+
+    def to_jso(self):
+        jso = super().to_jso()
+        if self.enabled is not None:
+            jso["enabled"] = self.enabled
+        return jso
 
     def bind(self, run, jobs):
         """
