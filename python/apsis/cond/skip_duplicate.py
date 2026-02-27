@@ -26,27 +26,35 @@ class SkipDuplicate(Condition):
         *,
         check_states=DEFAULT_CHECK_STATES,
         target_state="skipped",
+        enabled=None,
     ):
         """
         :param check_states:
           Run states to consider when looking for duplicates.
         :param target_state:
           The state to transition this run to; must be a finished state.
+        :param enabled:
+          If not none, a Jinja2 expression or bool controlling whether this
+          condition is active for a given run.
         """
         self.__check_states = [to_state(s) for s in py.iterize(check_states)]
         self.__target_state = to_state(target_state)
         if not self.__target_state.finished:
             raise ValueError(f"invalid targat state: {self.__target_state.name}")
+        self.enabled = enabled
 
     def __repr__(self):
         return py.format_ctor(
-            self, check_states=self.__check_states, target_state=self.__target_state
+            self,
+            check_states=self.__check_states,
+            target_state=self.__target_state,
+            enabled=self.enabled,
         )
 
     def __str__(self):
         target = self.__target_state.name
         states = "|".join(s.name for s in self.__check_states)
-        return f"transition to {target} if another run is {states}"
+        return f"transition to {target} if another run is {states}{self._enabled_str()}"
 
     @property
     def check_states(self):
@@ -66,12 +74,17 @@ class SkipDuplicate(Condition):
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
+            enabled = pop("enabled", default=None)
+            cls._validate_enabled(enabled)
             return cls(
                 check_states=pop("check_states", default=cls.DEFAULT_CHECK_STATES),
                 target_state=pop("target_state", default="skipped"),
+                enabled=enabled,
             )
 
     def bind(self, run, jobs):
+        if not self._eval_enabled(run):
+            return None
         return BoundSkipDuplicate(
             check_states=self.__check_states,
             target_state=self.__target_state,

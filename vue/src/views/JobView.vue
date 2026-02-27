@@ -30,25 +30,77 @@ div.component
         th program
         td.no-padding: Program(:program="job.program")
 
+      //- Schedules with inline dependencies.
       tr
-        th schedule
+        th schedules
         td(v-if="job.schedule.length > 0")
-          li(
-            v-for="schedule in job.schedule"
-            :key="schedule.str"
-            :class="{ disabled: !schedule.enabled }"
-          ) {{ schedule.str }} {{ schedule.enabled ? '' : '(disabled)' }}
+          .schedule-group(v-for="(group, gi) in scheduleGroups" :key="'sg-' + gi")
+            .schedule-header
+              span.schedule-args-header(v-if="Object.keys(group.args).length > 0")
+                | (
+                RunArgs(:args="group.args")
+                | )
+              span(
+                v-for="sched in group.schedules"
+                :key="sched.str"
+                :class="{ disabled: !sched.enabled }"
+              ) &nbsp;{{ stripSchedArgs(sched.str) }}{{ sched.enabled ? '' : ' (disabled)' }}
+            .schedule-deps
+              .dep-line(v-if="hasCommonDeps && scheduleGroups.length > 1")
+                span.dep-chrome Depends on all common dependencies (
+                a.dep-common-link(href="#common-deps") see below
+                span.dep-chrome )
+              .dep-line(v-for="(cond, ci) in group.conditions" :key="'dep-' + gi + '-' + ci")
+                template(v-if="cond.type === 'dependency'")
+                  span.dep-chrome Depends on {{ join(cond.states || ['success'], '|') }} of:&nbsp;
+                  Job(v-if="cond.resolved_job_id" :job-id="cond.resolved_job_id")
+                  span.dep-job-id(v-else) {{ cond.job_id }}
+                  span.dep-args(v-if="cond.resolved_args && Object.keys(cond.resolved_args).length > 0")
+                    |  (
+                    RunArgs(:args="cond.resolved_args")
+                    | )
+                span.dep-chrome(v-else) {{ cond.str }}
+              template(v-if="scheduleGroups.length <= 1")
+                .dep-line(v-for="cond in job.common_conditions" :key="'inline-' + cond.str")
+                  template(v-if="cond.type === 'dependency'")
+                    span.dep-chrome Depends on {{ join(cond.states || ['success'], '|') }} of:&nbsp;
+                    Job(:job-id="cond.job_id")
+                    span.dep-args(v-if="cond.resolved_args && Object.keys(cond.resolved_args).length > 0")
+                      |  (
+                      RunArgs(:args="cond.resolved_args")
+                      | )
+                  span.dep-chrome(v-else) {{ cond.str }}
+          .schedule-group#common-deps(v-if="hasCommonDeps && scheduleGroups.length > 1")
+            .schedule-header
+              span.schedule-all All Schedules
+            .schedule-deps
+              .dep-line(v-for="cond in job.common_conditions" :key="'common-' + cond.str")
+                template(v-if="cond.type === 'dependency'")
+                  span.dep-chrome Depends on {{ join(cond.states || ['success'], '|') }} of:&nbsp;
+                  Job(:job-id="cond.job_id")
+                  span.dep-args(v-if="cond.resolved_args && Object.keys(cond.resolved_args).length > 0")
+                    |  (
+                    RunArgs(:args="cond.resolved_args")
+                    | )
+                span.dep-chrome(v-else) {{ cond.str }}
         td(v-else) No schedules.
 
+      //- Condition definitions.
       tr
         th conditions
         td(v-if="job.condition.length > 0")
-          .condition(v-for="cond in job.condition" :key="cond.str")
-            span(v-if="cond.type === 'dependency'")
-              span dependency: 
-              Job(:job-id="cond.job_id")
-              span  is {{ join(cond.states, '|') }}
-            span(v-else) {{ cond.str }}
+          details.condition-details
+            summary.condition-summary Definitions (click to expand)
+            ul.condition-list
+              li(v-for="cond in job.condition" :key="'def-' + cond.str")
+                template(v-if="cond.type === 'dependency'")
+                  span
+                    span.dep-chrome Depends on {{ join(cond.states || ['success'], '|') }} of&nbsp;
+                    span.dep-job-id {{ cond.job_id }}
+                span.dep-chrome(v-else) {{ cond.str }}
+                ul.enable-if-list(v-if="cond.enabled != null")
+                  li
+                    span.enable-if enabled: {{ cond.enabled }}
         td(v-else) No conditions.
 
       tr
@@ -101,13 +153,14 @@ div.component
 
 <script>
 import * as api from '@/api'
-import { every, join, pickBy } from 'lodash'
+import { every, isEqual, join, pickBy } from 'lodash'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import Frame from '@/components/Frame'
 import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
+import RunArgs from '@/components/RunArgs'
 import RunsList from '@/components/RunsList'
 import showdown from 'showdown'
 import store from '@/store'
@@ -123,6 +176,7 @@ export default {
     JobLabel,
     Program,
     Run,
+    RunArgs,
     RunsList,
   },
 
@@ -153,6 +207,31 @@ export default {
       )
     },
 
+    hasCommonDeps() {
+      return this.job && this.job.common_conditions && this.job.common_conditions.length > 0
+    },
+
+    scheduleGroups() {
+      if (!this.job || this.job.schedule.length === 0) return []
+      const groups = []
+      const seen = []
+      for (const sched of this.job.schedule) {
+        const args = sched.args || {}
+        if (seen.some(s => isEqual(s, args))) continue
+        seen.push(args)
+        const schedules = this.job.schedule.filter(s => isEqual(s.args || {}, args))
+        const resolved = (this.job.resolved_conditions || []).find(
+          g => isEqual(g.schedule_args, args)
+        )
+        groups.push({
+          args,
+          schedules,
+          conditions: resolved ? resolved.conditions : []
+        })
+      }
+      return groups
+    },
+
     scheduleReady() {
       return (
         every(this.job.params.map(p => this.scheduleArgs[p]))
@@ -165,6 +244,8 @@ export default {
 
   methods: {
     markdown(src) { return src.trim() === '' ? '' : (new showdown.Converter()).makeHtml(src) },
+
+    stripSchedArgs(str) { return str.replace(/^\([^)]*\)\s*/, '') },
 
     setScheduleArg(param, ev) {
       this.$set(this.scheduleArgs, param, ev.target.value)
@@ -245,6 +326,100 @@ export default {
 .disabled {
   color: $global-light-color;
 }
+
+.condition-section {
+  &:first-child {
+    margin-top: 0.5em;
+  }
+  &:not(:first-child) {
+    margin-top: 0.75em;
+  }
+}
+
+.section-label {
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.condition-details {
+  summary {
+    cursor: pointer;
+    color: #888;
+    font-size: 0.9em;
+    &:hover {
+      color: #555;
+    }
+  }
+}
+
+.condition-list {
+  margin: 0.15em 0 0 0;
+  padding-left: 1.5em;
+}
+
+.dep-chrome {
+  color: #999;
+  font-size: 0.9em;
+}
+
+.dep-job-id {
+  font-weight: 500;
+}
+
+.dep-args {
+  color: #666;
+  margin: 0 0.25em;
+}
+
+.schedule-group {
+
+  list-style: disc;
+  display: list-item;
+  margin-left: 1.5em;
+  &:not(:first-child) {
+    margin-top: 0.75em;
+  }
+}
+
+.schedule-args-header {
+  color: #676;
+  font-weight: 600;
+}
+
+.schedule-all {
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.schedule-deps {
+  margin-left: 1.5em;
+  margin-top: 0.15em;
+}
+
+.dep-line {
+  margin: 0.15em 0;
+}
+
+.dep-common-link {
+  color: #999;
+  font-size: 0.9em;
+  text-decoration: underline;
+}
+
+.enable-if {
+  color: #888;
+  font-style: italic;
+}
+
+.enable-if-list {
+  margin: 0.1em 0 0 0;
+  padding-left: 1.5em;
+}
+
 
 .schedule {
   border-spacing: 8px 4px;
