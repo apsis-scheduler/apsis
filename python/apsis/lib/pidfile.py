@@ -40,8 +40,8 @@ class PidFile:
 
         except IOError as exc:
             if exc.errno == errno.EWOULDBLOCK:
-                # Someone other process has locked it.  Try to read its info.
-                # But first give it a moment, to reduces races.  FIXME: Yak.
+                # Some other process has locked it.  Try to read its info.
+                # But first give it a moment, to reduce races.  FIXME: Yak.
                 time.sleep(0.001)
                 self.file.seek(0)
                 pid_str = self.file.readline()

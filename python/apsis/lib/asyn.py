@@ -75,7 +75,7 @@ async def cancel_task(task, name=None, log=None):
         if log is not None:
             log.error(f"task cancelled with exc: {name}", exc_info=True)
     else:
-        # Task was complete, or handeled CancelledError and returned.
+        # Task was complete, or handled CancelledError and returned.
         if log is not None:
             log.info(f"task cancelled with return: {name}")
 
@@ -98,7 +98,7 @@ class TaskGroup:
     """
     Tracks a group of running tasks.
 
-    Each added tasks get a callback that removes itself from the group.
+    Each added task gets a callback that removes itself from the group.
     """
 
     def __init__(self, log=None):

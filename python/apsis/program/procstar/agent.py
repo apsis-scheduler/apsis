@@ -93,7 +93,7 @@ def _make_metadata(proc_id, res: dict):
 
     - `proc_id`: The Procstar process ID.
 
-    - `conn`: Connection info the the Procstar agent.
+    - `conn`: Connection info for the Procstar agent.
 
     - `procstar_proc`: Process information about the Procstar agent itself.
 
@@ -202,7 +202,7 @@ class Resources:
         with check_schema(jso) as pop:
             mem_max_gb = pop("mem_max_gb", type=float, default=None)
             if mem_max_gb is not None:
-                assert mem_max_gb > 0, "mem_max_gb must be postive"
+                assert mem_max_gb > 0, "mem_max_gb must be positive"
         return cls(mem_max_gb=mem_max_gb)
 
     def bind(self, args):
@@ -637,7 +637,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                     )
                 except asyncio.TimeoutError:
                     error_msg = (
-                        f"Timeout waiting for final FdData after {FD_DATA_TIMEOUT}s."
+                        f"Timeout waiting for final FdData after {FD_DATA_TIMEOUT}s. "
                         f"Run completed with exit_code={res.status.exit_code}."
                     )
                     log.error(error_msg)

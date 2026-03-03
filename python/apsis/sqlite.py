@@ -648,8 +648,8 @@ class SqliteDB:
 
     def __init__(self, engine):
         """
-        :param path:
-          Path to SQLite file.  If `None`, use a memory DB (for testing).
+        :param engine:
+          SQLAlchemy engine for the SQLite database.
         """
         self.__engine = engine
         self.clock_db = ClockDB(engine)

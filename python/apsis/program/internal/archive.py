@@ -28,7 +28,7 @@ class ArchiveProgram(_InternalProgram):
     def __init__(self, *, age, path, count, chunk_size=None, chunk_sleep=None):
         """
         If this archive file doesn't exist, it is created automatically on
-        first use; the contianing directory must exist.
+        first use; the containing directory must exist.
 
         :param age:
           Minimum age in sec for a run to be archived.

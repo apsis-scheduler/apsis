@@ -803,7 +803,7 @@ async def reschedule_runs(apsis, job_id):
     """
     Reschedules runs of `job_id`.
 
-    Unschedules and deletes existing scheduled runs.  Thenq rebuilds and
+    Unschedules and deletes existing scheduled runs.  Then rebuilds and
     reschedules runs according to the current job schedules.
     """
     scheduler = apsis.scheduler

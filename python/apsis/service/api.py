@@ -138,7 +138,7 @@ def match_job_id(jobs, job_id):
     """
     Matches `job_id` as an exact or fuzzy match.
     """
-    # Try for an exact match first.a
+    # Try for an exact match first.
     try:
         jobs.get_job(job_id)
     except LookupError:
@@ -476,7 +476,7 @@ async def runs(request):
     (state,) = args.pop("state", (None,))
     (since,) = args.pop("since", (None,))
 
-    # Remainders are args to match, though strip off leading underscores, where
+    # Remainders are args to match, though strip off leading underscores, which
     # were added to avoid collision with fixed args.
     args = {n[1:] if n.startswith("_") else n: a[-1] for n, a in args.items()}
 
@@ -492,7 +492,7 @@ async def runs(request):
 
 
 async def _send_chunked(msgs, ws, prefix):
-    # Break large sets into chunks, to avoid block for too long.
+    # Break large sets into chunks, to avoid blocking for too long.
     for chunk in apsis.lib.itr.chunks(msgs, WS_CHUNK):
         json = ujson.dumps(chunk, escape_forward_slashes=False)
         log.debug(f"{prefix} sending {len(chunk)} msgs, {len(json)} bytes")
@@ -501,7 +501,7 @@ async def _send_chunked(msgs, ws, prefix):
         await asyncio.sleep(WS_CHUNK_SLEEP)
 
 
-# Message types (see apsis.api.messages) to include in summary.
+# Message types (see apsis.service.messages) to include in summary.
 SUMMARY_MSG_TYPES = {
     "agent_conn",
     "agent_conn_delete",

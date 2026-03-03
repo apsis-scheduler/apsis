@@ -48,7 +48,7 @@ class Output:
         :param data:
           The data bytes; these may be compressed.
         :param compression:
-          The compresison type, or `None` for uncompressed.
+          The compression type, or `None` for uncompressed.
         """
         if not isinstance(data, bytes):
             raise TypeError("data must be bytes")

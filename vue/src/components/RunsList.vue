@@ -75,7 +75,7 @@ div
           )
             div {{ count }} runs
 
-      //- Show Time and earier / now / later buttons.
+      //- Show Time and earlier / now / later buttons.
       div
         .label Time:
         div(style="display: flex; height: 100%;")
@@ -263,12 +263,12 @@ const COUNTS = [20, 50, 100, 200, 500, 1000]
  * Constructs a predicate fn for matching runs with `args`.
  *
  * `args` is an array of "param=value" or "param" strings.  The former requires
- * the given param have the cooresponding arg value.  The latter requires that
+ * the given param have the corresponding arg value.  The latter requires that
  * it have any arg value at all.  The result is the conjunction of these.
  *
- * For example, the `args` array ["fruit=mango", "color"] produced a predicate
+ * For example, the `args` array ["fruit=mango", "color"] produces a predicate
  * that matches all runs that both have a "fruit" param with arg value "mango",
- * and also have any value at all ofr the "color" param.
+ * and also have any value at all for the "color" param.
  */
 function getArgPredicate(args) {
   return run => {
