@@ -24,15 +24,16 @@ class TestThreadPolledCondition(ThreadPolledCondition):
 
     poll_interval = 0.1
 
-    def __init__(self, delay, count):
+    def __init__(self, delay, count, *, enabled=None):
         self.__delay = delay
         self.__count = count
         self.__counted = 0
+        self.enabled = enabled
 
     def __repr__(self):
-        return format_ctor(self, self.__delay, self.__count)
+        return format_ctor(self, self.__delay, self.__count, enabled=self.enabled)
 
-    def bind(self, run, jobs):
+    def _bind(self, run, jobs):
         bind_args = get_bind_args(run)
         delay = float(template_expand(self.__delay, bind_args))
         count = int(template_expand(self.__count, bind_args))

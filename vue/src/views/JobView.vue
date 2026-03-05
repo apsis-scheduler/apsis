@@ -30,25 +30,56 @@ div.component
         th program
         td.no-padding: Program(:program="job.program")
 
+      //- Schedules with inline dependencies.
       tr
-        th schedule
+        th schedules
         td(v-if="job.schedule.length > 0")
-          li(
-            v-for="schedule in job.schedule"
-            :key="schedule.str"
-            :class="{ disabled: !schedule.enabled }"
-          ) {{ schedule.str }} {{ schedule.enabled ? '' : '(disabled)' }}
+          .schedule-entry(
+            v-for="(entry, i) in scheduleEntries"
+            :key="'se-' + i"
+            :id="entry.isCommon ? 'common-deps' : null"
+          )
+            .schedule-header
+              span.schedule-all(v-if="entry.isCommon") Common Conditions
+              template(v-else)
+                span.schedule-args-header(v-if="Object.keys(entry.args).length > 0")
+                  | (
+                  RunArgs(:args="entry.args")
+                  | )&nbsp;
+                span(:class="{ disabled: !entry.schedule.enabled }")
+                  | {{ stripSchedArgs(entry.schedule.str) }}{{ entry.schedule.enabled ? '' : ' (disabled)' }}
+            .schedule-deps
+              .dep-line(v-if="entry.showCommonLink")
+                span.dep-chrome depends on all common conditions (
+                a.dep-common-link(href="#common-deps") see below
+                span.dep-chrome )
+              .dep-line(v-for="(cond, ci) in entry.conditions" :key="'dep-' + i + '-' + ci")
+                template(v-if="cond.type === 'dependency'")
+                  span.dep-chrome depends on {{ join(cond.states || ['success'], '|') }} of:&nbsp;
+                  Job(v-if="cond.resolved_job_id" :job-id="cond.resolved_job_id")
+                  span(v-else) {{ cond.job_id }}
+                  span.dep-args(v-if="cond.resolved_args && Object.keys(cond.resolved_args).length > 0")
+                    |  (
+                    RunArgs(:args="cond.resolved_args")
+                    | )
+                span.dep-chrome(v-else) {{ cond.str }}
         td(v-else) No schedules.
 
       tr
         th conditions
         td(v-if="job.condition.length > 0")
-          .condition(v-for="cond in job.condition" :key="cond.str")
-            span(v-if="cond.type === 'dependency'")
-              span dependency: 
-              Job(:job-id="cond.job_id")
-              span  is {{ join(cond.states, '|') }}
-            span(v-else) {{ cond.str }}
+          details.condition-details
+            summary Definitions
+            ul.condition-list
+              li(v-for="cond in job.condition" :key="'def-' + cond.str")
+                template(v-if="cond.type === 'dependency'")
+                  span
+                    span.dep-chrome depends on {{ join(cond.states || ['success'], '|') }} of&nbsp;
+                    span {{ cond.job_id }}
+                span.dep-chrome(v-else) {{ cond.str }}
+                ul.enable-if-list(v-if="cond.enabled != null")
+                  li
+                    span.enable-if enabled: {{ cond.enabled }}
         td(v-else) No conditions.
 
       tr
@@ -101,13 +132,14 @@ div.component
 
 <script>
 import * as api from '@/api'
-import { every, join, pickBy } from 'lodash'
+import { every, isEqual, join, pickBy } from 'lodash'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import Frame from '@/components/Frame'
 import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
+import RunArgs from '@/components/RunArgs'
 import RunsList from '@/components/RunsList'
 import showdown from 'showdown'
 import store from '@/store'
@@ -123,6 +155,7 @@ export default {
     JobLabel,
     Program,
     Run,
+    RunArgs,
     RunsList,
   },
 
@@ -153,6 +186,40 @@ export default {
       )
     },
 
+    scheduleEntries() {
+      if (!this.job || this.job.schedule.length === 0) return []
+      const resolved = this.job.resolved_conditions || []
+      const common = this.job.common_conditions || []
+
+      // Check if there are multiple unique arg sets.
+      const argSets = []
+      for (const sched of this.job.schedule) {
+        const args = sched.args || {}
+        if (!argSets.some(s => isEqual(s, args)))
+          argSets.push(args)
+      }
+      const hasCommon = argSets.length > 1 && common.length > 0
+
+      const entries = this.job.schedule.map(sched => {
+        const args = sched.args || {}
+        const r = resolved.find(g => isEqual(g.schedule_args, args))
+        return {
+          schedule: sched,
+          args,
+          showCommonLink: hasCommon,
+          conditions: [
+            ...(r ? r.conditions : []),
+            ...(!hasCommon ? common : []),
+          ],
+        }
+      })
+
+      if (hasCommon)
+        entries.push({ schedule: null, args: {}, conditions: common, isCommon: true })
+
+      return entries
+    },
+
     scheduleReady() {
       return (
         every(this.job.params.map(p => this.scheduleArgs[p]))
@@ -165,6 +232,8 @@ export default {
 
   methods: {
     markdown(src) { return src.trim() === '' ? '' : (new showdown.Converter()).makeHtml(src) },
+
+    stripSchedArgs(str) { return str.replace(/^\([^)]*\)\s*/, '') },
 
     setScheduleArg(param, ev) {
       this.$set(this.scheduleArgs, param, ev.target.value)
@@ -245,6 +314,91 @@ export default {
 .disabled {
   color: $global-light-color;
 }
+
+table.fields td {
+  font-family: "Roboto Mono", monospace;
+}
+
+.condition-details {
+  summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: #888;
+    &:hover {
+      color: #555;
+    }
+  }
+}
+
+.condition-list {
+  margin: 0.15em 0 0 0;
+  padding-left: 3em;
+  list-style: none;
+}
+
+.dep-chrome {
+  color: #999;
+  font-size: 0.9em;
+}
+
+.dep-args {
+  color: #666;
+  margin: 0 0.25em;
+}
+
+.schedule-entry {
+  list-style: disc;
+  display: list-item;
+  margin-left: 1.5em;
+  &:not(:first-child) {
+    margin-top: 0.75em;
+  }
+}
+
+.schedule-args-header {
+  color: #676;
+  font-weight: 600;
+}
+
+.schedule-all {
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.schedule-deps {
+  margin-left: 1.5em;
+  margin-top: 0.15em;
+}
+
+.dep-line {
+  margin: 0.15em 0;
+}
+
+.dep-common-link {
+  color: $apsis-job-color;
+  font-size: 0.9em;
+  cursor: default;
+  &:hover {
+    color: $apsis-job-color;
+    text-decoration: underline;
+  }
+}
+
+.enable-if {
+  color: #888;
+  font-style: italic;
+}
+
+.enable-if-list {
+  margin: 0.1em 0 0 0;
+  padding-left: 1.5em;
+  list-style: none;
+}
+
 
 .schedule {
   border-spacing: 8px 4px;

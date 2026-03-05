@@ -6,7 +6,7 @@ import logging
 from apsis.lib import py
 from apsis.lib.json import TypedJso, check_schema
 from apsis.lib.timing import LogSlow
-from apsis.runs import template_expand
+from apsis.runs import eval_enabled, get_bind_args, template_expand
 from apsis.states import State
 
 log = logging.getLogger(__name__)
@@ -22,17 +22,59 @@ class Condition(TypedJso):
 
     TYPE_NAMES = TypedJso.TypeNames()
 
+    _enabled = None
+
+    @property
+    def enabled(self):
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value):
+        if value is not None and not isinstance(value, (bool, str)):
+            raise TypeError(
+                "enabled must be a bool or a quoted string in YAML"
+                ' (e.g. enabled: false or enabled: "{{ expr }}")'
+                f"; got {value!r}"
+            )
+        self._enabled = value
+
+    @classmethod
+    def from_jso(cls, jso):
+        enabled = jso.pop("enabled", None)
+        instance = super().from_jso(jso)
+        instance.enabled = enabled
+        return instance
+
+    def to_jso(self):
+        jso = super().to_jso()
+        if self.enabled is not None:
+            jso["enabled"] = self.enabled
+        return jso
+
     def bind(self, run, jobs):
         """
-        Binds the condition to `inst`.
+        Binds the condition to `run`.
+
+        Evaluates the `enabled` field; if disabled, returns `None`.
+        Otherwise delegates to :meth:`_bind`.
 
         :param run:
           The run to bind to.
         :param jobs:
           The jobs DB.
         :return:
-          An instance of the same type, bound to the instances.
+          A bound condition instance, or `None` if disabled.
         """
+        if not eval_enabled(self.enabled, get_bind_args(run)):
+            return None
+        return self._bind(run, jobs)
+
+    def _bind(self, run, jobs):
+        """
+        Subclass hook for binding logic.  Called by :meth:`bind` after the
+        `enabled` check passes.
+        """
+        raise NotImplementedError
 
     @dataclass
     class Transition:
@@ -187,13 +229,14 @@ class ConstantCondition(PolledCondition):
     Condition with a constant value, either true or false.
     """
 
-    def __init__(self, value):
+    def __init__(self, value, *, enabled=None):
         self.__value = bool(value)
+        self.enabled = enabled
 
     def __repr__(self):
-        return py.format_ctor(self, self.__value)
+        return py.format_ctor(self, self.__value, enabled=self.enabled)
 
-    def bind(self, run, jobs):
+    def _bind(self, run, jobs):
         return self
 
     def to_jso(self):
