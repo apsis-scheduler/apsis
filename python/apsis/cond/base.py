@@ -177,36 +177,3 @@ def _bind(job, obj_args, inst_args, bind_args):
         raise LookupError(f"no value for param {name} of job {job.job_id}")
 
     return {n: get(n) for n in job.params}
-
-
-# -------------------------------------------------------------------------------
-
-
-class ConstantCondition(PolledCondition):
-    """
-    Condition with a constant value, either true or false.
-    """
-
-    def __init__(self, value):
-        self.__value = bool(value)
-
-    def __repr__(self):
-        return py.format_ctor(self, self.__value)
-
-    def bind(self, run, jobs):
-        return self
-
-    def to_jso(self):
-        return super().to_jso() | {
-            "value": self.__value,
-        }
-
-    @classmethod
-    def from_jso(cls, jso):
-        with check_schema(jso) as pop:
-            return cls(
-                value=pop("value", bool),
-            )
-
-    async def check(self):
-        return self.__value
