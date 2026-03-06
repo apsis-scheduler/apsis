@@ -2,7 +2,7 @@ import logging
 
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
-from apsis.runs import Instance, get_bind_args
+from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State, reachable
 from .base import RunStoreCondition, _bind
 
@@ -29,6 +29,7 @@ class Dependency(RunStoreCondition):
         *,
         states=DEFAULT_STATE,
         exist=None,
+        enabled=None,
     ):
         args = {str(k): str(v) for k, v in args.items()}
         states = frozenset(iterize(states))
@@ -42,6 +43,7 @@ class Dependency(RunStoreCondition):
         self.args = args
         self.states = states
         self.exist = exist
+        self._enabled = enabled
 
     def __repr__(self):
         return format_ctor(
@@ -50,6 +52,7 @@ class Dependency(RunStoreCondition):
             self.args,
             states=self.states,
             exist=self.exist,
+            enabled=self.enabled,
         )
 
     def __str__(self):
@@ -82,19 +85,27 @@ class Dependency(RunStoreCondition):
                 exist = {s for s in State if reachable(s) & states}
             elif exist is not None:
                 exist = {State[s] for s in iterize(exist)}
+            job_id = pop("job_id")
+            if not isinstance(job_id, str):
+                raise TypeError(
+                    "job_id must be a string; if using Jinja2 templates,"
+                    " make sure the value is quoted in YAML"
+                    f" (e.g. job_id: '{{{{ region }}}}'); got {job_id!r}"
+                )
             return cls(
-                pop("job_id"),
+                job_id,
                 pop("args", default={}),
                 states=states,
                 exist=exist,
             )
 
-    def bind(self, run, jobs):
-        job = jobs[self.job_id]
+    def _bind(self, run, jobs):
         bind_args = get_bind_args(run)
+        job_id = template_expand(self.job_id, bind_args)
+        job = jobs[job_id]
         args = _bind(job, self.args, run.inst.args, bind_args)
         return type(self)(
-            self.job_id,
+            job_id,
             args,
             states=self.states,
             exist=self.exist,

@@ -159,7 +159,7 @@ async def job(request, job_id):
     except LookupError:
         return error(f"no job_id {job_id}", status=404)
     job = jobs.get_job(job_id)
-    return response_json(job_to_jso(job))
+    return response_json(job_to_jso(job, jobs=jobs))
 
 
 @API.route("/jobs/<job_id:path>/runs")
@@ -181,9 +181,10 @@ async def jobs(request):
     except KeyError:
         label = None
 
+    all_jobs = request.app.apsis.jobs
     jso = [
-        job_to_jso(j)
-        for j in request.app.apsis.jobs.get_jobs(ad_hoc=False)
+        job_to_jso(j, jobs=all_jobs)
+        for j in all_jobs.get_jobs(ad_hoc=False)
         if label is None or label in j.meta.get("labels")
     ]
     return response_json(jso)
@@ -535,7 +536,7 @@ async def websocket_summary(request, ws):
 
                 # Send all jobs.
                 jobs = apsis.jobs.get_jobs(ad_hoc=False)
-                job_msgs = (messages.make_job(j) for j in jobs)
+                job_msgs = (messages.make_job(j, jobs=apsis.jobs) for j in jobs)
 
                 # Send all procstar agent conns.
                 try:

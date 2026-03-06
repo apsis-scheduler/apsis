@@ -1,5 +1,6 @@
 import logging
 
+from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor
 from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State
@@ -18,20 +19,30 @@ class MaxRunning(Condition):
     the starting or running states is less than `count`.
     """
 
-    def __init__(self, count, job_id=None, args=None):
+    def __init__(self, count, job_id=None, args=None, *, enabled=None):
         """
         :param job_id:
           Job ID of runs to count.  If none, bound to the job ID of the
           owning instance.
         :param args:
           Args to match.  If none, the bound to the args of the owning instance.
+        :param enabled:
+          If not none, a Jinja2 expression or bool controlling whether this
+          condition is active for a given run.
         """
         self.__count = count
         self.__job_id = job_id
         self.__args = args
+        self._enabled = enabled
 
     def __repr__(self):
-        return format_ctor(self, self.__count, job_id=self.__job_id, args=self.__args)
+        return format_ctor(
+            self,
+            self.__count,
+            job_id=self.__job_id,
+            args=self.__args,
+            enabled=self.enabled,
+        )
 
     def __str__(self):
         return f"fewer than {self.__count} runs running"
@@ -46,13 +57,14 @@ class MaxRunning(Condition):
 
     @classmethod
     def from_jso(cls, jso):
-        return cls(
-            jso.pop("count", "1"),
-            jso.pop("job_id", None),
-            jso.pop("args", None),
-        )
+        with check_schema(jso) as pop:
+            return cls(
+                pop("count", default="1"),
+                pop("job_id", default=None),
+                pop("args", default=None),
+            )
 
-    def bind(self, run, jobs):
+    def _bind(self, run, jobs):
         bind_args = get_bind_args(run)
         count = template_expand(self.__count, bind_args)
         job_id = run.inst.job_id if self.__job_id is None else self.__job_id

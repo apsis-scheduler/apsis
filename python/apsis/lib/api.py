@@ -5,6 +5,7 @@ import sanic
 import zlib
 
 from apsis.cond.dependency import Dependency
+from apsis.runs import BIND_ARGS, eval_enabled, is_template, template_expand
 from apsis.schedule import schedule_to_jso
 
 log = logging.getLogger(__name__)
@@ -103,12 +104,130 @@ def _to_jsos(objs):
     return [] if objs is None else [_to_jso(o) for o in objs]
 
 
-def job_to_jso(job):
+def job_to_jso(job, jobs=None) -> dict:
+    """
+    Serializes a job for the API / web UI.
+
+    In addition to the raw job fields (returned under `condition`),
+    resolves each condition against each schedule's args to classify it:
+
+    - `common_conditions`: conditions whose resolution is identical across
+      all schedules (shown once in the UI).
+    - `resolved_conditions`: one group per schedule, containing conditions
+      that vary (e.g. a templated `job_id` that resolves differently per
+      schedule, or an `enabled` template that is true for some schedules
+      and false for others).
+
+    Conditions with `enabled=False` are omitted from both lists (they
+    remain in the raw `condition` definitions).
+
+    When *jobs* is provided, dependency target jobs are looked up via
+    `jobs.get_job()` (O(1) dict lookup) to discover their params, so
+    that inherited args (not explicitly listed in the dependency but
+    present on the target job) can be filled in.
+
+    Complexity per job: O(C * S * K * log K), where C = conditions,
+    S = schedules, K = number of resolved dependency args (typically
+    the number of params on the target job).  The log K factor comes
+    from sorting resolved args.  In practice all three are small
+    (single digits), so the per-job cost is negligible.
+    """
+
     def sched_to_jso(s):
         jso = schedule_to_jso(s)
         jso["str"] = str(s) if s.stop_schedule is None else f"{s}, {s.stop_schedule}"
         jso["enabled"] = s.enabled
         return jso
+
+    def _expand_value(val, sched_args):
+        """Try Jinja2 expansion; on failure return the original template."""
+        try:
+            return template_expand(val, {**BIND_ARGS, **sched_args})
+        except (NameError, SyntaxError):
+            return str(val)
+
+    def _resolve_dep(dep, sched_args):
+        """Resolve a dependency's job_id and args for a given schedule arg set."""
+        if is_template(dep.job_id):
+            try:
+                resolved_job_id = template_expand(dep.job_id, {**BIND_ARGS, **sched_args})
+            except (NameError, SyntaxError):
+                resolved_job_id = None
+        else:
+            resolved_job_id = dep.job_id
+
+        target_params = None
+        if jobs is not None and resolved_job_id is not None:
+            try:
+                target_params = jobs.get_job(resolved_job_id).params
+            except LookupError:
+                pass
+
+        if target_params is not None:
+            resolved_args = {}
+            for param in target_params:
+                if param in dep.args:
+                    resolved_args[param] = _expand_value(dep.args[param], sched_args)
+                elif param in sched_args:
+                    resolved_args[param] = sched_args[param]
+                else:
+                    resolved_args[param] = "{{ " + param + " }}"
+        else:
+            resolved_args = {k: _expand_value(v, sched_args) for k, v in dep.args.items()}
+
+        resolved_args = dict(
+            sorted(resolved_args.items(), key=lambda kv: (is_template(kv[1]), kv[0]))
+        )
+        return {"resolved_job_id": resolved_job_id, "resolved_args": resolved_args}
+
+    def _resolve_cond(cond, sched_args):
+        """Build a resolved JSO entry for a condition."""
+        entry = {**_to_jso(cond)}
+        if isinstance(cond, Dependency):
+            entry.update(_resolve_dep(cond, sched_args))
+        return entry
+
+    # One resolved group per schedule; "common" means identical across all.
+    schedules = job.schedules
+
+    # Conditions unconditionally disabled (enabled=False) are omitted from
+    # the schedule display — they appear only in the definitions list.
+    common_conds_jso = []
+    resolved_groups = [{"schedule_args": s.args, "conditions": []} for s in schedules]
+
+    for cond in job.conds:
+        if cond.enabled is False:
+            continue
+
+        if not schedules:
+            # No schedules: resolve non-template conditions with empty args;
+            # skip template deps that can't be resolved.
+            if isinstance(cond, Dependency) and is_template(cond.job_id):
+                continue
+            common_conds_jso.append(_resolve_cond(cond, {}))
+            continue
+
+        # Resolve for every schedule, tracking enabled status.
+        entries = []
+        enabled_flags = []
+        for s in schedules:
+            try:
+                enabled = eval_enabled(cond.enabled, {**BIND_ARGS, **s.args})
+            except (NameError, SyntaxError):
+                # Template references an arg not in schedule args (e.g.
+                # a date param generated at scheduling time) — can't
+                # determine, so treat as enabled.
+                enabled = True
+            enabled_flags.append(enabled)
+            entries.append(_resolve_cond(cond, s.args) if enabled else None)
+
+        # If all entries are identical and all enabled → common.
+        if all(enabled_flags) and all(e == entries[0] for e in entries[1:]):
+            common_conds_jso.append(entries[0])
+        else:
+            for i, entry in enumerate(entries):
+                if entry is not None:
+                    resolved_groups[i]["conditions"].append(entry)
 
     return {
         "job_id": job.job_id,
@@ -116,6 +235,8 @@ def job_to_jso(job):
         "schedule": [sched_to_jso(s) for s in job.schedules],
         "program": _to_jso(job.program),
         "condition": [_to_jso(c) for c in job.conds],
+        "common_conditions": common_conds_jso,
+        "resolved_conditions": resolved_groups,
         "action": [_to_jso(a) for a in job.actions],
         "metadata": job.meta,
         "ad_hoc": job.ad_hoc,
