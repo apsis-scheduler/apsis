@@ -132,7 +132,7 @@ div.component
 
 <script>
 import * as api from '@/api'
-import { every, isEqual, join, pickBy } from 'lodash'
+import { every, join, pickBy } from 'lodash'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import Frame from '@/components/Frame'
 import Job from '@/components/Job'
@@ -190,19 +190,11 @@ export default {
       if (!this.job || this.job.schedule.length === 0) return []
       const resolved = this.job.resolved_conditions || []
       const common = this.job.common_conditions || []
+      const hasCommon = this.job.schedule.length > 1 && common.length > 0
 
-      // Check if there are multiple unique arg sets.
-      const argSets = []
-      for (const sched of this.job.schedule) {
+      const entries = this.job.schedule.map((sched, i) => {
         const args = sched.args || {}
-        if (!argSets.some(s => isEqual(s, args)))
-          argSets.push(args)
-      }
-      const hasCommon = argSets.length > 1 && common.length > 0
-
-      const entries = this.job.schedule.map(sched => {
-        const args = sched.args || {}
-        const r = resolved.find(g => isEqual(g.schedule_args, args))
+        const r = resolved[i]
         return {
           schedule: sched,
           args,

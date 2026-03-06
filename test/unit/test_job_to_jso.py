@@ -196,6 +196,27 @@ def test_multiple_schedules_common_and_variable():
     assert jso["resolved_conditions"][1]["conditions"][0]["resolved_job_id"] == "dep/eu"
 
 
+def test_multiple_schedules_same_args():
+    """Multiple schedules with identical args → deps are common, one group per schedule."""
+    target = Job("dep/us", {"date"}, [])
+    dep = Dependency("dep/{{ region }}", {"date": "{{ date }}"})
+    sched_morning = _sched({"region": "us", "date": "2024-01-01"})
+    sched_evening = _sched({"region": "us", "date": "2024-01-01"})
+    job = Job("myjob", {"region", "date"}, [sched_morning, sched_evening], conds=[dep])
+    jobs = _jobs(job, target)
+
+    jso = job_to_jso(job, jobs=jobs)
+
+    # Same args → identical resolution → common.
+    assert len(jso["common_conditions"]) == 1
+    assert jso["common_conditions"][0]["resolved_job_id"] == "dep/us"
+    assert jso["common_conditions"][0]["resolved_args"] == {"date": "2024-01-01"}
+    # One resolved group per schedule (not deduplicated), both empty.
+    assert len(jso["resolved_conditions"]) == 2
+    assert jso["resolved_conditions"][0]["conditions"] == []
+    assert jso["resolved_conditions"][1]["conditions"] == []
+
+
 # -------------------------------------------------------------------------------
 # enabled field
 

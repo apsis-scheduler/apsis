@@ -104,7 +104,35 @@ def _to_jsos(objs):
     return [] if objs is None else [_to_jso(o) for o in objs]
 
 
-def job_to_jso(job, jobs=None):
+def job_to_jso(job, jobs=None) -> dict:
+    """
+    Serializes a job for the API / web UI.
+
+    In addition to the raw job fields (returned under `condition`),
+    resolves each condition against each schedule's args to classify it:
+
+    - `common_conditions`: conditions whose resolution is identical across
+      all schedules (shown once in the UI).
+    - `resolved_conditions`: one group per schedule, containing conditions
+      that vary (e.g. a templated `job_id` that resolves differently per
+      schedule, or an `enabled` template that is true for some schedules
+      and false for others).
+
+    Conditions with `enabled=False` are omitted from both lists (they
+    remain in the raw `condition` definitions).
+
+    When *jobs* is provided, dependency target jobs are looked up via
+    `jobs.get_job()` (O(1) dict lookup) to discover their params, so
+    that inherited args (not explicitly listed in the dependency but
+    present on the target job) can be filled in.
+
+    Complexity per job: O(C * S * K * log K), where C = conditions,
+    S = schedules, K = number of resolved dependency args (typically
+    the number of params on the target job).  The log K factor comes
+    from sorting resolved args.  In practice all three are small
+    (single digits), so the per-job cost is negligible.
+    """
+
     def sched_to_jso(s):
         jso = schedule_to_jso(s)
         jso["str"] = str(s) if s.stop_schedule is None else f"{s}, {s.stop_schedule}"
@@ -159,23 +187,19 @@ def job_to_jso(job, jobs=None):
             entry.update(_resolve_dep(cond, sched_args))
         return entry
 
-    # Collect unique schedule arg sets.
-    sched_arg_sets = []
-    for sched in job.schedules:
-        if sched.args not in sched_arg_sets:
-            sched_arg_sets.append(sched.args)
+    # One resolved group per schedule; "common" means identical across all.
+    schedules = job.schedules
 
-    # Resolve all conditions once, then classify as common vs variable.
     # Conditions unconditionally disabled (enabled=False) are omitted from
     # the schedule display — they appear only in the definitions list.
     common_conds_jso = []
-    resolved_groups = [{"schedule_args": sa, "conditions": []} for sa in sched_arg_sets]
+    resolved_groups = [{"schedule_args": s.args, "conditions": []} for s in schedules]
 
     for cond in job.conds:
         if cond.enabled is False:
             continue
 
-        if not sched_arg_sets:
+        if not schedules:
             # No schedules: resolve non-template conditions with empty args;
             # skip template deps that can't be resolved.
             if isinstance(cond, Dependency) and is_template(cond.job_id):
@@ -183,19 +207,19 @@ def job_to_jso(job, jobs=None):
             common_conds_jso.append(_resolve_cond(cond, {}))
             continue
 
-        # Resolve for every arg set, tracking enabled status.
+        # Resolve for every schedule, tracking enabled status.
         entries = []
         enabled_flags = []
-        for sa in sched_arg_sets:
+        for s in schedules:
             try:
-                enabled = eval_enabled(cond.enabled, {**BIND_ARGS, **sa})
+                enabled = eval_enabled(cond.enabled, {**BIND_ARGS, **s.args})
             except (NameError, SyntaxError):
                 # Template references an arg not in schedule args (e.g.
                 # a date param generated at scheduling time) — can't
                 # determine, so treat as enabled.
                 enabled = True
             enabled_flags.append(enabled)
-            entries.append(_resolve_cond(cond, sa) if enabled else None)
+            entries.append(_resolve_cond(cond, s.args) if enabled else None)
 
         # If all entries are identical and all enabled → common.
         if all(enabled_flags) and all(e == entries[0] for e in entries[1:]):
