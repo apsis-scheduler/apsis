@@ -33,7 +33,7 @@ class MaxRunning(Condition):
         self.__count = count
         self.__job_id = job_id
         self.__args = args
-        self.enabled = enabled
+        self._enabled = enabled
 
     def __repr__(self):
         return format_ctor(

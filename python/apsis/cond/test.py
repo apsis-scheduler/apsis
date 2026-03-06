@@ -28,7 +28,7 @@ class TestThreadPolledCondition(ThreadPolledCondition):
         self.__delay = delay
         self.__count = count
         self.__counted = 0
-        self.enabled = enabled
+        self._enabled = enabled
 
     def __repr__(self):
         return format_ctor(self, self.__delay, self.__count, enabled=self.enabled)

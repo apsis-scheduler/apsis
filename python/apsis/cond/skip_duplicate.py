@@ -41,7 +41,7 @@ class SkipDuplicate(Condition):
         self.__target_state = to_state(target_state)
         if not self.__target_state.finished:
             raise ValueError(f"invalid targat state: {self.__target_state.name}")
-        self.enabled = enabled
+        self._enabled = enabled
 
     def __repr__(self):
         return py.format_ctor(

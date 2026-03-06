@@ -43,7 +43,7 @@ class Dependency(RunStoreCondition):
         self.args = args
         self.states = states
         self.exist = exist
-        self.enabled = enabled
+        self._enabled = enabled
 
     def __repr__(self):
         return format_ctor(

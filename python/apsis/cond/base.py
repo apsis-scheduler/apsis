@@ -28,21 +28,17 @@ class Condition(TypedJso):
     def enabled(self):
         return self._enabled
 
-    @enabled.setter
-    def enabled(self, value):
-        if value is not None and not isinstance(value, (bool, str)):
-            raise TypeError(
-                "enabled must be a bool or a quoted string in YAML"
-                ' (e.g. enabled: false or enabled: "{{ expr }}")'
-                f"; got {value!r}"
-            )
-        self._enabled = value
-
     @classmethod
     def from_jso(cls, jso):
         enabled = jso.pop("enabled", None)
+        if enabled is not None and not isinstance(enabled, (bool, str)):
+            raise TypeError(
+                "enabled must be a bool or a quoted string in YAML"
+                ' (e.g. enabled: false or enabled: "{{ expr }}")'
+                f"; got {enabled!r}"
+            )
         instance = super().from_jso(jso)
-        instance.enabled = enabled
+        instance._enabled = enabled
         return instance
 
     def to_jso(self):
@@ -231,7 +227,7 @@ class ConstantCondition(PolledCondition):
 
     def __init__(self, value, *, enabled=None):
         self.__value = bool(value)
-        self.enabled = enabled
+        self._enabled = enabled
 
     def __repr__(self):
         return py.format_ctor(self, self.__value, enabled=self.enabled)
