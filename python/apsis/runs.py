@@ -117,6 +117,14 @@ def _get_template(template):
         raise SyntaxError(str(exc))
 
 
+def is_template(string):
+    """
+    Returns true if `string` contains Jinja2 template syntax.
+    """
+    s = str(string)
+    return "{{" in s or "{%" in s
+
+
 def template_expand(template, args):
     """
     Expands Jinja2-style `template` with names from `args`.
@@ -137,6 +145,25 @@ def arg_to_bool(arg):
         return False
     else:
         return bool(arg)
+
+
+def eval_enabled(enabled, args):
+    """
+    Evaluates an `enabled` field value.
+
+    :param enabled:
+      `None` (always active), a `bool`, or a Jinja2 template string.
+    :param args:
+      Template expansion context.
+    :return:
+      True if active, False if skipped.
+    """
+    if enabled is None:
+        return True
+    if isinstance(enabled, bool):
+        return enabled
+    result = template_expand(enabled, args)
+    return arg_to_bool(result)
 
 
 def join_args(argv):
@@ -318,7 +345,7 @@ def bind(run, job, jobs):
         # FIXME: Actions aren't bound, but may be in the future.
         run.actions = list(job.actions)
     if run.conds is None:
-        run.conds = [c.bind(run, jobs) for c in job.conds]
+        run.conds = [bc for c in job.conds if (bc := c.bind(run, jobs)) is not None]
     if run.program is None:
         run.program = job.program.bind(get_bind_args(run))
 

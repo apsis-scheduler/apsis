@@ -26,21 +26,29 @@ class SkipDuplicate(Condition):
         *,
         check_states=DEFAULT_CHECK_STATES,
         target_state="skipped",
+        enabled=None,
     ):
         """
         :param check_states:
           Run states to consider when looking for duplicates.
         :param target_state:
           The state to transition this run to; must be a finished state.
+        :param enabled:
+          If not none, a Jinja2 expression or bool controlling whether this
+          condition is active for a given run.
         """
         self.__check_states = [to_state(s) for s in py.iterize(check_states)]
         self.__target_state = to_state(target_state)
         if not self.__target_state.finished:
             raise ValueError(f"invalid targat state: {self.__target_state.name}")
+        self._enabled = enabled
 
     def __repr__(self):
         return py.format_ctor(
-            self, check_states=self.__check_states, target_state=self.__target_state
+            self,
+            check_states=self.__check_states,
+            target_state=self.__target_state,
+            enabled=self.enabled,
         )
 
     def __str__(self):
@@ -71,7 +79,7 @@ class SkipDuplicate(Condition):
                 target_state=pop("target_state", default="skipped"),
             )
 
-    def bind(self, run, jobs):
+    def _bind(self, run, jobs):
         return BoundSkipDuplicate(
             check_states=self.__check_states,
             target_state=self.__target_state,

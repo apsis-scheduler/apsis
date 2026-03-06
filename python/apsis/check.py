@@ -2,7 +2,7 @@ import ora
 
 from apsis.cond.dependency import Dependency
 from apsis.jobs import Jobs
-from apsis.runs import Instance, Run, validate_args, bind
+from apsis.runs import Instance, Run, is_template, validate_args, bind
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
@@ -49,6 +49,10 @@ def check_job(jobs_dir, job):
                 associated_job_id = obj.job_id
             except AttributeError:
                 # No associated job; that's OK.
+                return
+
+            # Template job_ids can't be validated without schedule args.
+            if is_template(associated_job_id):
                 return
 
             # Find the associated job.
@@ -135,6 +139,9 @@ def check_job_dependencies_scheduled(
         for dep in deps:
             # Bind the dependency to get the precise args that match.
             dep = dep.bind(run, jobs)
+            if dep is None:
+                # Dependency disabled by `enabled` condition.
+                continue
 
             # Look at scheduled runs of the dependency job.  Check if any
             # matches the dependency args.

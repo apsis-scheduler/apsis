@@ -869,9 +869,9 @@ async def reload_jobs(apsis, *, dry_run=False):
         for job_id in rem_ids:
             publish(messages.make_job_delete(job_id))
         for job_id in add_ids:
-            publish(messages.make_job_add(apsis.jobs.get_job(job_id)))
+            publish(messages.make_job_add(apsis.jobs.get_job(job_id), jobs=apsis.jobs))
         for job_id in chg_ids:
-            publish(messages.make_job(apsis.jobs.get_job(job_id)))
+            publish(messages.make_job(apsis.jobs.get_job(job_id), jobs=apsis.jobs))
 
     return rem_ids, add_ids, chg_ids
 
