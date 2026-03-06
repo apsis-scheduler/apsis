@@ -79,10 +79,10 @@ def main():
         "--shell",
         action="store_true",
         default=False,
-        help="treat CMD as shell code (contactenated)",
+        help="treat CMD as shell code (concatenated)",
     )
 
-    # --- command: cancel ---------------------------------------------
+    # --- command: skip -----------------------------------------------
 
     def cmd_skip(client, args):
         for run_id in args.run_id:
@@ -177,8 +177,8 @@ def main():
 
     # --- command: rerun ----------------------------------------------
 
-    def cmd_rerun(client, arg):
-        runs = [client.rerun(r) for r in arg.run_id]
+    def cmd_rerun(client, args):
+        runs = [client.rerun(r) for r in args.run_id]
         for run in runs:
             if args.format is None:
                 apsis.cmdline.print_run(run, con)

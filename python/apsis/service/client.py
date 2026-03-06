@@ -77,7 +77,7 @@ NO_ARG = object()
 class Client:
     def __init__(self, address=None):
         """
-        :param addr:
+        :param address:
           Apsis hostname and port, or none for default.
         """
         self.__addr = get_address() if address is None else Address(*address)
@@ -137,7 +137,7 @@ class Client:
         Blocks until the service is running.
 
         :param timeout:
-          Tiemout in sec.
+          Timeout in sec.
         """
         # FIXME: Use live updates instead.
         INTERVAL = 0.05
@@ -241,14 +241,14 @@ class Client:
 
     def signal(self, run_id, signal):
         """
-        Sends `signal` to a running processes.
+        Sends `signal` to a running process.
         """
         signal = getattr(signal, "name", str(signal))
         return self.__put("/api/v1/runs", run_id, "signal", signal)
 
     def mark(self, run_id, state_name):
         """
-        Marks a run to different finished state.
+        Marks a run to a different finished state.
         """
         return self.__post("/api/v1/runs", run_id, "mark", state_name)
 

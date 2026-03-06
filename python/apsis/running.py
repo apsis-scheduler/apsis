@@ -35,7 +35,7 @@ async def _maybe_compress(outputs, *, compression="br", min_size=16384):
             try:
                 compressed = await compress_async(output.data, compression)
             except RuntimeError as exc:
-                log.error(f"{exc}; not compressiong")
+                log.error(f"{exc}; not compressing")
                 return output
             else:
                 return Output(output.metadata, compressed, compression)

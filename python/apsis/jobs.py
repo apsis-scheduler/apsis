@@ -42,7 +42,7 @@ class Job:
         :param ad_hoc:
           True if this is an ad hoc job.
         :param meta:
-          Dict of metadata.  Must be JSON-serlializable.
+          Dict of metadata.  Must be JSON-serializable.
         """
         self.job_id = None if job_id is None else str(job_id)
         self.params = frozenset(str(p) for p in tupleize(params))
@@ -144,7 +144,7 @@ def job_to_jso(job):
 def jso_to_job(jso, job_id):
     """
     :deprecated:
-      Use `job.to_jso()`.
+      Use `Job.from_jso()`.
     """
     return Job.from_jso(jso, job_id)
 

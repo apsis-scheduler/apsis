@@ -362,7 +362,7 @@ class RunStore:
     memory.
 
     - Stores runs in all states.
-    - Satisfyies run queries.
+    - Satisfies run queries.
     """
 
     Message = namedtuple("Message", ("run_id", "job_id", "args", "state"))

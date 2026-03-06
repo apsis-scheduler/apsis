@@ -86,7 +86,7 @@ class Condition(TypedJso):
 
 
 class PolledCondition(Condition):
-    # Poll inteval in sec.
+    # Poll interval in sec.
     poll_interval = 1
 
     async def check(self):
@@ -139,7 +139,7 @@ class ThreadPolledCondition(PolledCondition):
         # Use a single executor for all check invocations.
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as exe:
             # The poll loop needs to be outside the thread and async, so that it
-            # can be canelled via async cancellation.  This will occur only
+            # can be cancelled via async cancellation.  This will occur only
             # between checks; a single check runs in a thread executor and
             # cannot be cancelled.
             while True:
@@ -174,7 +174,7 @@ class NonmonotonicRunStoreCondition(RunStoreCondition):
 
     The waiting logic invokes condition's (synchronous) `check()` method after
     `wait()` has succeeded, to confirm that condition is still met before
-    immediatley continuing to the next condition.
+    immediately continuing to the next condition.
     """
 
     def check(self, run_store):

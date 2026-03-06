@@ -34,7 +34,7 @@ def to_state(state):
 
 def to_states(states):
     """
-    Convers `states` to an iterator of States instances.
+    Converts `states` to an iterator of States instances.
 
       >>> tuple(to_states("running"))
       (<State.running: 5>,)
