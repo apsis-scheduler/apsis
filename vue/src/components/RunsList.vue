@@ -6,6 +6,7 @@ div
         .label Job Path:
         PathNav(
           :path="path"
+          :suggestions="allJobPaths"
           @path="path = $event"
         )
 
@@ -18,25 +19,30 @@ div
           p Syntax: <b>keyword keyword&hellip;</b>
           p Show only runs whose job ID contains each <b>keyword</b>.
 
-      div
+      div.tags-filter-row
         .label Labels:
-        WordsInput(
-          v-model="labels"
+        TagsFilter(
+          :value="labels"
+          :suggestions="allLabels"
+          label="label"
+          @change="labels = $event"
         )
-        HelpButton
-          p Syntax: <b>label label&hellip;</b>
-          p Show only runs with each <b>label</b>.
+          HelpButton
+            p Click <b>+ label</b> to add a label filter.
+            p Show only runs with <b>all</b> selected labels.
 
     template(v-if="runControls")
-      div
+      div.args-filter-row
         .label Run Args:
-        WordsInput(
-          :value="args !== null ? argsToArray(args) : null"
-          @change="args = $event ? arrayToArgs($event) : null"
+        ArgsFilter(
+          :value="args"
+          :params="effectiveParamNames"
+          @change="args = $event"
         )
-        HelpButton
-          p Syntax: <b>arg=value arg=value&hellip;</b>
-          p Show only runs which have all run args <b>arg</b> set to corresponding <b>value</b>.
+          HelpButton
+            p Click <b>+ filter</b> to add a run args filter.
+            p Multiple values for the same param: show runs matching <b>any</b> value.
+            p Filters on different params: show runs matching <b>all</b> params.
 
       div
         .label States:
@@ -63,7 +69,39 @@ div
               | An additional column shows the number of hidden runs.
 
     template(v-if="timeControls")
-      //- Number of runs to show.
+      div.row-start
+        .label From:
+        div.time-field
+          TimeInput(
+            v-model="timeFrom"
+            :nullable="true"
+            :ranges="TIME_RANGES"
+            @range="onTimeRange"
+          )
+          span.time-clear(v-if="timeFrom" @click="timeFrom = null") &times; clear
+
+      div
+        .label To:
+        div.time-field
+          TimeInput(
+            v-model="timeTo"
+            :nullable="true"
+            :ranges="TIME_RANGES"
+            @range="onTimeRange"
+          )
+          span.time-clear(v-if="timeTo" @click="timeTo = null") &times; clear
+
+      div
+        .label Order:
+        div
+          | Time &#8681;
+          Toggle.toggle(
+            v-model="asc"
+          )
+          | Time &#8679; &nbsp;
+          HelpButton
+            p Sort runs chronologically upward or downward.
+
       div
         .label Show:
         DropList.counts(
@@ -75,55 +113,13 @@ div
           )
             div {{ count }} runs
 
-      //- Show Time and earlier / now / later buttons.
-      div
-        .label Time:
-        div(style="display: flex; height: 100%;")
-          button(
-            style="padding: 0 4px; border-top-right-radius: 0; border-bottom-right-radius: 0;"
-            v-on:click="time = groups.earlierTime"
-            :disabled="groups.earlierCount == 0"
-          )
-            TriangleIcon(
-              direction="left"
-            )
-          TimeInput(
-            v-model="time"
-          )
-          button(
-            style="padding: 0 4px; border-top-left-radius: 0; border-bottom-left-radius: 0;"
-            v-on:click="time = groups.laterTime"
-            :disabled="groups.laterCount == 0"
-          )
-            TriangleIcon(
-              direction="right"
-            )
-        HelpButton
-          p Show the runs nearest this time, immediately before and after.
-          p <b>Now</b> tracks the current time.
-          p Specify another date and/or time. The arrows move backward or forward in time.
-
-      div &nbsp;
-
-      div
-        .label Order:
-        div
-          | Time &#8681;
-          Toggle.toggle(
-            v-model="asc"
-          )
-          | Time &#8679; &nbsp;
-          HelpButton
-            p Time runs chronologically upward or downward.
-        div &nbsp;
-
       div
         .label Showing:
-        div(style="display: grid; width: 100%; grid-template-columns: 1fr 1em 1fr;")
-          span(style="justify-self: start") {{ formatTime(groups.earlierTime) }}
-          span &mdash;
-          span(style="justify-self: end") {{ formatTime(groups.laterTime) }}
-        div &nbsp;
+        div.showing-info
+          span {{ groups.shownCount }} of {{ groups.totalCount }} runs
+          span(v-if="groups.totalCount > groups.shownCount")  (limit: {{ show }})
+
+      div &nbsp;
 
 
   div.runlist
@@ -166,10 +162,8 @@ div
         tr(v-if="(asc ? groups.earlierCount : groups.laterCount) > 0")
           td.note(colspan="9")
             | {{ asc ? groups.earlierCount : groups.laterCount }}
-            | {{ asc ? 'earlier' : 'later' }} rows not shown
-            button(
-              v-on:click="time = asc ? groups.earlierTime : groups.laterTime"
-            ) {{ asc ? 'Earlier' : 'Later' }}
+            | {{ asc ? 'earlier' : 'later' }} runs not shown
+            button(@click="asc ? seeEarlier() : seeLater()") {{ asc ? 'Earlier' : 'Later' }}
 
         template(v-for="run, i in groups.groups")
           tr(v-if="nowIndicator && i === groups.nowIndex")
@@ -226,19 +220,19 @@ div
         tr(v-if="(asc ? groups.laterCount : groups.earlierCount) > 0")
           td.note(colspan="9")
             | {{ asc ? groups.laterCount : groups.earlierCount }}
-            | {{ asc ? 'later' : 'earlier' }} rows not shown
-            button(
-              v-on:click="time = asc ? groups.laterTime : groups.earlierTime"
-            ) {{ asc ? 'Later' : 'Earlier' }}
+            | {{ asc ? 'later' : 'earlier' }} runs not shown
+            button(@click="asc ? seeLater() : seeEarlier()") {{ asc ? 'Later' : 'Earlier' }}
 
 </template>
 
 <script>
 import { entries, filter, flatten, groupBy, includes, isEqual, keys, map, sortBy, sortedIndexBy, uniq } from 'lodash'
 
-import { argsToArray, arrayToArgs, matchKeywords, includesAll, OPERATIONS } from '@/runs'
-import { formatDuration, formatElapsed, formatTime } from '@/time'
+import { matchKeywords, includesAll, OPERATIONS } from '@/runs'
+import { formatDuration, formatElapsed, formatTime, resolveTimeExpr } from '@/time'
+import ArgsFilter from '@/components/ArgsFilter'
 import DropList from '@/components/DropList'
+import TagsFilter from '@/components/TagsFilter'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import HelpButton from '@/components/HelpButton'
 import Job from '@/components/Job'
@@ -254,32 +248,40 @@ import store from '@/store.js'
 import TimeInput from '@/components/TimeInput'
 import Timestamp from '@/components/Timestamp'
 import Toggle from '@/components/Toggle'
-import TriangleIcon from '@/components/icons/TriangleIcon'
 import WordsInput from '@/components/WordsInput'
 
 const COUNTS = [20, 50, 100, 200, 500, 1000]
 
+const TIME_RANGES = [
+  { label: 'Last 5 minutes',  from: 'now-5m',  to: 'now' },
+  { label: 'Last 15 minutes', from: 'now-15m', to: 'now' },
+  { label: 'Last 30 minutes', from: 'now-30m', to: 'now' },
+  { label: 'Last 1 hour',     from: 'now-1h',  to: 'now' },
+  { label: 'Last 6 hours',    from: 'now-6h',  to: 'now' },
+  { label: 'Last 24 hours',   from: 'now-24h', to: 'now' },
+  { label: 'Last 7 days',     from: 'now-7d',  to: 'now' },
+  { label: 'Last 30 days',    from: 'now-30d', to: 'now' },
+  { label: 'Next 5 minutes',  from: 'now',     to: 'now+5m' },
+  { label: 'Next 30 minutes', from: 'now',     to: 'now+30m' },
+  { label: 'Next 1 hour',     from: 'now',     to: 'now+1h' },
+  { label: 'Next 24 hours',   from: 'now',     to: 'now+24h' },
+]
+
 /**
  * Constructs a predicate fn for matching runs with `args`.
  *
- * `args` is an array of "param=value" or "param" strings.  The former requires
- * the given param have the corresponding arg value.  The latter requires that
- * it have any arg value at all.  The result is the conjunction of these.
- *
- * For example, the `args` array ["fruit=mango", "color"] produces a predicate
- * that matches all runs that both have a "fruit" param with arg value "mango",
- * and also have any value at all for the "color" param.
+ * `args` maps each param to an array of acceptable values.  A null value in
+ * the array means any value is acceptable.  For each param, the run must match
+ * at least one value (OR within a param).  All params must match (AND across
+ * params).
  */
 function getArgPredicate(args) {
   return run => {
     for (const param in args) {
       const value = run.args[param]
       if (value === undefined)
-        // Not present.
         return false
-      const ref = args[param]
-      if (ref !== null && value !== ref)
-        // Wrong arg value.
+      if (!args[param].some(ref => ref === null || value === ref))
         return false
     }
     return true
@@ -307,11 +309,15 @@ export default {
     runControls: {type: Boolean, default: true},
     timeControls: {type: Boolean, default: true},
 
+    // Known parameter names for this job; enables the tag-based args filter.
+    paramNames: {type: Array, default: null},
+
     // If true, show a row indicating the current time.
     nowIndicator: {type: Boolean, default: true},
   },
 
   components: {
+    ArgsFilter,
     DropList,
     HamburgerMenu,
     HelpButton,
@@ -325,9 +331,9 @@ export default {
     State,
     StatesSelect,
     TimeInput,
+    TagsFilter,
     Timestamp,
     Toggle,
-    TriangleIcon,
     WordsInput,
   },
 
@@ -338,6 +344,7 @@ export default {
       profile: false,
       COUNTS,
       OPERATIONS,
+      TIME_RANGES,
 
       args: null,        // no arg filters
       asc: false,         // show time descending
@@ -348,7 +355,12 @@ export default {
       job_id: null,      // exact job ID
       show: 50,
       states: null,      // all states
-      time: 'now',
+      timeFrom: null,    // start of time range, null = no lower bound
+      timeTo: null,      // end of time range, null = no upper bound
+
+      // Pagination offset into filtered results (ascending order).
+      // null = auto (center around "now" when no time filter).
+      windowStart: null,
 
       // Initialize with the query prop.
       ...this.query,
@@ -372,7 +384,7 @@ export default {
       if (this.states)
         runs = filter(runs, run => includes(this.states, run.state))
       if (this.labels)
-        runs = filter(runs, run => includesAll(this.labels, run.labels))
+        runs = filter(runs, run => run.labels && includesAll(this.labels, run.labels))
       if (this.args)
         runs = filter(runs, getArgPredicate(this.args))
       if (this.keywords) {
@@ -385,6 +397,38 @@ export default {
   
     params() {
       return uniq(flatten(map(this.runs, run => keys(run.args))))
+    },
+
+    allParamNames() {
+      const names = new Set()
+      for (const run of this.store.state.runs.values())
+        for (const k of keys(run.args))
+          names.add(k)
+      return Array.from(names).sort()
+    },
+
+    effectiveParamNames() {
+      return this.paramNames || this.allParamNames
+    },
+
+    allLabels() {
+      const labels = new Set()
+      for (const run of this.store.state.runs.values())
+        if (run.labels)
+          for (const l of run.labels)
+            labels.add(l)
+      return Array.from(labels).sort()
+    },
+
+    allJobPaths() {
+      const paths = new Set()
+      for (const run of this.store.state.runs.values()) {
+        const parts = run.job_id.split('/')
+        // Add directory prefixes only, not the full job ID.
+        for (let i = 1; i < parts.length; i++)
+          paths.add(parts.slice(0, i).join('/'))
+      }
+      return Array.from(paths).sort()
     },
 
     // Array of rerun groups, each an array of runs that are reruns of the
@@ -438,70 +482,50 @@ export default {
     },
 
     groups() {
-      let start = new Date()
       const groups = this.allGroups
-      let runs = groups.groups   // FIXME
+      let runs = groups.groups
 
-      let now = (new Date()).toISOString()
+      // Touch store.state.time so this recomputes every second for relative exprs.
+      void this.store.state.time
+      const now = (new Date()).toISOString()
+      const from = resolveTimeExpr(this.timeFrom)
+      const to = resolveTimeExpr(this.timeTo)
 
-      // Determine the time to center around.
-      const time = this.time === 'now' ? now : this.time
-      // Find the index corresponding to the center time.
-      let timeIndex = sortedIndexBy(runs, { time_key: time }, r => r.time_key)
+      // Filter runs to the [from, to] time range.
+      if (from)
+        runs = runs.filter(r => r.time_key >= from)
+      if (to)
+        runs = runs.filter(r => r.time_key <= to)
 
-      // Time cutoff and count of earlier runs not shown.
-      let earlierTime = null
+      const totalCount = runs.length
       let earlierCount = 0
-      // Time cutoff and count of later runs not shown.
-      let laterTime = null
       let laterCount = 0
-      const show = this.show
-      if (show < runs.length) {
-        // There are more runs than fit in the view.  Decide how many runs to
-        // show before and after the center time.
-        var r0 = timeIndex
-        var r1 = runs.length - timeIndex
-        if (r0 < show / 2)
-          r1 = show - r0
-        else if (r1 < show / 2)
-          r0 = show - r1
-        else
-          r0 = r1 = show / 2
 
-        if (r0 < timeIndex) {
-          // Don't show some runs and omit others with identical timestamp.
-          while (
-            0 < timeIndex && timeIndex < runs.length
-            && runs[timeIndex - 1].time_key === runs[timeIndex].time_key
-          )
-            timeIndex--
-          // Number of earlier runs omitted.
-          earlierCount = timeIndex - r0
-          // Time cutoff of earlier runs omitted.
-          earlierTime = runs[earlierCount].time_key
-          // Omit the runs.
-          runs = runs.slice(earlierCount)
-          // Adjust the center time index accordingly.
-          timeIndex -= earlierCount
+      // Apply the show limit using windowStart for pagination.
+      if (runs.length > this.show) {
+        let start
+        if (this.windowStart !== null)
+          // Use the explicit pagination offset.
+          start = Math.max(0, Math.min(this.windowStart, runs.length - this.show))
+        else {
+          // Auto: center around "now" to show both recent and upcoming runs.
+          const center = sortedIndexBy(runs, { time_key: now }, r => r.time_key)
+          const half = Math.floor(this.show / 2)
+          start = Math.max(0, center - half)
+          if (start + this.show > runs.length)
+            start = Math.max(0, runs.length - this.show)
         }
 
-        if (r1 < runs.length - timeIndex) {
-          // Don't show some runs and omit others with identical timestamp.
-          while (
-            0 < timeIndex && timeIndex < runs.length - 1
-            && runs[timeIndex - 1].time_key === runs[timeIndex].time_key
-          )
-            timeIndex++
-          // Number of later runs omitted.
-          laterCount = runs.length - (timeIndex + r1)
-          // Time cutoff of later runs omitted.
-          laterTime = runs[runs.length - laterCount].time_key
-          // Omit the runs.
-          runs = runs.slice(0, runs.length - laterCount)
-        }
+        const end = Math.min(start + this.show, runs.length)
+        earlierCount = start
+        laterCount = runs.length - end
+        runs = runs.slice(start, end)
       }
 
-      var nowIndex
+      const shownCount = runs.length
+
+      // Find where "now" falls in the visible runs for the now indicator.
+      let nowIndex
       if (runs.length > 0 && runs[0].time_key < now && now < runs[runs.length - 1].time_key)
         nowIndex = sortedIndexBy(runs, { time_key: now }, r => r.time_key)
 
@@ -511,22 +535,13 @@ export default {
           nowIndex = runs.length - nowIndex
       }
 
-      if (this.profile)
-        console.log(
-          'runs:', this.store.state.runs.size, 'filtered:', this.runs.length, 'groups:', runs.length, 
-          'earlier:', earlierCount, earlierTime,
-          'later:', laterCount, laterTime,
-          'in:', (new Date() - start) * 0.001
-        )
-
       return {
         groups: runs,
         counts: groups.counts,
         nowIndex,
-        time,
-        earlierTime,
+        totalCount,
+        shownCount,
         earlierCount,
-        laterTime,
         laterCount,
       }
     },
@@ -545,23 +560,37 @@ export default {
       },
     },
 
-    // Whenever our query state changes, inform the parent.
-    args() { this.emitQuery() },
-    asc() { this.emitQuery() },
-    grouping() { this.emitQuery() },
-    keywords() { this.emitQuery() },
-    labels() { this.emitQuery() },
-    path() { this.emitQuery() },
-    show() { this.emitQuery() },
-    states() { this.emitQuery() },
-    time() { this.emitQuery() },
+    // Whenever our query state changes, inform the parent and reset pagination.
+    args() { this.windowStart = null; this.emitQuery() },
+    asc() { this.windowStart = null; this.emitQuery() },
+    grouping() { this.windowStart = null; this.emitQuery() },
+    keywords() { this.windowStart = null; this.emitQuery() },
+    labels() { this.windowStart = null; this.emitQuery() },
+    path() { this.windowStart = null; this.emitQuery() },
+    show() { this.windowStart = null; this.emitQuery() },
+    states() { this.windowStart = null; this.emitQuery() },
+    timeFrom() { this.windowStart = null; this.emitQuery() },
+    timeTo() { this.windowStart = null; this.emitQuery() },
 
   },
 
   methods: {
     formatElapsed,
-    arrayToArgs,
-    argsToArray,
+
+    onTimeRange({ from, to }) {
+      this.timeFrom = from
+      this.timeTo = to
+    },
+
+    seeEarlier() {
+      const current = this.windowStart !== null ? this.windowStart : this.groups.earlierCount
+      this.windowStart = Math.max(0, current - this.show)
+    },
+
+    seeLater() {
+      const current = this.windowStart !== null ? this.windowStart : this.groups.earlierCount
+      this.windowStart = current + this.show
+    },
 
     // Sends our current state to the parent as a query object.
     emitQuery() {
@@ -572,7 +601,8 @@ export default {
         args: this.args,
         keywords: this.keywords,
         show: this.show,
-        time: this.time,
+        timeFrom: this.timeFrom,
+        timeTo: this.timeTo,
         grouping: this.grouping,
         asc: this.asc,
       })
@@ -654,6 +684,15 @@ export default {
     }
   }
 
+  > .args-filter-row, > .tags-filter-row {
+    grid-column: 1 / -1;
+    height: auto;
+    min-height: 30px;
+    grid-template-columns: 5em 1fr;
+    align-items: start;
+    padding-top: 2px;
+  }
+
   .label {
     text-align: right;
     white-space: nowrap;
@@ -696,6 +735,39 @@ export default {
     width: 6em;
     height: 32px;
     text-align: right;
+  }
+
+  .time-field {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+  }
+
+  .time-clear {
+    cursor: pointer;
+    color: $global-light-color;
+    font-size: 0.85em;
+    border: 1px dashed $global-frame-color;
+    border-radius: 3px;
+    padding: 1px 8px;
+    line-height: 22px;
+    white-space: nowrap;
+
+    &:hover {
+      color: #c44;
+      border-color: darken($global-frame-color, 10%);
+      background: $global-hover-background;
+    }
+  }
+
+  .showing-info {
+    font-size: 0.9em;
+    color: $global-light-color;
+  }
+
+  .row-start {
+    grid-column-start: 1;
   }
 }
 

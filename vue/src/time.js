@@ -158,3 +158,46 @@ export function parseCompactUTCTime(str) {
   return moment.utc(str).format()
 }
 
+const UNIT_MS = { s: 1000, m: 60000, h: 3600000, d: 86400000 }
+
+/**
+ * Returns true if `expr` is a relative time expression like "now", "now-30m",
+ * or "now+2h".
+ */
+export function isRelativeTimeExpr(expr) {
+  return expr === 'now' || /^now[+-]\d+[smhd]$/.test(expr)
+}
+
+/**
+ * Resolves a time expression to an ISO timestamp string.
+ *
+ * Accepts:
+ * - "now" → current time
+ * - "now-30m", "now-7d", etc. → relative offset in the past (s, m, h, d)
+ * - "now+1h", "now+2d", etc. → relative offset in the future (s, m, h, d)
+ * - null → null (no bound)
+ * - ISO timestamp string → returned as-is
+ */
+export function resolveTimeExpr(expr) {
+  if (!expr) return null
+  if (expr === 'now') return new Date().toISOString()
+  const match = expr.match(/^now([+-])(\d+)([smhd])$/)
+  if (match) {
+    const sign = match[1] === '+' ? 1 : -1
+    return new Date(Date.now() + sign * parseInt(match[2]) * UNIT_MS[match[3]]).toISOString()
+  }
+  return expr
+}
+
+/**
+ * Formats a time expression for display.
+ *
+ * Relative expressions ("now", "now-30m") are shown as-is.
+ * Absolute timestamps are formatted in the given timezone.
+ */
+export function formatTimeExpr(expr, timeZone) {
+  if (!expr) return ''
+  if (isRelativeTimeExpr(expr)) return expr
+  return formatTime(new Date(expr), timeZone)
+}
+

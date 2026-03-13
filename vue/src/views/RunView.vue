@@ -32,7 +32,7 @@ div
         :job-controls="false"
         :run-controls="false"
         :time-controls="true"
-        :query="{show: 20, grouping: false, job_id: run.job_id, args: run.args || {}}"
+        :query="{show: 20, grouping: false, job_id: run.job_id, args: toFilterArgs(run.args)}"
         style="max-height: 60rem; overflow-y: auto;"
       )
 
@@ -191,6 +191,14 @@ export default {
 
   methods: {
     join,
+
+    toFilterArgs(args) {
+      if (!args) return {}
+      const result = {}
+      for (const [k, v] of Object.entries(args))
+        result[k] = [v]
+      return result
+    },
 
     fetchRun() {
       const url = api.getRunUrl(this.run_id)

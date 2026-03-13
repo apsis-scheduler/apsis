@@ -17,9 +17,11 @@ div.component
 
   Frame(title="Runs")
     RunsList(
-      :query="{job_id: job_id, show: 20}" 
+      :query="runsQuery"
+      @query="onRunsQueryChange"
       :show-job="false"
       :job-controls="false"
+      :paramNames="job ? job.params : null"
       argColumnStyle="separate"
       style="max-height: 60em; overflow-y: auto;"
     )
@@ -132,7 +134,8 @@ div.component
 
 <script>
 import * as api from '@/api'
-import { every, join, pickBy } from 'lodash'
+import { every, isEqual, join, pickBy } from 'lodash'
+import { argsToArray, arrayToArgs } from '@/runs'
 import ConfirmationModal from '@/components/ConfirmationModal'
 import Frame from '@/components/Frame'
 import Job from '@/components/Job'
@@ -170,6 +173,17 @@ export default {
   },
 
   computed: {
+    runsQuery() {
+      const url = this.$route.query
+      const splitWords = (param) => param ? param.split(',') : null
+      return {
+        job_id: this.job_id,
+        show: 20,
+        args: url.args ? arrayToArgs(splitWords(url.args)) : null,
+        states: splitWords(url.states),
+      }
+    },
+
     job() {
       return store.state.jobs.get(this.job_id)
     },
@@ -223,6 +237,16 @@ export default {
   },
 
   methods: {
+    onRunsQueryChange(query) {
+      const url = {}
+      if (query.args)
+        url.args = argsToArray(query.args).join(',')
+      if (query.states)
+        url.states = query.states.join(',')
+      if (!isEqual(this.$route.query, url))
+        this.$router.push({ query: url })
+    },
+
     markdown(src) { return src.trim() === '' ? '' : (new showdown.Converter()).makeHtml(src) },
 
     stripSchedArgs(str) { return str.replace(/^\([^)]*\)\s*/, '') },

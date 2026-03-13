@@ -1,18 +1,14 @@
 <template lang="pug">
-  .base
-    div(
-      @click="show = !show"
-    )
+  .base(
+    @mouseenter="show = true"
+    @mouseleave="show = false"
+  )
+    div
       HelpIcon(
         :color="show ? '#b37' : '#d8d8d8'"
       ).icon
     .popup(v-if="show")
       slot
-    //- Full-window underlay to capture clicks outside the droplist.
-    #under(
-      v-if="show"
-      @click="show = false"
-    )
 
 </template>
 
@@ -59,15 +55,5 @@ export default {
 
   font-size: 90%;
   line-height: normal;
-}
-
-#under {
-  position: fixed;
-  z-index: 2;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
 }
 </style>

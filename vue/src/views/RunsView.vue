@@ -15,7 +15,7 @@ div
 import { isEqual } from 'lodash'
 import { argsToArray, arrayToArgs } from '@/runs'
 import RunsList from '@/components/RunsList'
-import { formatCompactUTCTime, parseCompactUTCTime } from '@/time'
+import { formatCompactUTCTime, isRelativeTimeExpr, parseCompactUTCTime } from '@/time'
 
 /**
  * Strips off all occurrences of `suffix` at the end of `string`.
@@ -61,7 +61,8 @@ export default {
         args: url.args ? arrayToArgs(splitWords(url.args)) : null,
         grouping: url.ungroup !== null,
         show: url.show ? parseInt(url.show) : 50,
-        time: url.time ? parseCompactUTCTime(url.time) : 'now',
+        timeFrom: url.from ? (isRelativeTimeExpr(url.from) ? url.from : parseCompactUTCTime(url.from)) : null,
+        timeTo: url.to ? (isRelativeTimeExpr(url.to) ? url.to : parseCompactUTCTime(url.to)) : null,
         asc: url.asc === 'true',
       }
     },
@@ -88,7 +89,8 @@ export default {
       set('args', joinWords(query.args === null ? null : argsToArray(query.args)))
       set('ungroup', query.grouping ? undefined : null)
       set('show', query.show === 50 ? undefined : query.show)
-      set('time', query.time === 'now' ? undefined : formatCompactUTCTime(query.time))
+      set('from', !query.timeFrom ? undefined : (isRelativeTimeExpr(query.timeFrom) ? query.timeFrom : formatCompactUTCTime(query.timeFrom)))
+      set('to', !query.timeTo ? undefined : (isRelativeTimeExpr(query.timeTo) ? query.timeTo : formatCompactUTCTime(query.timeTo)))
       set('asc', query.asc ? 'true' : undefined)
       return url
     },

@@ -5,6 +5,7 @@ div
       .label Job Path:
       PathNav(
         :path="path"
+        :suggestions="allJobPaths"
         @path="$emit('path', $event)"
       )
 
@@ -198,6 +199,17 @@ export default {
   computed: {
     expand() {
       return this.store.state.jobsExpand
+    },
+
+    allJobPaths() {
+      const paths = new Set()
+      for (const job of store.state.jobs.values()) {
+        const parts = job.job_id.split('/')
+        // Add directory prefixes only, not the full job ID.
+        for (let i = 1; i < parts.length; i++)
+          paths.add(parts.slice(0, i).join('/'))
+      }
+      return Array.from(paths).sort()
     },
 
     /** Jobs after applying the filter.  */

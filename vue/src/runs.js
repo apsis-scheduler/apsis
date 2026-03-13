@@ -161,23 +161,31 @@ export function sortStates(states) {
 }
 
 /**
- * Converts a run args dict to an array of PARAM=VALUE strings.
+ * Converts a filter args dict to an array of PARAM=VALUE strings.
+ * Filter args map each param to an array of values.
  */
 export function argsToArray(args) {
-  return Object.entries(args).map(([param, val]) => param + '=' + val)
+  const result = []
+  for (const [param, values] of Object.entries(args))
+    for (const val of values)
+      result.push(val === null ? param : param + '=' + val)
+  return result
 }
 
 /**
- * Converts an array of PARAM=VALUE strings to an args dict.
+ * Converts an array of PARAM=VALUE strings to a filter args dict.
+ * Each param maps to an array of values, supporting multiple values per param.
  */
 export function arrayToArgs(arr) {
   const args = {}
   for (const el of arr) {
     const i = el.indexOf('=')
-    if (i === -1)
-      args[el] = null
+    const param = i === -1 ? el : el.slice(0, i)
+    const value = i === -1 ? null : el.slice(i + 1)
+    if (args[param])
+      args[param].push(value)
     else
-      args[el.slice(0, i)] = el.slice(i + 1)
+      args[param] = [value]
   }
   return args
 }
