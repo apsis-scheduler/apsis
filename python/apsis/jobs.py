@@ -226,8 +226,7 @@ async def load_jobs_dir(path, yaml_loader=None):
 
     :param yaml_loader:
       An optional PyYAML loader class (e.g. ``yaml.CSafeLoader``) to use
-      instead of the default ruamel YAML loader.  A non-default loader can
-      significantly reduce load time on large job dirs.
+      instead of the default ruamel YAML loader.
     :return:
       The successfully loaded `JobsDir`.
     :raise NotADirectoryError:
