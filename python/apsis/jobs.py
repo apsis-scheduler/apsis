@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import random
 import string
+import yaml
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import DuplicateKeyError
 
@@ -219,10 +220,13 @@ class JobsDir:
         return jobs
 
 
-async def load_jobs_dir(path):
+async def load_jobs_dir(path, yaml_loader=None):
     """
     Attempts to loads jobs from a jobs dir.
 
+    :param yaml_loader:
+      An optional PyYAML loader class (e.g. ``yaml.CSafeLoader``) to use
+      instead of the default ruamel YAML loader.
     :return:
       The successfully loaded `JobsDir`.
     :raise NotADirectoryError:
@@ -245,7 +249,10 @@ async def load_jobs_dir(path):
         try:
             async with aiofiles.open(path, mode="r") as file:
                 content = await file.read()
-            job_jso = YAML().load(content)
+            if yaml_loader is not None:
+                job_jso = yaml.load(content, Loader=yaml_loader)
+            else:
+                job_jso = YAML().load(content)
             job = Job.from_jso(job_jso, job_id)
             return job_id, job, None
         except DuplicateKeyError as exc:
