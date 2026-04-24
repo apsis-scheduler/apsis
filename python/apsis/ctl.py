@@ -81,10 +81,11 @@ def main():
                 status = 1
 
         if jobs_dir is not None and args.check_dependencies_scheduled:
-            for job in jobs_dir.get_jobs():
-                for err in apsis.check.check_job_dependencies_scheduled(jobs_dir, job):
-                    con.print(f"{job.job_id}: {err}", style="error")
-                    status = 1
+            for job, msg in apsis.check.check_job_dependencies_scheduled(
+                jobs_dir, jobs_dir.get_jobs()
+            ):
+                con.print(f"{job.job_id}: {msg}", style="error", soft_wrap=True)
+                status = 1
 
         return status
 
