@@ -244,16 +244,22 @@ async def load_jobs_dir(path, yaml_loader=None):
     jobs = {}
     errors = []
 
+    loop = asyncio.get_running_loop()
+
     async def load_job(path, job_id):
         log.debug(f"loading: {path}")
         try:
             async with aiofiles.open(path, mode="r") as file:
                 content = await file.read()
-            if yaml_loader is not None:
-                job_jso = yaml.load(content, Loader=yaml_loader)
-            else:
-                job_jso = YAML().load(content)
-            job = Job.from_jso(job_jso, job_id)
+
+            def _parse():
+                if yaml_loader is not None:
+                    job_jso = yaml.load(content, Loader=yaml_loader)
+                else:
+                    job_jso = YAML().load(content)
+                return Job.from_jso(job_jso, job_id)
+
+            job = await loop.run_in_executor(None, _parse)
             return job_id, job, None
         except DuplicateKeyError as exc:
             err_msg = exc.problem if exc.problem else str(exc)
@@ -279,6 +285,8 @@ async def load_jobs_dir(path, yaml_loader=None):
         log.info(f"checking: {job.job_id}")
         for err in check_job(jobs_dir, job):
             errors.append(JobError(job.job_id, str(err)))
+        # be nice to the event loop
+        await asyncio.sleep(0)
 
     if len(errors) > 0:
         raise JobsDirErrors(f"errors loading jobs in {jobs_path}", errors)
