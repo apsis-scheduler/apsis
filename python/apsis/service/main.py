@@ -50,6 +50,10 @@ class Router(sanic.router.Router):
 app = sanic.Sanic("apsis", router=Router(), log_config=SANIC_LOG_CONFIG)
 app.config.LOGO = None
 
+# sanic sends a 503 if requests take longer to service than this
+# motivation to increase is to prevent timeouts on /reload_jobs
+app.config.RESPONSE_TIMEOUT = 180
+
 # more forgiving for when slow browsers can't keep up with websocket messages
 app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
