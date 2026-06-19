@@ -442,6 +442,14 @@ class RunStore:
           successfully retired, or because it wasn't there to begin with.
         """
         log.warning("no-op: RunStore.retire() deprecated")
+        try:
+            _, run = self.get(run_id)
+        except LookupError:
+            return True
+        else:
+            # we still need to report if the run is finished for the internal archive program, which shouldn't archive
+            # unfinished runs
+            return run.state.finished
 
     def retire_old(self, min_timestamp):
         """
