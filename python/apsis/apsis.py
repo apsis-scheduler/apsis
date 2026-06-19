@@ -73,6 +73,8 @@ class Apsis:
         self.__stopping_tasks = TaskGroup(log)
         # One task for each running action.
         self.__action_tasks = TaskGroup(log)
+        # Running program instances, keyed by run_id. Not persisted to DB.
+        self._running_programs = {}
 
         self.cfg = cfg
         # FIXME: This should go in `apsis.config.config_globals` or similar.
@@ -218,12 +220,12 @@ class Apsis:
 
         Runs the run's program in a task added to `__run_tasks`.
         """
-        assert run._running_program is None
+        assert run.run_id not in self._running_programs
         # Start the run by running its program.
         self.run_log.record(run, "starting")
         self._transition(run, State.starting)
         # Call the program.  This produces an async iterator of updates.
-        run._running_program = run.program.run(
+        self._running_programs[run.run_id] = run.program.run(
             run.run_id,
             self if isinstance(run.program, _InternalProgram) else self.cfg,
         )
@@ -240,10 +242,10 @@ class Apsis:
         # FIXME: Reconnect starting or stopping programs?
         assert run.state == State.running
         assert run.run_state is not None
-        assert run._running_program is None
+        assert run.run_id not in self._running_programs
         self.run_log.record(run, "reconnecting")
         # Connect to the program.  This produces an async iterator of updates.
-        run._running_program = run.program.connect(
+        self._running_programs[run.run_id] = run.program.connect(
             run.run_id,
             run.run_state,
             self if isinstance(run.program, _InternalProgram) else self.cfg,
@@ -579,9 +581,10 @@ class Apsis:
         self._transition(run, State.stopping, run_state=run.run_state | {"stopping": True})
 
         # Ask the run to stop.
+        running_program = self._running_programs.get(run.run_id)
         async def stop():
             try:
-                await run._running_program.stop()
+                await running_program.stop()
             except:
                 log.info("program.stop() exception", exc_info=True)
 
@@ -595,12 +598,13 @@ class Apsis:
         signal = to_signal(signal)
         if run.state not in (State.running, State.stopping):
             raise RuntimeError(f"invalid run state for signal: {run.state.name}")
-        if run._running_program is None:
+        running_program = self._running_programs.get(run.run_id)
+        if running_program is None:
             raise RuntimeError("no running program to send signal to")
 
         self.run_log.info(run, f"sending {signal.name}")
         try:
-            await run._running_program.signal(signal)
+            await running_program.signal(signal)
         except Exception:
             self.run_log.exc(run, f"sending {signal.name} failed")
             raise RuntimeError(f"sending {signal.name} failed")
