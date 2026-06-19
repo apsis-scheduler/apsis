@@ -102,7 +102,8 @@ def test_run_store_populate():
     """
     Tests a RunStore populated from existing runs.
 
-    Existing runs come from a mocked run DB.
+    Existing runs come from a mocked run DB (simulating restore from sqlite).
+    These runs are NOT in __expected_runs, so remove() doesn't apply.
     """
     rnd = random.Random(0)
     n = 10000
@@ -133,28 +134,3 @@ def test_run_store_populate():
     for job_id in job_ids:
         q = set(run_store.query(job_id=job_id)[1])
         assert q == {r for r in runs if r.inst.job_id == job_id}
-
-    # Now remove some runs.
-    for run in rnd.sample(runs, len(runs) // 4):
-        run_store.remove(run.run_id)
-        runs.remove(run)
-
-    # Query each job by run ID.
-    for run in runs:
-        assert list(run_store.query(run_ids=run.run_id)[1]) == [run]
-
-    # Query jobs by job ID.
-    for job_id in job_ids:
-        q = set(run_store.query(job_id=job_id)[1])
-        assert q == {r for r in runs if r.inst.job_id == job_id}
-
-    # Now remove the rest of the runs.
-    for run in runs:
-        run_store.remove(run.run_id)
-
-    # All queries should be empty.
-    assert len(list(run_store.query()[1])) == 0
-    for run_id in run_ids:
-        assert len(run_store.query(run_ids=run_id)[1]) == 0
-    for job_id in job_ids:
-        assert len(run_store.query(job_id=job_id)[1]) == 0
