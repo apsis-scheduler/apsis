@@ -1,6 +1,7 @@
 """
 Tests for RunDB.query() predicate pushdown to SQLite.
 """
+
 import ora
 
 from apsis.runs import Instance, Run
