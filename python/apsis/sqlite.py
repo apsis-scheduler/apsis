@@ -7,12 +7,13 @@ import logging
 import ora
 from pathlib import Path
 import sqlalchemy as sa
+from typing import Iterable, Optional
 import ujson
 
 from .actions.base import Action
 from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
-from .lib import itr
+from .lib import itr, py
 from .lib.timing import Timer
 from .runs import Instance, Run
 from .states import State
@@ -444,23 +445,66 @@ class RunDB:
             (run,) = self.__query_runs(conn, TBL_RUNS.c.run_id == run_id)
         return run
 
-    def query(self, *, job_id=None, since=None, min_timestamp=None):
+    def query(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        since=None,
+        state: Iterable[State] | Optional[State] = None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+    ):
         """
+        :param run_ids:
+          If not none, limits to runs with the specified run IDs.
+        :param state:
+          If not none, limits to runs in the specified state(s).
+        :param args:
+          If not none, limits to runs with exactly the specified args dict.
+        :param with_args:
+          If not none, limits to runs that contain at least these args.
+          Ignored if args is also specified.
         :param min_timestamp:
           If not none, limits to runs with timestamp not less than this.
         """
         where = []
+        if run_ids is not None:
+            where.append(TBL_RUNS.c.run_id.in_(list(run_ids)))
         if job_id is not None:
             where.append(TBL_RUNS.c.job_id == job_id)
         if since is not None:
             where.append(TBL_RUNS.c.rowid >= int(since))
+        if state is not None:
+            states = py.tupleize(state)
+            where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
+        if args is not None:
+            args = {str(k): str(v) for k, v in args.items()}
+            for k, v in args.items():
+                where.append(
+                    sa.literal_column(f"json_extract(args, '$.{k}')") == v
+                )
+            where.append(
+                sa.literal_column("(SELECT count(*) FROM json_each(args))")
+                == len(args)
+            )
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            for k, v in with_args.items():
+                where.append(
+                    sa.literal_column(f"json_extract(args, '$.{k}')") == v
+                )
         if min_timestamp is not None:
             where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
 
-        runs = list(self.__query_runs(self.__engine, sa.and_(*where)))
+        expr = sa.and_(*where)
+        with Timer() as timer:
+            runs = list(self.__query_runs(self.__engine, expr))
 
         log.debug(
-            f"query job_id={job_id} since={since} min_timestamp={min_timestamp} → {len(runs)} runs"
+            f"query job_id={job_id} since={since} state={state} "
+            f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
 

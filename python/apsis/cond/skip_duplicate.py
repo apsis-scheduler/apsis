@@ -141,7 +141,7 @@ class BoundSkipDuplicate(NonmonotonicRunStoreCondition):
     def from_jso(cls, jso):
         with check_schema(jso) as pop:
             return cls(
-                check_states=pop("check_states", to_states),
+                check_states=list(pop("check_states", to_states)),
                 target_state=pop("target_state", to_state),
                 inst=pop("instance", Instance.from_jso),
                 run_id=pop("run_id", str),
