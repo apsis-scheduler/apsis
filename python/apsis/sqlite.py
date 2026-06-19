@@ -443,7 +443,10 @@ class RunDB:
 
     def get(self, run_id):
         with self.__engine.begin() as conn:
-            (run,) = self.__query_runs(conn, TBL_RUNS.c.run_id == run_id)
+            run_or_none = list(self.__query_runs(conn, TBL_RUNS.c.run_id == run_id))
+            if len(run_or_none) == 0:
+                raise LookupError(f"no run: {run_id}")
+            (run,) = run_or_none
         return run
 
     def query(
