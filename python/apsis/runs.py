@@ -485,30 +485,37 @@ class RunStore:
           Limits results to runs with the specified args.  Runs may include
           other args not explicitly given.
         """
-        if run_ids is not None:
-            # Fast path for query by run IDs.
-            run_ids = set(iterize(run_ids))
-            runs = (r for i in run_ids if (r := self.get(i)[1]) is not None)
-            if job_id is not None:
-                runs = (r for r in runs if r.inst.job_id == job_id)
-
-        elif job_id is not None:
-            # Fast path if the query is by job ID.
-            runs = itertools.chain(
-                (run for run in self.__expected_runs.values() if run.inst.job_id == job_id),
-                self.__query_run_db(job_id=job_id),
-            )
-
-        else:
-            # Slow path: scan.
-            # FIXME: push predicates down into sqlite queries
-            runs = itertools.chain(
-                self.__expected_runs.values(), self.__query_run_db()
-            )
+        expected = self.__expected_runs.values()
 
         if state is not None:
             state = set(to_state(s) for s in iterize(state))
-            runs = (r for r in runs if r.state in state)
+            expected = (r for r in expected if r.state in state)
+
+        # args takes precedence over with_args
+        if args is not None:
+            args = {str(k): str(v) for k, v in args.items()}
+            with_args = None
+            expected = (r for r in expected if r.inst.args == args)
+
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            expected = (
+                r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
+            )
+
+        if run_ids is not None:
+            run_ids = set(iterize(run_ids))
+            expected = (r for r in expected if r.run_id in run_ids)
+
+        if job_id is not None:
+            expected = (r for r in expected if r.inst.job_id == job_id)
+
+        runs = itertools.chain(
+            expected,
+            self.__query_run_db(
+                run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args
+            ),
+        )
 
         if since is not None:
             since = ora.Time(since)
