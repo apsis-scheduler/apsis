@@ -2,11 +2,11 @@
 Tests conditions.
 """
 
+import time
 from contextlib import closing
 from pathlib import Path
-import pytest
-import time
 
+import pytest
 from instance import ApsisService
 
 # -------------------------------------------------------------------------------

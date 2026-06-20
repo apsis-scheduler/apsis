@@ -1,12 +1,14 @@
 import asyncio
 import logging
+
 import ora
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess
 from apsis.lib.json import check_schema, nkey
 from apsis.lib.parse import parse_duration
 from apsis.lib.timing import Timer
 from apsis.runs import template_expand
+
+from ..base import ProgramRunning, ProgramSuccess, _InternalProgram
 
 log = logging.getLogger(__name__)
 

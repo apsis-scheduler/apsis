@@ -1,10 +1,11 @@
-import aiofiles
 import asyncio
 import logging
 import os
-from pathlib import Path
 import random
 import string
+from pathlib import Path
+
+import aiofiles
 import yaml
 from ruamel.yaml import YAML
 from ruamel.yaml.constructor import DuplicateKeyError
@@ -14,10 +15,10 @@ from .actions.schedule import successor_from_jso
 from .cond import Condition
 from .exc import JobError, JobsDirErrors, SchemaError
 from .lib import itr
-from .lib.json import to_array, to_narray, check_schema
-from .lib.py import tupleize, format_ctor
-from .program import Program, NoOpProgram
-from .schedule import schedule_to_jso, schedule_from_jso
+from .lib.json import check_schema, to_array, to_narray
+from .lib.py import format_ctor, tupleize
+from .program import NoOpProgram, Program
+from .schedule import schedule_from_jso, schedule_to_jso
 
 log = logging.getLogger(__name__)
 

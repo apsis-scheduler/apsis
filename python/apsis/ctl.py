@@ -10,21 +10,22 @@ import asyncio
 import gc
 import logging
 import os
-from pathlib import Path
-import sanic  # must be imported before apsis.lib.asyn
 import sys
+from pathlib import Path
+
+import sanic  # must be imported before apsis.lib.asyn
 
 import apsis.check
 import apsis.cmdline
 import apsis.config
-from apsis.exc import JobsDirErrors
 import apsis.lib.argparse
 import apsis.lib.json
 import apsis.lib.logging
-from apsis.service import DEFAULT_PORT
 import apsis.service.client
 import apsis.service.main
 import apsis.sqlite
+from apsis.exc import JobsDirErrors
+from apsis.service import DEFAULT_PORT
 from apsis.sqlite import SqliteDB
 
 log = logging.getLogger(__name__)

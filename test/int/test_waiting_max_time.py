@@ -1,5 +1,5 @@
-from contextlib import closing
 import time
+from contextlib import closing
 
 from instance import ApsisService
 

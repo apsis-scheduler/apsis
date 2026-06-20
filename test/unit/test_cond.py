@@ -1,5 +1,4 @@
 import pytest
-
 from apsis.cond import Condition
 from apsis.cond.base import ConstantCondition
 from apsis.cond.dependency import Dependency
@@ -8,7 +7,7 @@ from apsis.cond.skip_duplicate import SkipDuplicate
 from apsis.cond.test import TestThreadPolledCondition
 from apsis.exc import SchemaError
 from apsis.jobs import Job
-from apsis.runs import Run, Instance
+from apsis.runs import Instance, Run
 from apsis.states import State
 
 # -------------------------------------------------------------------------------

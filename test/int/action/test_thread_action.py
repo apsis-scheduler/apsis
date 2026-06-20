@@ -3,14 +3,14 @@ Tests thread actions.
 """
 
 import asyncio
-from contextlib import closing
 import json
 import logging
-from pathlib import Path
-import pytest
 import time
-import websockets.client
+from contextlib import closing
+from pathlib import Path
 
+import pytest
+import websockets.client
 from instance import ApsisService
 
 logger = logging.getLogger(__name__)

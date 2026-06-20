@@ -1,13 +1,13 @@
-from contextlib import closing, contextmanager
-import ora
 import os
-from pathlib import Path
-import pytest
 import shutil
 import signal
 import subprocess
+from contextlib import closing, contextmanager
+from pathlib import Path
 from time import sleep
 
+import ora
+import pytest
 from instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"

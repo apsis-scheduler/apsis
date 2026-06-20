@@ -1,8 +1,8 @@
 import errno
 import fcntl
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 # -------------------------------------------------------------------------------
 

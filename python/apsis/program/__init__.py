@@ -1,13 +1,12 @@
 from .base import (
-    Program,
     Output,
     OutputMetadata,
-    ProgramRunning,
+    Program,
     ProgramError,
-    ProgramSuccess,
     ProgramFailure,
+    ProgramRunning,
+    ProgramSuccess,
 )
-
 from .noop import NoOpProgram
 from .procstar.agent import ProcstarProgram, ProcstarShellProgram
 from .procstar.aws.ecs_agent import ProcstarECSProgram

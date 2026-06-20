@@ -1,11 +1,10 @@
 import shutil
 from pathlib import Path
 
+import apsis.jobs
 import ora
 import pytest
 import yaml
-
-import apsis.jobs
 from apsis.check import check_job_dependencies_scheduled
 from apsis.exc import JobsDirErrors, SchemaError
 

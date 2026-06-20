@@ -4,6 +4,7 @@ from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor
 from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State
+
 from .base import Condition, NonmonotonicRunStoreCondition
 
 log = logging.getLogger(__name__)

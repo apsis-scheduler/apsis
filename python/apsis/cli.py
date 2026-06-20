@@ -4,19 +4,20 @@ Main user CLI.
 
 import asyncio
 import logging
-from ora import now, Time
 import random
 import sys
+
 import ujson
 import yaml
+from ora import Time, now
 
 import apsis.cmdline
 import apsis.jobs
 import apsis.lib.argparse
 import apsis.lib.itr
 import apsis.lib.logging
-from apsis.states import State
 import apsis.service.client
+from apsis.states import State
 
 log = logging.getLogger(__name__)
 

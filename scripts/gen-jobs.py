@@ -1,8 +1,9 @@
 import argparse
-import ora
-from pathlib import Path
 import random
 import sys
+from pathlib import Path
+
+import ora
 import yaml
 
 # -------------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+
 import ora
 
 from apsis.lib.json import TypedJso, check_schema, nkey
+
 from .stop import StopSchedule
 
 # -------------------------------------------------------------------------------

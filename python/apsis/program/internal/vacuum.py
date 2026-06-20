@@ -1,8 +1,9 @@
 import logging
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess
 from apsis.lib.json import check_schema
 from apsis.lib.timing import Timer
+
+from ..base import ProgramRunning, ProgramSuccess, _InternalProgram
 
 log = logging.getLogger(__name__)
 

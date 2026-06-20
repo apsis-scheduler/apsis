@@ -16,12 +16,12 @@ may by false, true, or `"starttls"`.  `auth` is none for no auth, or a
 `{username, password}` dict.
 """
 
-from email.mime.text import MIMEText
 import logging
 import os
 import pwd
 import smtplib
 import socket
+from email.mime.text import MIMEText
 
 log = logging.getLogger(__name__)
 

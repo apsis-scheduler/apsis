@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 import functools
 import gc
 import inspect
@@ -7,6 +6,7 @@ import shutil
 import sys
 import time
 import types
+from collections.abc import Mapping
 
 log = logging.getLogger(__name__)
 

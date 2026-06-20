@@ -1,13 +1,12 @@
 """Unit tests for UnavailableProgram rollback safety net."""
 
 import pytest
-
 from apsis.exc import SchemaError
 from apsis.program import Program
 from apsis.program.base import (
+    ProgramError,
     UnavailableProgram,
     _UnavailableRunningProgram,
-    ProgramError,
 )
 
 

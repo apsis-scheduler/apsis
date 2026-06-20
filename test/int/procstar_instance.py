@@ -1,16 +1,16 @@
 import functools
 import logging
 import os
-from procstar.testing.agent import TLS_CERT_PATH
-import procstar.http.client
 import secrets
 import signal
 import subprocess
 import uuid
 
-from apsis.lib.py import merge_mappings
 import instance
+import procstar.http.client
+from apsis.lib.py import merge_mappings
 from instance import find_free_port
+from procstar.testing.agent import TLS_CERT_PATH
 
 logger = logging.getLogger(__name__)
 

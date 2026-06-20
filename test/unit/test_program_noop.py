@@ -1,7 +1,7 @@
 import time
-import pytest
 
 import apsis.program
+import pytest
 
 # -------------------------------------------------------------------------------
 

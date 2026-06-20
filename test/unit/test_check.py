@@ -1,8 +1,8 @@
 from typing import List
 
 import apsis.check
-from apsis.cond.dependency import Dependency
 import apsis.jobs
+from apsis.cond.dependency import Dependency
 from apsis.jobs import InMemoryJobs, Job
 
 # -------------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 import ora
-
 from apsis.jobs import Job
 from apsis.schedule.stop import DurationStopSchedule
 

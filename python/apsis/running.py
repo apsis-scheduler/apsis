@@ -4,16 +4,17 @@ Managing runs in the _running_ state.
 
 import asyncio
 import logging
-from ora import now
 import traceback
+
+from ora import now
 
 from apsis.lib.cmpr import compress_async
 from apsis.program.base import (
     Output,
     OutputMetadata,
-    ProgramRunning,
     ProgramError,
     ProgramFailure,
+    ProgramRunning,
     ProgramSuccess,
     ProgramUpdate,
 )

@@ -1,6 +1,6 @@
-from contextlib import closing
 import json
 import time
+from contextlib import closing
 
 from instance import ApsisService
 

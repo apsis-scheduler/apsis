@@ -4,11 +4,11 @@ Makes schema changes to an existing Apsis database file.
 All changes are applied only if necessary, and thus this script is idempotent.
 """
 
+import logging
+import sqlite3
 from argparse import ArgumentParser
 from contextlib import closing
-import logging
 from pathlib import Path
-import sqlite3
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger()

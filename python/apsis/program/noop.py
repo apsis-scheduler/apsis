@@ -1,20 +1,22 @@
 import asyncio
 import logging
+
 import ora
 
-from .base import (
-    Program,
-    RunningProgram,
-    ProgramRunning,
-    ProgramSuccess,
-    ProgramFailure,
-    ProgramError,
-)
 from apsis.lib import memo
 from apsis.lib.json import check_schema
 from apsis.lib.parse import parse_duration
-from apsis.lib.py import or_none, nstr, nbool
+from apsis.lib.py import nbool, nstr, or_none
 from apsis.runs import template_expand
+
+from .base import (
+    Program,
+    ProgramError,
+    ProgramFailure,
+    ProgramRunning,
+    ProgramSuccess,
+    RunningProgram,
+)
 
 log = logging.getLogger(__name__)
 

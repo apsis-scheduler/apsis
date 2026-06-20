@@ -1,7 +1,8 @@
 import asyncio
-import brotli
-from concurrent.futures import ThreadPoolExecutor
 import logging
+from concurrent.futures import ThreadPoolExecutor
+
+import brotli
 
 from .timing import Timer
 

@@ -1,6 +1,10 @@
 import asyncio
-from dataclasses import dataclass
 import logging
+import uuid
+from dataclasses import dataclass
+from signal import Signals
+from typing import Any, Dict
+
 import ora
 import procstar.spec
 from procstar.agent.exc import (
@@ -9,25 +13,21 @@ from procstar.agent.exc import (
     ProcessUnknownError,
 )
 from procstar.agent.proc import FdData, Interval, Process, Result
-from signal import Signals
-from typing import Any, Dict
-import uuid
 
-from apsis.lib import asyn
-from apsis.lib import memo
+from apsis.lib import asyn, memo
 from apsis.lib.json import check_schema, ifkey
 from apsis.lib.parse import nparse_duration
-from apsis.lib.py import or_none, nstr, get_cfg
+from apsis.lib.py import get_cfg, nstr, or_none
 from apsis.procstar import get_agent_server
 from apsis.program import base
 from apsis.program.base import (
-    ProgramSuccess,
-    ProgramFailure,
     ProgramError,
+    ProgramFailure,
+    ProgramSuccess,
     Timeout,
     get_global_runtime_timeout,
 )
-from apsis.program.process import Stop, BoundStop
+from apsis.program.process import BoundStop, Stop
 from apsis.runs import join_args, template_expand
 
 log = logging.getLogger(__name__)

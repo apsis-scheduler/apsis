@@ -1,8 +1,8 @@
 import asyncio
-import pytest
 import subprocess
 
 import apsis.lib.asyn
+import pytest
 
 # -------------------------------------------------------------------------------
 

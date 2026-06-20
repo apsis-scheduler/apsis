@@ -2,9 +2,9 @@ import asyncio
 import uuid
 from functools import cached_property
 
+import apsis.program.procstar.agent
 import pytest
 
-import apsis.program.procstar.agent
 from test.unit import util
 
 

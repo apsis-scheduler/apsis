@@ -1,19 +1,19 @@
 import asyncio
-from contextlib import contextmanager
 import functools
 import logging
 import os
-from pathlib import Path
 import signal
 import socket
 import subprocess
 import sys
 import tempfile
 import time
-import ujson
-import yaml
+from contextlib import contextmanager
+from pathlib import Path
 
 import apsis.service.client
+import ujson
+import yaml
 from apsis.sqlite import SqliteDB
 
 # -------------------------------------------------------------------------------

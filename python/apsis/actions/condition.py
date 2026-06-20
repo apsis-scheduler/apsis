@@ -1,5 +1,5 @@
-from apsis.lib.json import check_schema
 from apsis.lib import py
+from apsis.lib.json import check_schema
 from apsis.states import State, states_from_jso, states_to_jso
 
 # -------------------------------------------------------------------------------

@@ -2,7 +2,8 @@ import contextlib
 from typing import Mapping
 
 from apsis.exc import SchemaError
-from .imp import import_fqname, get_type_fqname
+
+from .imp import get_type_fqname, import_fqname
 
 # ------------------------------------------------------------------------------
 

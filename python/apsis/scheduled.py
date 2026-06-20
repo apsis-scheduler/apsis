@@ -1,7 +1,8 @@
 import asyncio
 import heapq
 import logging
-from ora import now, Time
+
+from ora import Time, now
 
 from .runs import Run
 

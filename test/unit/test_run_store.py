@@ -1,6 +1,6 @@
-import ora
 import random
 
+import ora
 from apsis.runs import Instance, Run, RunStore
 
 # -------------------------------------------------------------------------------

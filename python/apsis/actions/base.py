@@ -2,9 +2,10 @@ import asyncio
 import concurrent.futures
 import logging
 
-from .condition import Condition
 from apsis.lib import py
 from apsis.lib.json import TypedJso, check_schema
+
+from .condition import Condition
 
 log = logging.getLogger(__name__)
 

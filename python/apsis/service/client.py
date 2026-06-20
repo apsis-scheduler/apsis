@@ -1,16 +1,17 @@
-from collections import namedtuple
-from contextlib import asynccontextmanager
 import http.client
 import io
 import logging
-from ora import Time
 import os
 import re
-import requests
 import time
-import ujson
+from collections import namedtuple
+from contextlib import asynccontextmanager
 from urllib.parse import quote, urlunparse
+
+import requests
+import ujson
 import websockets.client
+from ora import Time
 
 import apsis.service
 from apsis.lib.json import nkey
