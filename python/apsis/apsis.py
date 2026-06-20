@@ -101,21 +101,6 @@ class Apsis:
             min_timestamp = now() - lookback
         self.run_store = RunStore(db, min_timestamp=min_timestamp)
 
-        # Previously we didn't serialize conds or actions.  Bind them if
-        # missing on loaded runs.
-        # FIXME: Remove this after a while.
-        for run in self.run_store.query()[1]:
-            if run.actions is None or run.conds is None or run.program is None:
-                try:
-                    job = self.jobs.get_job(run.inst.job_id)
-                except LookupError:
-                    log.info(f"failed to bind {run}: job not found")
-                    continue
-                try:
-                    bind(run, job, self.jobs)
-                except Exception as exc:
-                    log.info(f"failed to bind {run}: {exc}")
-
         self.outputs = OutputStore(db.output_db)
 
         # Continue scheduling from the last time we handled scheduled jobs.
