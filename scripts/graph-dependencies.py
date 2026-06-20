@@ -2,9 +2,9 @@
 
 import argparse
 import asyncio
-import graphviz
 from pathlib import Path
 
+import graphviz
 from apsis.actions import ScheduleAction
 from apsis.cond.dependency import Dependency
 from apsis.jobs import load_jobs_dir

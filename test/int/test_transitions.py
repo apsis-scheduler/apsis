@@ -3,13 +3,13 @@ Tests basic transitions by running an Apsis service and interacting with it
 via the HTTP client.
 """
 
+import time
 from collections import Counter
 from contextlib import closing
-import ora
 from pathlib import Path
-import pytest
-import time
 
+import ora
+import pytest
 from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"

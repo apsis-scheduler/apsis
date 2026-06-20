@@ -1,10 +1,12 @@
 import logging
+
 import ora
 
 from apsis.lib.calendar import get_calendar
 from apsis.lib.json import check_schema
 from apsis.lib.parse import parse_duration
-from .base import Schedule, DaytimeSpec
+
+from .base import DaytimeSpec, Schedule
 
 log = logging.getLogger(__name__)
 

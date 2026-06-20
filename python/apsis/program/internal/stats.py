@@ -2,10 +2,11 @@ import asyncio
 import json
 import logging
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess, program_outputs
 from apsis.lib.json import check_schema
-from apsis.lib.py import or_none, nstr
+from apsis.lib.py import nstr, or_none
 from apsis.runs import template_expand
+
+from ..base import ProgramRunning, ProgramSuccess, _InternalProgram, program_outputs
 
 log = logging.getLogger(__name__)
 

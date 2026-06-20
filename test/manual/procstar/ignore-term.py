@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-from argparse import ArgumentParser
 import signal
 import time
+from argparse import ArgumentParser
 
 parser = ArgumentParser()
 parser.add_argument("sleep", metavar="SECS", type=float)

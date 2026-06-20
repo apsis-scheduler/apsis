@@ -3,6 +3,7 @@ The global WebSocket server that accepts incoming Procstar agent connections.
 """
 
 import logging
+
 import procstar.agent.server
 
 from apsis.lib.parse import nparse_duration

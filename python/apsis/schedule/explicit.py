@@ -1,7 +1,9 @@
 import bisect
+
 import ora
 
 from apsis.lib.json import check_schema
+
 from .base import Schedule
 
 # -------------------------------------------------------------------------------

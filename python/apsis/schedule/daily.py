@@ -1,8 +1,10 @@
 import logging
+
 import ora
 
 from apsis.lib.calendar import get_calendar
 from apsis.lib.json import check_schema, to_array
+
 from .base import Schedule
 
 log = logging.getLogger(__name__)

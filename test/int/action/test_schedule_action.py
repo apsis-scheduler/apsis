@@ -1,7 +1,7 @@
 from contextlib import closing
 from pathlib import Path
-import pytest
 
+import pytest
 from instance import ApsisService
 
 # -------------------------------------------------------------------------------

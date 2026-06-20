@@ -1,7 +1,7 @@
-from contextlib import suppress
 import os
 import pwd
 import signal
+from contextlib import suppress
 
 # -------------------------------------------------------------------------------
 

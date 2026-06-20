@@ -1,10 +1,10 @@
 import itertools
-import ora
-from ora import Daytime, get_calendar
-import yaml
 
+import ora
+import yaml
 from apsis.lib import itr
-from apsis.schedule import Schedule, DailyIntervalSchedule, DaytimeSpec
+from apsis.schedule import DailyIntervalSchedule, DaytimeSpec, Schedule
+from ora import Daytime, get_calendar
 
 # -------------------------------------------------------------------------------
 

@@ -1,18 +1,18 @@
 from signal import Signals
 
-import pytest
-
 import apsis.program.procstar.agent
-from test.unit.util import create_fddata, create_running_result, create_success_result
+import pytest
 from apsis.exc import SchemaError
 from apsis.program import Program
-from apsis.program.procstar.agent import RunningProcstarProgram, ProcstarProgram
 from apsis.program.base import (
-    ProgramSuccess,
-    ProgramFailure,
     ProgramError,
+    ProgramFailure,
     ProgramRunning,
+    ProgramSuccess,
 )
+from apsis.program.procstar.agent import ProcstarProgram, RunningProcstarProgram
+
+from test.unit.util import create_fddata, create_running_result, create_success_result
 
 # -------------------------------------------------------------------------------
 
@@ -170,8 +170,8 @@ async def test_missing_final_fddata(mock_proc, monkeypatch):
 
     # Third update should now be ProgramError (after timeout) instead of hanging
     final_update = await anext(running_program.updates)
-    assert isinstance(final_update, ProgramError), (
-        f"Expected ProgramError, got {type(final_update)}"
-    )
+    assert isinstance(
+        final_update, ProgramError
+    ), f"Expected ProgramError, got {type(final_update)}"
     assert "Timeout waiting for final FdData" in final_update.message
     assert "exit_code=0" in final_update.message

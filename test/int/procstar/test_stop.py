@@ -1,11 +1,10 @@
-from ora import Time
-from pathlib import Path
 import time
+from pathlib import Path
 
 import pytest
-
+from apsis.jobs import dump_job, jso_to_job
+from ora import Time
 from procstar_instance import ApsisService
-from apsis.jobs import jso_to_job, dump_job
 
 # -------------------------------------------------------------------------------
 

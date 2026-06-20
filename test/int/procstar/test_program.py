@@ -1,9 +1,8 @@
 import asyncio
-from pathlib import Path
 import signal
+from pathlib import Path
 
 import pytest
-
 from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"

@@ -5,10 +5,11 @@ Conditions for integration testing.
 import logging
 import time
 
-from .base import ThreadPolledCondition
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor
-from apsis.runs import template_expand, get_bind_args
+from apsis.runs import get_bind_args, template_expand
+
+from .base import ThreadPolledCondition
 
 log = logging.getLogger(__name__)
 

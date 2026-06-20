@@ -1,15 +1,16 @@
-from collections import namedtuple
-import jinja2
 import logging
-import ora
-from ora import now, Time
 import shlex
+from collections import namedtuple
 
-from .states import State, TRANSITIONS, to_state
+import jinja2
+import ora
+from ora import Time, now
+
 from .lib.asyn import Publisher
 from .lib.calendar import get_calendar
 from .lib.memo import memoize
 from .lib.py import format_ctor, iterize
+from .states import TRANSITIONS, State, to_state
 
 log = logging.getLogger(__name__)
 

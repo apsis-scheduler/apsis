@@ -1,5 +1,4 @@
 import ora
-
 from apsis.schedule.stop import StopSchedule
 
 # -------------------------------------------------------------------------------

@@ -1,10 +1,11 @@
 import logging
 
+from apsis.lib.json import check_schema
+from apsis.runs import Instance, template_expand
+from apsis.states import State
+
 from .base import BaseAction
 from .condition import Condition
-from apsis.lib.json import check_schema
-from apsis.runs import template_expand, Instance
-from apsis.states import State
 
 log = logging.getLogger(__name__)
 

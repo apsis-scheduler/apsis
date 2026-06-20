@@ -1,8 +1,8 @@
-import brotli
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from time import sleep
 
+import brotli
 from procstar_instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"

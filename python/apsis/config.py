@@ -1,6 +1,7 @@
 import logging
-from pathlib import Path
 import warnings
+from pathlib import Path
+
 from ruamel.yaml import YAML
 
 from .lib.json import to_array

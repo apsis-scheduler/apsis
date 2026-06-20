@@ -1,12 +1,13 @@
 import logging
 import os
-import sanic
 import signal
 import urllib.parse
 
+import sanic
+
 import apsis.apsis
 from apsis.exc import JobsDirErrors
-from apsis.lib.api import to_bool, response_json, error
+from apsis.lib.api import error, response_json, to_bool
 
 log = logging.getLogger(__name__)
 

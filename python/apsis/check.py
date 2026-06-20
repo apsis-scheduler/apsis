@@ -4,7 +4,7 @@ import ora
 
 from apsis.cond.dependency import Dependency
 from apsis.jobs import Jobs
-from apsis.runs import Instance, Run, is_template, validate_args, bind
+from apsis.runs import Instance, Run, bind, is_template, validate_args
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------

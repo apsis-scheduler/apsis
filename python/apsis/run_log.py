@@ -1,6 +1,7 @@
 import logging
-from ora import now
 import sys
+
+from ora import now
 
 from apsis.lib.api import run_log_record_to_jso
 

@@ -1,10 +1,11 @@
 import asyncio
 import logging
+import signal
 from pathlib import Path
+
 import sanic
 import sanic.response
 import sanic.router
-import signal
 
 from apsis import __version__
 from apsis.apsis import Apsis
@@ -12,8 +13,8 @@ from apsis.exc import JobsDirErrors
 from apsis.jobs import load_jobs_dir
 from apsis.lib.asyn import cancel_task
 from apsis.sqlite import SqliteDB
-from . import api, control, procstar
-from . import DEFAULT_PORT
+
+from . import DEFAULT_PORT, api, control, procstar
 
 log = logging.getLogger(__name__)
 

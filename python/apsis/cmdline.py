@@ -1,11 +1,11 @@
-from ora import Time, Daytime, now, get_display_time_zone
 import rich.box
 import rich.console
+import rich.theme
+import yaml
+from ora import Daytime, Time, get_display_time_zone, now
 from rich.style import Style
 from rich.table import Table
 from rich.text import Text
-import rich.theme
-import yaml
 
 import apsis.lib.itr
 import apsis.lib.memo

@@ -1,8 +1,9 @@
 import asyncio
 
-from .base import Program, ProgramRunning, ProgramSuccess
 from apsis.lib.json import check_schema
 from apsis.runs import template_expand
+
+from .base import Program, ProgramRunning, ProgramSuccess
 
 # -------------------------------------------------------------------------------
 

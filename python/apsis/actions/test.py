@@ -4,10 +4,11 @@ Action types for testing.
 
 import logging
 
-from .base import BaseAction, ThreadAction
-from .condition import Condition
 from apsis.lib import py
 from apsis.lib.json import check_schema
+
+from .base import BaseAction, ThreadAction
+from .condition import Condition
 
 log = logging.getLogger(__name__)
 

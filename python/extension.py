@@ -1,7 +1,7 @@
 import apsis.actions
 import apsis.lib.json
-from apsis.lib.py import tupleize
 from apsis.lib import email
+from apsis.lib.py import tupleize
 
 # -------------------------------------------------------------------------------
 

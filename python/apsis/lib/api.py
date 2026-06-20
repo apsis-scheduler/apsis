@@ -1,8 +1,9 @@
-import brotli
 import gzip
 import logging
-import sanic
 import zlib
+
+import brotli
+import sanic
 
 from apsis.cond.dependency import Dependency
 from apsis.runs import BIND_ARGS, eval_enabled, is_template, template_expand

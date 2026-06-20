@@ -1,6 +1,6 @@
-from pathlib import Path
 import logging
 import time
+from pathlib import Path
 
 from procstar_instance import ApsisService
 

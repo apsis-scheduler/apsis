@@ -1,8 +1,7 @@
 import brotli
 import pytest
-
+from apsis.program import Output, OutputMetadata
 from apsis.sqlite import SqliteDB
-from apsis.program import OutputMetadata, Output
 
 # -------------------------------------------------------------------------------
 

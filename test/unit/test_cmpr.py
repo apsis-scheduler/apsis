@@ -1,7 +1,7 @@
 import asyncio
+
 import brotli
 import pytest
-
 from apsis.lib.cmpr import compress_async
 
 # -------------------------------------------------------------------------------

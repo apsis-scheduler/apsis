@@ -1,8 +1,8 @@
+import sqlite3
 from contextlib import closing
 from pathlib import Path
-import pytest
-import sqlite3
 
+import pytest
 from instance import ApsisService, run_apsisctl
 
 # -------------------------------------------------------------------------------

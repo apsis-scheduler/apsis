@@ -1,8 +1,7 @@
 import asyncio
-from contextlib import contextmanager, suppress
-import weakref
-
 import logging
+import weakref
+from contextlib import contextmanager, suppress
 
 logger = logging.getLogger(__name__)
 

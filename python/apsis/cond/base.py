@@ -1,7 +1,7 @@
 import asyncio
 import concurrent.futures
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
 from apsis.lib import py
 from apsis.lib.json import TypedJso, check_schema

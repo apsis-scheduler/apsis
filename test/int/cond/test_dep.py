@@ -2,13 +2,13 @@
 Tests dependency conditions.
 """
 
-from contextlib import closing
-import ora
-from pathlib import Path
-import pytest
 import random
 import time
+from contextlib import closing
+from pathlib import Path
 
+import ora
+import pytest
 from instance import ApsisService
 
 # -------------------------------------------------------------------------------

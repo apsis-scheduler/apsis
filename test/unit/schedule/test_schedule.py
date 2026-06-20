@@ -1,9 +1,9 @@
 import itertools
-import ora
-from ora import Date, Time, Daytime, UTC
-import pytest
 
-from apsis.schedule import Schedule, DailySchedule, IntervalSchedule
+import ora
+import pytest
+from apsis.schedule import DailySchedule, IntervalSchedule, Schedule
+from ora import UTC, Date, Daytime, Time
 
 # -------------------------------------------------------------------------------
 

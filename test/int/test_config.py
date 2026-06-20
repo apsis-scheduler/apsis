@@ -1,8 +1,8 @@
 import logging
-import pytest
 
-from ruamel.yaml.constructor import DuplicateKeyError
 import apsis.config
+import pytest
+from ruamel.yaml.constructor import DuplicateKeyError
 
 
 def test_duplicate_key_in_config(tmp_path):

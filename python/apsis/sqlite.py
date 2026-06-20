@@ -4,19 +4,20 @@ Persistent state stored in a sqlite file.
 
 import contextlib
 import logging
-import ora
 from pathlib import Path
+
+import ora
 import sqlalchemy as sa
 import ujson
 
 from .actions.base import Action
 from .cond.base import Condition
-from .jobs import jso_to_job, job_to_jso
+from .jobs import job_to_jso, jso_to_job
 from .lib import itr
 from .lib.timing import Timer
+from .program import Output, OutputMetadata, Program
 from .runs import Instance, Run
 from .states import State
-from .program import Program, Output, OutputMetadata
 
 log = logging.getLogger(__name__)
 

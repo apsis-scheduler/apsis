@@ -1,8 +1,9 @@
 import logging
+
 import sanic
 
 from apsis.lib.api import error, response_json
-from apsis.procstar import get_agent_server, NoServerError
+from apsis.procstar import NoServerError, get_agent_server
 
 log = logging.getLogger(__name__)
 

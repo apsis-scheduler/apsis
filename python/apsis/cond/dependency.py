@@ -4,6 +4,7 @@ from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
 from apsis.runs import Instance, get_bind_args, template_expand
 from apsis.states import State, reachable
+
 from .base import RunStoreCondition, _bind
 
 log = logging.getLogger(__name__)

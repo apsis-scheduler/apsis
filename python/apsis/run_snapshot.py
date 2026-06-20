@@ -1,12 +1,13 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from apsis.lib import py
+
 from .cond import Condition
 from .jobs import Job
-from .program import Program, Output
+from .program import Output, Program
 from .runs import Instance
 from .states import State
-from apsis.lib import py
 
 # -------------------------------------------------------------------------------
 

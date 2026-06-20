@@ -1,8 +1,8 @@
-from contextlib import closing
-import pytest
 import sqlite3
 import time
+from contextlib import closing
 
+import pytest
 from apsis.service.client import APIError
 from procstar_instance import ApsisService
 

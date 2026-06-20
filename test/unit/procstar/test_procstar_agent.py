@@ -1,5 +1,4 @@
 import pytest
-
 from apsis.program.procstar.agent import _combine_fd_data
 from procstar.agent.proc import FdData, Interval
 

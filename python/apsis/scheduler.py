@@ -1,10 +1,12 @@
 import asyncio
 import itertools
 import logging
+
 from ora import Time, now
 
-from .runs import Instance
 from apsis.lib.parse import parse_duration
+
+from .runs import Instance
 
 log = logging.getLogger(__name__)
 

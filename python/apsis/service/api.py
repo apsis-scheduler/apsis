@@ -1,36 +1,38 @@
 import asyncio
 import itertools
 import logging
-import ora
 import re
-import sanic
 import time
+from urllib.parse import parse_qs, unquote
+
+import ora
+import sanic
 import ujson
-from urllib.parse import unquote, parse_qs
 import websockets
 
-from . import messages
+import apsis.lib.itr
 from apsis import procstar
 from apsis.lib import asyn
 from apsis.lib.api import (
-    response_json,
-    error,
-    time_to_jso,
-    to_bool,
     encode_response,
-    runs_to_jso,
-    run_to_summary_jso,
+    error,
     job_to_jso,
     output_metadata_to_jso,
-    run_log_to_jso,
     output_to_http_message,
+    response_json,
+    run_log_to_jso,
+    run_to_summary_jso,
+    runs_to_jso,
+    time_to_jso,
+    to_bool,
 )
-import apsis.lib.itr
 from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
+
 from ..jobs import jso_to_job
 from ..runs import Instance, RunError
+from . import messages
 
 log = logging.getLogger(__name__)
 
