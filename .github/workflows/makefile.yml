@@ -28,6 +28,9 @@ jobs:
       # Pages
       run: uv sync --extra-index-url https://apsis-scheduler.github.io/procstar/simple
 
+    - name: Check Python linting
+      run: uv run ruff check
+
     - name: Check Python formatting
       run: uv run ruff format --check --diff
 
