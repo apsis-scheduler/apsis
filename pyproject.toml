@@ -99,7 +99,7 @@ testpaths = "test"
 markers = ["local_ssh"]
 
 [tool.ruff]
-lint.select = ["F"]
+lint.select = ["F", "I"]
 line-length = 100
 
 [tool.bumpversion]
