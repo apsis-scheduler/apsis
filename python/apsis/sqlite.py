@@ -9,6 +9,7 @@ from pathlib import Path
 import sqlalchemy as sa
 from typing import Iterable, Optional
 import ujson
+from typing import Iterator
 
 from .actions.base import Action
 from .cond.base import Condition
@@ -512,6 +513,53 @@ class RunDB:
 # -------------------------------------------------------------------------------
 
 
+class RunSummaryDB:
+    TABLE = sa.Table(
+        "run_summary",
+        METADATA,
+        sa.Column("run_id", sa.String(), unique=True, nullable=False),
+        # approx run created timestamp for ordering return values, not guaranteed to match runs table
+        sa.Column("timestamp", sa.Float, nullable=False),
+        sa.Column("payload", sa.String(), nullable=False),
+        # TODO: test if this index is necessary
+        sa.Index("idx_timestamp", "timestamp"),
+    )
+
+    def __init__(self, engine):
+        self.__engine = engine
+        self.__connection = engine.connect().connection
+
+    def upsert(self, run_id: str, payload: str) -> None:
+        self.__connection.connection.execute(
+            """
+            INSERT INTO run_summary (
+               run_id,
+               timestamp,
+               payload
+            )
+            VALUES (?, ?, ?)
+            ON CONFLICT (run_id)
+            DO UPDATE SET
+                payload = excluded.payload
+            """,
+            (run_id, dump_time(ora.now()), payload),
+        )
+        self.__connection.connection.commit()
+
+    def query(self, min_timestamp: ora.Time) -> Iterator[str]:
+        with self.__engine.begin() as conn:
+            cursor = conn.execute(
+                sa.select(self.TABLE.c.payload)
+                .where(self.TABLE.c.timestamp >= dump_time(min_timestamp))
+                .order_by(self.TABLE.c.timestamp.desc())
+            )
+            for (payload,) in cursor:
+                yield payload
+
+
+# -------------------------------------------------------------------------------
+
+
 class RunLogDB:
     # FIXME: Rename table to run_log.
 
@@ -700,6 +748,7 @@ class SqliteDB:
         self.next_run_id_db = RunIDDB(engine)
         self.job_db = JobDB(engine)
         self.run_db = RunDB(engine)
+        self.run_summary_db = RunSummaryDB(engine)
         self.run_log_db = RunLogDB(engine)
         self.output_db = OutputDB(engine)
 
