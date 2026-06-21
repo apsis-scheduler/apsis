@@ -737,6 +737,11 @@ class SqliteDB:
 
         return engine
 
+    @property
+    def conn(self):
+        """The underlying raw sqlite3 connection"""
+        return self.__engine.connect().connection.connection
+
     def close(self):
         self.__engine.dispose()
         del self.__engine
