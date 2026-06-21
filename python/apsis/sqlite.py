@@ -518,7 +518,6 @@ class RunSummaryDB:
         "run_summary",
         METADATA,
         sa.Column("run_id", sa.String(), unique=True, nullable=False),
-        # approx run created timestamp for ordering return values, not guaranteed to match runs table
         sa.Column("timestamp", sa.Float, nullable=False),
         sa.Column("payload", sa.String(), nullable=False),
         # TODO: test if this index is necessary
@@ -529,7 +528,10 @@ class RunSummaryDB:
         self.__engine = engine
         self.__connection = engine.connect().connection
 
-    def upsert(self, run_id: str, payload: str) -> None:
+    def upsert(self, run: Run) -> None:
+        from .service.messages import make_run_summary
+
+        payload = ujson.dumps(make_run_summary(run))
         self.__connection.connection.execute(
             """
             INSERT INTO run_summary (
@@ -542,7 +544,7 @@ class RunSummaryDB:
             DO UPDATE SET
                 payload = excluded.payload
             """,
-            (run_id, dump_time(ora.now()), payload),
+            (run.run_id, dump_time(run.timestamp), payload),
         )
         self.__connection.connection.commit()
 

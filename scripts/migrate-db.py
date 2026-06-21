@@ -68,9 +68,6 @@ def migrate_2_4_0(db: SqliteDB):
         log.info("already has run summary")
         return
 
-    import ujson
-    from apsis.service.messages import make_run_summary
-
     log.info("creating table: run_summary")
     conn.execute(
         """
@@ -87,8 +84,7 @@ def migrate_2_4_0(db: SqliteDB):
     runs = db.run_db.query()
 
     for idx, run in enumerate(runs):
-        payload = ujson.dumps(make_run_summary(run))
-        db.run_summary_db.upsert(run.run_id, payload)
+        db.run_summary_db.upsert(run)
 
         if idx % 10000 == 0:
             log.info(f"  backfilled {idx} rows")
