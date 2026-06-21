@@ -416,12 +416,8 @@ class RunStore:
 
         # Persist the changes, but not for expected runs.
         if not run.expected:
-            # FIXME: avoid circular import
-            from .service import messages
-
-            summary_json = ujson.dumps(messages.make_run_summary(run))
             self.__run_db.upsert(run)
-            self.__summary_db.upsert(run.run_id, summary_json)
+            self.__summary_db.upsert(run)
 
         # FIXME: Separate transition() so we don't send this on updates.
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
@@ -533,12 +529,11 @@ class RunStore:
         return now(), list(runs)
 
     def summaries(self) -> Iterator[str]:
-        # FIXME: fix circular import
-        from .service import messages
+        from .lib.api import run_to_summary_jso
 
         for run in self.query()[1]:
             if run.expected:
-                yield ujson.dumps(messages.make_run_summary(run))
+                yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
 
