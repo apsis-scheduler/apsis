@@ -8,6 +8,7 @@ import ora
 from pathlib import Path
 import sqlalchemy as sa
 import ujson
+from typing import Iterator
 
 from .actions.base import Action
 from .cond.base import Condition
@@ -468,6 +469,55 @@ class RunDB:
 # -------------------------------------------------------------------------------
 
 
+class RunSummaryDB:
+    TABLE = sa.Table(
+        "run_summary",
+        METADATA,
+        sa.Column("run_id", sa.String(), unique=True, nullable=False),
+        sa.Column("timestamp", sa.Float, nullable=False),
+        sa.Column("payload", sa.String(), nullable=False),
+        # TODO: test if this index is necessary
+        sa.Index("idx_timestamp", "timestamp"),
+    )
+
+    def __init__(self, engine):
+        self.__engine = engine
+        self.__connection = engine.connect().connection
+
+    def upsert(self, run: Run) -> None:
+        from .service.messages import make_run_summary
+
+        payload = ujson.dumps(make_run_summary(run))
+        self.__connection.connection.execute(
+            """
+            INSERT INTO run_summary (
+               run_id,
+               timestamp,
+               payload
+            )
+            VALUES (?, ?, ?)
+            ON CONFLICT (run_id)
+            DO UPDATE SET
+                payload = excluded.payload
+            """,
+            (run.run_id, dump_time(run.timestamp), payload),
+        )
+        self.__connection.connection.commit()
+
+    def query(self, min_timestamp: ora.Time) -> Iterator[str]:
+        with self.__engine.begin() as conn:
+            cursor = conn.execute(
+                sa.select(self.TABLE.c.payload)
+                .where(self.TABLE.c.timestamp >= dump_time(min_timestamp))
+                .order_by(self.TABLE.c.timestamp.desc())
+            )
+            for (payload,) in cursor:
+                yield payload
+
+
+# -------------------------------------------------------------------------------
+
+
 class RunLogDB:
     # FIXME: Rename table to run_log.
 
@@ -656,6 +706,7 @@ class SqliteDB:
         self.next_run_id_db = RunIDDB(engine)
         self.job_db = JobDB(engine)
         self.run_db = RunDB(engine)
+        self.run_summary_db = RunSummaryDB(engine)
         self.run_log_db = RunLogDB(engine)
         self.output_db = OutputDB(engine)
 
@@ -687,6 +738,11 @@ class SqliteDB:
             engine.execute(f"PRAGMA {pragma} = {value}")
 
         return engine
+
+    @property
+    def conn(self):
+        """The underlying raw sqlite3 connection"""
+        return self.__engine.connect().connection.connection
 
     def close(self):
         self.__engine.dispose()

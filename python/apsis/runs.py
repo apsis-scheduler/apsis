@@ -4,6 +4,9 @@ import logging
 import ora
 from ora import now, Time
 import shlex
+from typing import Iterator
+
+import ujson
 
 from .states import State, TRANSITIONS, to_state
 from .lib.asyn import Publisher
@@ -369,7 +372,10 @@ class RunStore:
 
     def __init__(self, db, *, min_timestamp):
         self.__run_db = db.run_db
+        self.__summary_db = db.run_summary_db
         self.__next_run_id_db = db.next_run_id_db
+
+        self.__min_timestamp = min_timestamp
 
         # Populate cache from database.
         self.__runs = {r.run_id: r for r in self.__run_db.query(min_timestamp=min_timestamp)}
@@ -411,6 +417,7 @@ class RunStore:
         # Persist the changes, but not for expected runs.
         if not run.expected:
             self.__run_db.upsert(run)
+            self.__summary_db.upsert(run)
 
         # FIXME: Separate transition() so we don't send this on updates.
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
@@ -520,6 +527,15 @@ class RunStore:
             runs = (r for r in runs if all(r.inst.args.get(k) == v for k, v in with_args))
 
         return now(), list(runs)
+
+    def summaries(self) -> Iterator[str]:
+        from .lib.api import run_to_summary_jso
+
+        for run in self.query()[1]:
+            if run.expected:
+                yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
+
+        yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
 
     def get_stats(self):
         return {
