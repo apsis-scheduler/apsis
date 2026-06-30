@@ -8,6 +8,9 @@ function getUrl(...path) {
   return url
 }
 
+// WebSocket scheme must match the page protocol: wss on HTTPS, ws otherwise. 
+const WS_PROTOCOL = location.protocol === 'https:' ? 'wss' : 'ws' 
+
 export function getDependenciesUrl(run_id) {
   return getUrl('runs', run_id, 'dependencies')
 }
@@ -22,7 +25,7 @@ export function getOutputDataUrl(run_id, output_id) {
 
 export function getOutputDataUpdatesUrl(run_id, output_id, start) {
   const url = getUrl('runs', run_id, 'output', output_id, 'updates')
-  url.protocol = 'ws'
+  url.protocol = WS_PROTOCOL
   if (start !== undefined)
     url.search = '?start=' + start
   return url
@@ -38,7 +41,7 @@ export function getRerunUrl(run_id) {
 
 export function getRunUpdatesUrl(run_id, init) {
   const url = getUrl('runs', run_id, 'updates')
-  url.protocol = 'ws'
+  url.protocol = WS_PROTOCOL
   if (init)
     url.search = '?init'
   return url
@@ -50,7 +53,7 @@ export function getRunUrl(run_id) {
 
 export function getSummaryUrl(init) {
   const url = getUrl('summary')
-  url.protocol = 'ws'
+  url.protocol = WS_PROTOCOL
   if (init)
     url.search = '?init'
   return url
