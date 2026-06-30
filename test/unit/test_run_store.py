@@ -26,9 +26,15 @@ class MockRunIdDb:
         return f"r{self.i:06d}"
 
 
+class MockRunSummaryDb:
+    def upsert(self, run):
+        pass
+
+
 class MockDb:
     def __init__(self, runs=()):
         self.run_db = MockRunDb(runs)
+        self.run_summary_db = MockRunSummaryDb()
         self.next_run_id_db = MockRunIdDb()
 
 

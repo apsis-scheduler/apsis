@@ -244,11 +244,6 @@ def job_to_jso(job, jobs=None) -> dict:
 
 
 def run_to_summary_jso(run):
-    jso = run._summary_jso_cache
-    if jso is not None:
-        # Use the cached JSO.
-        return jso
-
     jso = {
         "job_id": run.inst.job_id,
         "args": run.inst.args,
@@ -264,8 +259,6 @@ def run_to_summary_jso(run):
         deps = [[c.job_id, c.args] for c in run.conds if isinstance(c, Dependency)]
         if len(deps) > 0:
             jso["dependencies"] = deps
-
-    run._summary_jso_cache = jso
     return jso
 
 

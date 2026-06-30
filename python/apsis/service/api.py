@@ -502,6 +502,14 @@ async def _send_chunked(msgs, ws, prefix):
         await asyncio.sleep(WS_CHUNK_SLEEP)
 
 
+async def _send_raw(json_msgs, ws, prefix):
+    for chunk in apsis.lib.itr.chunks(json_msgs, WS_CHUNK):
+        json = "[" + ",".join(chunk) + "]"
+        log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
+        await ws.send(json)
+        await asyncio.sleep(WS_CHUNK_SLEEP)
+
+
 # Message types (see apsis.service.messages) to include in summary.
 SUMMARY_MSG_TYPES = {
     "agent_conn",
@@ -548,15 +556,11 @@ async def websocket_summary(request, ws):
                         messages.make_agent_conn(c) for c in agent_server.connections.values()
                     )
 
-                # Send summaries of all runs.
-                _, runs = apsis.run_store.query()
-                # Reverse runs to have the latest runs first.
-                # This depends on 'apsis.run_store.query()' returning runs in ascending order.
-                runs = runs[::-1]
-                run_msgs = (messages.make_run_summary(r) for r in runs)
-
-                msgs = itertools.chain(job_msgs, conn_msgs, run_msgs)
+                msgs = itertools.chain(job_msgs, conn_msgs)
                 await _send_chunked(msgs, ws, prefix)
+
+                # send run summaries for runs that existed before this websocket connection
+                await _send_raw(apsis.run_store.summaries(), ws, prefix)
 
             while not sub.closed:
                 # Wait for the next msg, then grab all that show up in a short time.
@@ -573,6 +577,10 @@ async def websocket_summary(request, ws):
             # task is cancelled in the event of abnormal websocket closure, usually if
             # websocket close due to a ping timeout can't complete successfully
             log.warning(f"{prefix} task cancelled after {time.monotonic() - connect_time:.2f}s")
+            raise
+        except Exception:
+            # sanic swallows stacktraces
+            log.exception(f"{prefix} exception")
             raise
 
     log.debug(f"{prefix} done")
