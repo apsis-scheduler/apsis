@@ -482,12 +482,16 @@ class RunDB:
         if args is not None:
             args = {str(k): str(v) for k, v in args.items()}
             for k, v in args.items():
-                where.append(sa.literal_column(f"json_extract(args, '$.{k}')") == v)
+                # escape key for JSON path to handle dots, quotes, etc
+                path = '$."' + k.replace('"', '\\"') + '"'
+                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
             where.append(sa.literal_column("(SELECT count(*) FROM json_each(args))") == len(args))
         elif with_args is not None:
             with_args = {str(k): str(v) for k, v in with_args.items()}
             for k, v in with_args.items():
-                where.append(sa.literal_column(f"json_extract(args, '$.{k}')") == v)
+                # escape key for JSON path to handle dots, quotes, etc
+                path = '$."' + k.replace('"', '\\"') + '"'
+                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
         if min_timestamp is not None:
             where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
 
