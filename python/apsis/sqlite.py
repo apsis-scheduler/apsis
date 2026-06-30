@@ -451,7 +451,7 @@ class RunDB:
         run_ids=None,
         job_id=None,
         since=None,
-        state: Iterable[State] | Optional[State] = None,
+        state: Iterable[State] | State | None = None,
         args=None,
         with_args=None,
         min_timestamp=None,
