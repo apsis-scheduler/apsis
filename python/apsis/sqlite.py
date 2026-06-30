@@ -495,8 +495,11 @@ class RunDB:
         with Timer() as timer:
             runs = list(self.__query_runs(self.__engine, expr))
 
+        def fmt_params(**kwargs):
+            return " ".join(f"{k}={v}" for k, v in kwargs.items() if v is not None)
+
         log.debug(
-            f"query job_id={job_id} since={since} state={state} "
+            f"query {fmt_params(run_ids=run_ids, job_id=job_id, since=since, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
