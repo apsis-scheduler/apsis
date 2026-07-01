@@ -50,10 +50,11 @@ async def _process_updates(apsis, run):
     """
     Processes program `updates` for `run` until the program is finished.
     """
-    assert run._running_program is not None
+    running_program = apsis._running_programs.get(run.run_id)
+    assert running_program is not None
 
     run_id = run.run_id
-    updates = aiter(run._running_program.updates)
+    updates = aiter(running_program.updates)
 
     try:
         # Handle startup phase - loop until we get ProgramRunning or an error
@@ -182,4 +183,4 @@ async def _process_updates(apsis, run):
         apsis._transition(run, State.error, force=True)
 
     finally:
-        run._running_program = None
+        apsis._running_programs.pop(run.run_id, None)

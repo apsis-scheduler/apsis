@@ -1,4 +1,5 @@
 from collections import namedtuple
+import itertools
 import jinja2
 import logging
 import ora
@@ -371,30 +372,31 @@ class RunStore:
         self.__run_db = db.run_db
         self.__next_run_id_db = db.next_run_id_db
 
-        # Populate cache from database.
-        self.__runs = {r.run_id: r for r in self.__run_db.query(min_timestamp=min_timestamp)}
-        # Keep a lookup of runs by job ID.
-        self.__runs_by_job = {}
-        for run in self.__runs.values():
-            self.__runs_by_job.setdefault(run.inst.job_id, set()).add(run)
+        self.__min_timestamp = min_timestamp
+
+        # in-memory storage of scheduled runs that came from a schedule ie not reruns or adhoc runs
+        # all runs are not expected unless they cam from the scheduler
+        self.__expected_runs: dict[str, Run] = {}
 
         # Publisher for run transitions.  Messages are `Message` objects;
         # `state` is none if the run is removed.
         self.publisher = Publisher()
+
+    def __query_run_db(self, *args, **kwargs) -> list[Run]:
+        return self.__run_db.query(*args, min_timestamp=self.__min_timestamp, **kwargs)
 
     def add(self, run):
         assert run.state == State.new
 
         timestamp = now()
         run_id = self.__next_run_id_db.get_next_run_id()
-        assert run.run_id not in self.__runs
 
         run.run_id = run_id
         run.timestamp = timestamp
 
         log.debug(f"new run: {run}")
-        self.__runs[run.run_id] = run
-        self.__runs_by_job.setdefault(run.inst.job_id, set()).add(run)
+        if run.expected:
+            self.__expected_runs[run.run_id] = run
         self.update(run, timestamp)
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
 
@@ -405,8 +407,11 @@ class RunStore:
 
         Persists the run if necessary.
         """
-        # Make sure we know about this run.
-        assert self.__runs[run.run_id] is run
+        if run.state != State.new:
+            try:
+                _ = self.get(run.run_id)
+            except LookupError:
+                raise ValueError(f"unable to update unknown run: {run.run_id}")
 
         # Persist the changes, but not for expected runs.
         if not run.expected:
@@ -422,11 +427,11 @@ class RunStore:
         :param expected:
           If true, only an expected run may be removed.
         """
-        run = self.__runs[run_id]
-        assert not expected or run.expected, f"can't remove run {run_id}; not expected"
+        if not expected:
+            raise ValueError("removing unexpected runs not supported")
 
-        del self.__runs[run_id]
-        self.__runs_by_job[run.inst.job_id].remove(run)
+        run = self.__expected_runs[run_id]
+        del self.__expected_runs[run_id]
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
@@ -436,33 +441,31 @@ class RunStore:
           True if `run_id` is not in the store, either because it was
           successfully retired, or because it wasn't there to begin with.
         """
+        log.warning("no-op: RunStore.retire() deprecated")
         try:
-            run = self.__runs[run_id]
-        except KeyError:
+            _, run = self.get(run_id)
+        except LookupError:
             return True
         else:
-            if run.state.finished:
-                self.remove(run_id, expected=False)
-                return True
-            else:
-                return False
-
-    def retire_old(self, min_timestamp):
-        """
-        Retires older runs from memory.
-
-        Only runs in a finished state are retired.  Runs are not removed from
-        the database.
-        """
-        old = [r for r in self.__runs.values() if r.timestamp < min_timestamp]
-        count = sum(self.retire(r.run_id) for r in old)
-        log.info(f"retired {count} runs before {min_timestamp}")
+            # we still need to report if the run is finished for the internal archive program, which shouldn't archive
+            # unfinished runs
+            return run.state.finished
 
     def __contains__(self, run_id):
-        return run_id in self.__runs
+        if run_id in self.__expected_runs:
+            return True
+        try:
+            self.__run_db.get(run_id)
+        except LookupError:
+            return False
+        else:
+            return True
 
     def get(self, run_id):
-        run = self.__runs[run_id]
+        if run_id in self.__expected_runs:
+            run = self.__expected_runs[run_id]
+        else:
+            run = self.__run_db.get(run_id)
         return now(), run
 
     # FIXME: Remove `when` from the result; I think we don't use it.
@@ -488,24 +491,37 @@ class RunStore:
           Limits results to runs with the specified args.  Runs may include
           other args not explicitly given.
         """
-        if run_ids is not None:
-            # Fast path for query by run IDs.
-            run_ids = set(iterize(run_ids))
-            runs = (r for i in run_ids if (r := self.__runs.get(i)) is not None)
-            if job_id is not None:
-                runs = (r for r in runs if r.inst.job_id == job_id)
-
-        elif job_id is not None:
-            # Fast path if the query is by job ID.
-            runs = self.__runs_by_job.get(job_id, ())
-
-        else:
-            # Slow path: scan.
-            runs = self.__runs.values()
+        expected = self.__expected_runs.values()
 
         if state is not None:
             state = set(to_state(s) for s in iterize(state))
-            runs = (r for r in runs if r.state in state)
+            expected = (r for r in expected if r.state in state)
+
+        # args takes precedence over with_args
+        if args is not None:
+            args = {str(k): str(v) for k, v in args.items()}
+            with_args = None
+            expected = (r for r in expected if r.inst.args == args)
+
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            expected = (
+                r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
+            )
+
+        if run_ids is not None:
+            run_ids = set(iterize(run_ids))
+            expected = (r for r in expected if r.run_id in run_ids)
+
+        if job_id is not None:
+            expected = (r for r in expected if r.inst.job_id == job_id)
+
+        runs = itertools.chain(
+            expected,
+            self.__query_run_db(
+                run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args
+            ),
+        )
 
         if since is not None:
             since = ora.Time(since)
@@ -523,6 +539,7 @@ class RunStore:
 
     def get_stats(self):
         return {
-            "num_runs": len(self.__runs),
+            "num_runs": len(self.__expected_runs)
+            + self.__run_db.count_runs(min_timestamp=self.__min_timestamp),
             "publisher": self.publisher.get_stats(),
         }

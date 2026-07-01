@@ -1,55 +1,35 @@
+"""
+Tests for RunStore with real SQLite database.
+"""
+
 import ora
 import random
 
 from apsis.runs import Instance, Run, RunStore
-
-# -------------------------------------------------------------------------------
-
-
-class MockRunDb:
-    def __init__(self, runs=()):
-        self.__runs = runs
-
-    def query(self, min_timestamp=None):
-        return iter(self.__runs)
-
-    def upsert(self, run):
-        pass
+from apsis.sqlite import SqliteDB
+from apsis.states import State
 
 
-class MockRunIdDb:
-    def __init__(self):
-        self.i = 0
+def test_runs_by_job(tmp_path):
+    """Test RunStore query filtering by job_id with expected runs."""
+    # Setup database
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(path=db_path)
+    db = SqliteDB.open(db_path)
 
-    def get_next_run_id(self):
-        self.i += 1
-        return f"r{self.i:06d}"
-
-
-class MockDb:
-    def __init__(self, runs=()):
-        self.run_db = MockRunDb(runs)
-        self.next_run_id_db = MockRunIdDb()
-
-
-# -------------------------------------------------------------------------------
-
-
-def test_runs_by_job():
     rnd = random.Random(0)
-    n = 10000
+    n = 1000
 
     job_ids = [f"job{i:02d}" for i in range(100)]
     rnd.shuffle(job_ids)
 
     # Create a random run store and add a bunch of runs.
-    run_store = RunStore(MockDb(), min_timestamp=ora.now())
+    run_store = RunStore(db, min_timestamp=ora.now())
     for _ in range(n):
         run = Run(Instance(rnd.choice(job_ids), {}), expected=True)
         run_store.add(run)
 
     query = lambda *a, **k: run_store.query(*a, **k)[1]
-    get = lambda r: run_store.get(r)[1]
 
     run_ids = [r.run_id for r in query()]
     assert len(run_ids) == n
@@ -92,63 +72,61 @@ def test_runs_by_job():
     assert r == set(run_ids)
 
 
-def test_run_store_populate():
+def test_run_store_populate(tmp_path):
     """
-    Tests a RunStore populated from existing runs.
+    Tests a RunStore populated from existing runs in the database.
 
-    Existing runs come from a mocked run DB.
+    Simulates loading runs from SQLite that were persisted in a previous session.
+    These runs are NOT in __expected_runs, so remove() doesn't apply.
     """
+    # Setup database
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(path=db_path)
+    db = SqliteDB.open(db_path)
+
     rnd = random.Random(0)
-    n = 10000
+    n = 1000
 
     job_ids = [f"job{i:02d}" for i in range(100)]
     rnd.shuffle(job_ids)
 
-    # Since we're not calling run_store.add(), we have to assign run IDs.
-    run_ids = MockRunIdDb()
+    # Set a base timestamp for runs that's definitely in the past.
+    base_timestamp = ora.now() - 3600  # 1 hour ago
 
+    # Pre-populate the database with runs (simulating previous session).
+    # These are persisted (expected=False) so they go into the DB.
     def make_run():
-        run = Run(Instance(rnd.choice(job_ids), {}), expected=True)
-        run.run_id = run_ids.get_next_run_id()
+        inst = Instance(rnd.choice(job_ids), {})
+        run = Run(inst, expected=False)
+        run.run_id = db.next_run_id_db.get_next_run_id()
+        run.timestamp = base_timestamp
+        run.state = State.success
+        run.times = {State.success.name: run.timestamp}
+        run.meta = {}
+        db.run_db.upsert(run)
         return run
 
     runs = [make_run() for _ in range(n)]
     run_ids = {r.run_id for r in runs}
     assert len(run_ids) == len(runs)
 
-    # Create a random run store and add a bunch of runs.
-    run_store = RunStore(MockDb(runs), min_timestamp=ora.now())
+    # Create a new run store with min_timestamp before the runs.
+    run_store = RunStore(db, min_timestamp=base_timestamp - 1)
 
-    # Query each job by run ID.
+    # Query each run by run ID.
     for run in runs:
-        assert list(run_store.query(run_ids=run.run_id)[1]) == [run]
+        result = list(run_store.query(run_ids=run.run_id)[1])
+        assert len(result) == 1
+        assert result[0].run_id == run.run_id
+        assert result[0].inst.job_id == run.inst.job_id
 
-    # Query jobs by job ID.
+        assert run.run_id in run_store
+
+    assert "rNOTEXIST" not in run_store
+
+    # Query runs by job ID.
     for job_id in job_ids:
         q = set(run_store.query(job_id=job_id)[1])
-        assert q == {r for r in runs if r.inst.job_id == job_id}
-
-    # Now remove some runs.
-    for run in rnd.sample(runs, len(runs) // 4):
-        run_store.remove(run.run_id)
-        runs.remove(run)
-
-    # Query each job by run ID.
-    for run in runs:
-        assert list(run_store.query(run_ids=run.run_id)[1]) == [run]
-
-    # Query jobs by job ID.
-    for job_id in job_ids:
-        q = set(run_store.query(job_id=job_id)[1])
-        assert q == {r for r in runs if r.inst.job_id == job_id}
-
-    # Now remove the rest of the runs.
-    for run in runs:
-        run_store.remove(run.run_id)
-
-    # All queries should be empty.
-    assert len(list(run_store.query()[1])) == 0
-    for run_id in run_ids:
-        assert len(run_store.query(run_ids=run_id)[1]) == 0
-    for job_id in job_ids:
-        assert len(run_store.query(job_id=job_id)[1]) == 0
+        expected = {r for r in runs if r.inst.job_id == job_id}
+        # Compare by run_id since objects may be different instances
+        assert {r.run_id for r in q} == {r.run_id for r in expected}
