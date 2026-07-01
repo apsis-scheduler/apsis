@@ -451,15 +451,6 @@ class RunStore:
             # unfinished runs
             return run.state.finished
 
-    def retire_old(self, min_timestamp):
-        """
-        Retires older runs from memory.
-
-        Only runs in a finished state are retired.  Runs are not removed from
-        the database.
-        """
-        log.warning("no-op: RunStore.retire_old() deprecated")
-
     def __contains__(self, run_id):
         return run_id in self.__expected_runs or bool(self.__run_db.get(run_id))
 

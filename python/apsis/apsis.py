@@ -189,9 +189,6 @@ class Apsis:
             self.__tasks.add("agent_conn", procstar.agent_conn(self))
             self.__tasks.add("agent_server", run_agent_server)
 
-        # Start a task to retire old runs.
-        self.__tasks.add("retire_loop", _retire_loop(self))
-
         # We're running now.
         self.running_flag.set()
 
@@ -582,6 +579,7 @@ class Apsis:
 
         # Ask the run to stop.
         running_program = self._running_programs.get(run.run_id)
+
         async def stop():
             try:
                 await running_program.stop()
@@ -863,25 +861,3 @@ async def reload_jobs(apsis, *, dry_run=False):
             publish(messages.make_job(apsis.jobs.get_job(job_id), jobs=apsis.jobs))
 
     return rem_ids, add_ids, chg_ids
-
-
-async def _retire_loop(apsis):
-    """
-    Periodically retires runs older than `runs.lookback`.
-    """
-    log.info("starting retire loop")
-    runs_cfg = apsis.cfg.get("runs", {})
-    retire_lookback = runs_cfg.get("lookback", None)
-    if retire_lookback is None:
-        log.info("no runs.lookback in config; no retire loop")
-        return
-
-    while True:
-        try:
-            min_timestamp = now() - retire_lookback
-            apsis.run_store.retire_old(min_timestamp)
-        except Exception:
-            log.error("retire failed", exc_info=True)
-            return
-
-        await asyncio.sleep(60)
