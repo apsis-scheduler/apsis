@@ -120,6 +120,10 @@ def test_run_store_populate(tmp_path):
         assert result[0].run_id == run.run_id
         assert result[0].inst.job_id == run.inst.job_id
 
+        assert run.run_id in run_store
+
+    assert "rNOTEXIST" not in run_store
+
     # Query runs by job ID.
     for job_id in job_ids:
         q = set(run_store.query(job_id=job_id)[1])

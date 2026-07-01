@@ -451,7 +451,14 @@ class RunStore:
             return run.state.finished
 
     def __contains__(self, run_id):
-        return run_id in self.__expected_runs or bool(self.__run_db.get(run_id))
+        if run_id in self.__expected_runs:
+            return True
+        try:
+            self.__run_db.get(run_id)
+        except LookupError:
+            return False
+        else:
+            return True
 
     def get(self, run_id):
         if run_id in self.__expected_runs:
