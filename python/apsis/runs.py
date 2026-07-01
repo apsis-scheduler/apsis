@@ -540,7 +540,7 @@ class RunStore:
 
     def get_stats(self):
         return {
-            # FIXME: faster path to counting in-window DB runs
-            "num_runs": len(self.__expected_runs) + len(self.__query_run_db()),
+            "num_runs": len(self.__expected_runs)
+            + self.__run_db.count_runs(min_timestamp=self.__min_timestamp),
             "publisher": self.publisher.get_stats(),
         }

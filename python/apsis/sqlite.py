@@ -316,6 +316,50 @@ class RunDB:
         # FIXME: Do we need to clean this up?
 
     @staticmethod
+    def __build_where(
+        *,
+        run_ids=None,
+        job_id=None,
+        since=None,
+        state=None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+    ):
+        """
+        Build WHERE clause for run queries.
+
+        Returns a SQLAlchemy expression suitable for use in WHERE clauses.
+        """
+        where = []
+        if run_ids is not None:
+            where.append(TBL_RUNS.c.run_id.in_(list(run_ids)))
+        if job_id is not None:
+            where.append(TBL_RUNS.c.job_id == job_id)
+        if since is not None:
+            where.append(TBL_RUNS.c.rowid >= int(since))
+        if state is not None:
+            states = py.tupleize(state)
+            where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
+        if args is not None:
+            args = {str(k): str(v) for k, v in args.items()}
+            for k, v in args.items():
+                # escape key for JSON path to handle dots, quotes, etc
+                path = '$."' + k.replace('"', '\\"') + '"'
+                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
+            where.append(sa.literal_column("(SELECT count(*) FROM json_each(args))") == len(args))
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            for k, v in with_args.items():
+                # escape key for JSON path to handle dots, quotes, etc
+                path = '$."' + k.replace('"', '\\"') + '"'
+                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
+        if min_timestamp is not None:
+            where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
+
+        return sa.and_(*where)
+
+    @staticmethod
     def __query_runs(conn, expr):
         query = TBL_RUNS_SELECT.where(expr)
         cursor = conn.execute(query)
@@ -473,33 +517,15 @@ class RunDB:
         :param min_timestamp:
           If not none, limits to runs with timestamp not less than this.
         """
-        where = []
-        if run_ids is not None:
-            where.append(TBL_RUNS.c.run_id.in_(list(run_ids)))
-        if job_id is not None:
-            where.append(TBL_RUNS.c.job_id == job_id)
-        if since is not None:
-            where.append(TBL_RUNS.c.rowid >= int(since))
-        if state is not None:
-            states = py.tupleize(state)
-            where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
-        if args is not None:
-            args = {str(k): str(v) for k, v in args.items()}
-            for k, v in args.items():
-                # escape key for JSON path to handle dots, quotes, etc
-                path = '$."' + k.replace('"', '\\"') + '"'
-                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
-            where.append(sa.literal_column("(SELECT count(*) FROM json_each(args))") == len(args))
-        elif with_args is not None:
-            with_args = {str(k): str(v) for k, v in with_args.items()}
-            for k, v in with_args.items():
-                # escape key for JSON path to handle dots, quotes, etc
-                path = '$."' + k.replace('"', '\\"') + '"'
-                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
-        if min_timestamp is not None:
-            where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
-
-        expr = sa.and_(*where)
+        expr = self.__build_where(
+            run_ids=run_ids,
+            job_id=job_id,
+            since=since,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_timestamp,
+        )
         with Timer() as timer:
             runs = list(self.__query_runs(self.__engine, expr))
 
@@ -511,6 +537,33 @@ class RunDB:
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
+
+    def count_runs(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        since=None,
+        state: Iterable[State] | State | None = None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+    ):
+        """
+        Parameters are the same as query(), but returns just the count.
+        """
+        expr = self.__build_where(
+            run_ids=run_ids,
+            job_id=job_id,
+            since=since,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_timestamp,
+        )
+        query = sa.select(sa.func.count()).select_from(TBL_RUNS).where(expr)
+        with self.__engine.connect() as conn:
+            return conn.execute(query).scalar()
 
 
 # -------------------------------------------------------------------------------
