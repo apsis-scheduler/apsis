@@ -10,8 +10,29 @@ class MockRunDb:
     def __init__(self, runs=()):
         self.__runs = runs
 
-    def query(self, min_timestamp=None):
-        return iter(self.__runs)
+    def query(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        since=None,
+        state=None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+    ):
+        # simple filtering for tests - only implement what's needed
+        filtered = self.__runs
+        if job_id is not None:
+            filtered = [r for r in filtered if r.inst.job_id == job_id]
+        if run_ids is not None:
+            # handle both string and iterable
+            if isinstance(run_ids, str):
+                run_ids_set = {run_ids}
+            else:
+                run_ids_set = set(run_ids)
+            filtered = [r for r in filtered if r.run_id in run_ids_set]
+        return iter(filtered)
 
     def upsert(self, run):
         pass

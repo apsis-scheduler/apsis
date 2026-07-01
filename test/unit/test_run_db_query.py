@@ -204,3 +204,65 @@ def test_query_args_with_spaces_in_key(tmp_path):
 
     runs = run_db.query(args={"key with spaces": "value"})
     assert [r.run_id for r in runs] == [r1.run_id]
+
+
+def test_count_runs_all(tmp_path):
+    """count_runs() returns total count without deserialization."""
+    run_db = _setup(tmp_path)
+    _make_run(run_db, "job/a", {"date": "2026-01-01"})
+    _make_run(run_db, "job/b", {"date": "2026-01-02"})
+    _make_run(run_db, "job/c", {"date": "2026-01-03"})
+
+    count = run_db.count_runs()
+    assert count == 3
+
+
+def test_count_runs_by_job_id(tmp_path):
+    """count_runs() filters by job_id."""
+    run_db = _setup(tmp_path)
+    _make_run(run_db, "job/a", {})
+    _make_run(run_db, "job/a", {})
+    _make_run(run_db, "job/b", {})
+
+    assert run_db.count_runs(job_id="job/a") == 2
+    assert run_db.count_runs(job_id="job/b") == 1
+
+
+def test_count_runs_by_state(tmp_path):
+    """count_runs() filters by state."""
+    run_db = _setup(tmp_path)
+    _make_run(run_db, "job/a", {}, state=State.success)
+    _make_run(run_db, "job/a", {}, state=State.failure)
+    _make_run(run_db, "job/a", {}, state=State.success)
+
+    assert run_db.count_runs(state=State.success) == 2
+    assert run_db.count_runs(state=State.failure) == 1
+    assert run_db.count_runs(state=[State.success, State.failure]) == 3
+
+
+def test_count_runs_by_args(tmp_path):
+    """count_runs() filters by exact args match."""
+    run_db = _setup(tmp_path)
+    _make_run(run_db, "job/a", {"date": "2026-01-01"})
+    _make_run(run_db, "job/a", {"date": "2026-01-01"})
+    _make_run(run_db, "job/a", {"date": "2026-01-02"})
+
+    assert run_db.count_runs(args={"date": "2026-01-01"}) == 2
+    assert run_db.count_runs(args={"date": "2026-01-02"}) == 1
+
+
+def test_count_runs_matches_query_length(tmp_path):
+    """count_runs() returns same count as len(query()) for same filters."""
+    run_db = _setup(tmp_path)
+    _make_run(run_db, "job/a", {"date": "2026-01-01"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "2026-01-01"}, state=State.failure)
+    _make_run(run_db, "job/b", {"date": "2026-01-02"}, state=State.success)
+    _make_run(run_db, "job/b", {"date": "2026-01-03"}, state=State.success)
+
+    # Test various combinations
+    assert run_db.count_runs() == len(list(run_db.query()))
+    assert run_db.count_runs(job_id="job/a") == len(list(run_db.query(job_id="job/a")))
+    assert run_db.count_runs(state=State.success) == len(list(run_db.query(state=State.success)))
+    assert run_db.count_runs(job_id="job/b", state=State.success) == len(
+        list(run_db.query(job_id="job/b", state=State.success))
+    )
