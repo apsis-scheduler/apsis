@@ -489,7 +489,16 @@ async def runs(request):
         with_args=args,
     )
 
-    return response_json(runs_to_jso(request.app, when, runs, summary=summary))
+    # offload JSON serialization to thread pool to avoid blocking event loop
+    # runs is a generator, so materialize it first in the async context
+    runs_list = list(runs)
+
+    def serialize_runs():
+        return runs_to_jso(request.app, when, runs_list, summary=summary)
+
+    result = await asyncio.to_thread(serialize_runs)
+
+    return response_json(result)
 
 
 async def _send_chunked(msgs, ws, prefix):
