@@ -4,25 +4,27 @@ Regression test for the ``GET /api/v1/runs`` endpoint.
 PR #539 moved run serialization off the event loop into a background thread
 (``asyncio.to_thread``) to avoid blocking for tens of seconds on an unfiltered
 query.  The serialization functions (``runs_to_jso`` → ``run_to_summary_jso``)
-read and cache mutable ``Run`` state -- notably ``run.times``, which
-``Run._transition`` mutates in place.  Running serialization concurrently with
-the event loop (which keeps transitioning runs) is therefore a data race: e.g.
-``for n, t in run.times.items()`` can raise ``RuntimeError: dictionary changed
-size during iteration``.
+read mutable ``Run`` state -- notably ``run.times``, which ``Run._transition``
+mutates in place.  Running serialization in a thread while the event loop keeps
+transitioning those same runs is therefore a data race: e.g.
+``for n, t in run.times.items()`` can observe the dict being mutated and raise
+``RuntimeError: dictionary changed size during iteration``.
+
+Before #539 this could not happen: ``runs_to_jso`` has no ``await``, so it ran
+atomically with respect to every other coroutine, and no run could transition
+partway through serialization.
 
 This test drives the real ``api.runs`` handler in process (no server, no
-network, temp/mock DB only -- never a production Apsis) while a concurrent task
-transitions the same runs, and asserts the handler never crashes.
-
-It fails against the naive ``asyncio.to_thread(serialize)`` implementation and
-passes once serialization is made safe against concurrent mutation (e.g. by
-snapshotting run state on the event loop before crossing the thread boundary).
+network, mock DB only -- never a production Apsis) while a concurrent task
+transitions the same runs, and asserts the handler never crashes.  It fails
+against the ``asyncio.to_thread`` implementation and passes once serialization
+is atomic with respect to run transitions again (e.g. by reverting #539, or by
+serializing cooperatively on the event loop).
 """
 
 import asyncio
 import ora
 import pytest
-import sys
 
 import apsis.service.api as api
 from apsis.runs import Instance, Run, RunStore
@@ -64,7 +66,9 @@ class _FakeArgs(dict):
 
     The handler calls ``.pop(key, default)`` (returning the raw default) and
     iterates ``.items()``; an empty mapping exercises the unfiltered path,
-    which is exactly the case PR #539 targets.
+    which is exactly the case PR #539 targets.  With no ``summary`` arg the
+    handler defaults to ``summary=False`` -- the same as the ``apsis runs`` CLI
+    command, whose client does not send ``summary``.
     """
 
     def pop(self, key, default=None):
@@ -88,6 +92,18 @@ class _FakeRequest:
         self.args = _FakeArgs()
 
 
+# Number of runs to serve per call.  Large enough that serialization spans
+# several GIL thread-switch intervals, giving the concurrent transitions a
+# window to collide with the serializing thread.
+NUM_RUNS = 5000
+
+# Number of times to invoke the endpoint.  The race is probabilistic per call;
+# a single buggy call crashes with probability well above 1/2 at this run
+# count, so repeating drives the chance of a false pass to negligible while a
+# correct (atomic) implementation passes every call.
+NUM_CALLS = 12
+
+
 def _make_running_run(store):
     """Adds a run to `store` and transitions it up to `running`."""
     run = Run(Instance("job", {"x": "0"}))
@@ -97,30 +113,32 @@ def _make_running_run(store):
     return run
 
 
-async def _drive_once(n):
+async def _drive_once():
     """
-    Runs the endpoint once against `n` running runs while a background task
-    churns their state.  Returns the crash exception, or None on success.
+    Runs the endpoint once while a background task churns run state.
+
+    :return:
+      The exception the handler raised, or None if it completed.
     """
     store = RunStore(_MockDb(), min_timestamp=ora.now())
-    runs = [_make_running_run(store) for _ in range(n)]
+    runs = [_make_running_run(store) for _ in range(NUM_RUNS)]
     request = _FakeRequest(_FakeApsis(store))
 
     stop = False
 
     async def churn():
-        # Mimic the event loop driving the run state machine: each transition
-        # mutates `run.times` in place, the dict the serializer iterates.
+        # Mimic the event loop driving the run state machine.  Each transition
+        # mutates `run.times` in place -- the dict the serializer iterates --
+        # and clears the summary JSO cache, forcing the serializer to rebuild
+        # (and re-read `times`) rather than return a cached object.
         while not stop:
             for run in runs:
+                run._summary_jso_cache = None
                 if run.state == State.running:
-                    run._transition(ora.now(), State.stopping)
-                elif run.state == State.stopping:
                     run._transition(ora.now(), State.success)
                 else:
                     # Reset back to running to keep the churn going.
                     run.state = State.running
-                    run._transition(ora.now(), State.stopping)
             await asyncio.sleep(0)
 
     churn_task = asyncio.create_task(churn())
@@ -131,7 +149,10 @@ async def _drive_once(n):
         return exc
     finally:
         stop = True
-        await churn_task
+        try:
+            await churn_task
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.asyncio
@@ -139,17 +160,10 @@ async def test_runs_endpoint_survives_concurrent_transitions():
     """
     Serving `/runs` must not crash when runs transition concurrently.
 
-    A single race window is probabilistic, so drive the endpoint repeatedly.
-    To make the window reliable without a huge run count, shorten the GIL
-    thread-switch interval so the serialization thread and the event loop
-    interleave tightly; this does not change the code under test, only how
-    often the two make progress relative to each other.
+    Fails on the `asyncio.to_thread` serialization introduced by #539 with
+    ``RuntimeError: dictionary changed size during iteration``; passes when
+    serialization is atomic with respect to run transitions.
     """
-    old_interval = sys.getswitchinterval()
-    sys.setswitchinterval(1e-6)
-    try:
-        for _ in range(20):
-            exc = await _drive_once(3000)
-            assert exc is None, f"/runs crashed under concurrent transitions: {exc!r}"
-    finally:
-        sys.setswitchinterval(old_interval)
+    for _ in range(NUM_CALLS):
+        exc = await _drive_once()
+        assert exc is None, f"/runs crashed under concurrent transitions: {exc!r}"
