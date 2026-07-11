@@ -550,13 +550,13 @@ class RunSummaryDB:
         )
         self.__connection.connection.commit()
 
-    def query(self, min_timestamp: ora.Time) -> Iterator[str]:
+    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[str]:
         with self.__engine.begin() as conn:
-            cursor = conn.execute(
-                sa.select(self.TABLE.c.payload)
-                .where(self.TABLE.c.timestamp >= dump_time(min_timestamp))
-                .order_by(self.TABLE.c.timestamp.desc())
-            )
+            stmt = sa.select(self.TABLE.c.payload)
+            if min_timestamp is not None:
+                stmt = stmt.where(self.TABLE.c.timestamp >= dump_time(min_timestamp))
+            stmt = stmt.order_by(self.TABLE.c.timestamp.desc())
+            cursor = conn.execute(stmt)
             for (payload,) in cursor:
                 yield payload
 

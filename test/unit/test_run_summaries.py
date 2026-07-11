@@ -6,13 +6,21 @@ from apsis.sqlite import SqliteDB
 from apsis.states import State
 
 
-def make_run_store(tmp_path, min_timestamp=None):
+def make_run_store(tmp_path, min_timestamp=ora.now() - 86400):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
     db = SqliteDB.open(path)
-    if min_timestamp is None:
-        min_timestamp = ora.now() - 86400
     return RunStore(db, min_timestamp=min_timestamp)
+
+
+def test_min_timestamp_none(tmp_path):
+    run_store = make_run_store(tmp_path, min_timestamp=None)
+
+    run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=True)
+    run_store.add(run)
+
+    summaries = list(run_store.summaries())
+    assert len(summaries) == 1
 
 
 def test_summaries_includes_expected_runs(tmp_path):
