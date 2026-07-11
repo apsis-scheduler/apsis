@@ -59,7 +59,7 @@ def migrate_0_33_7(db: SqliteDB):
     conn.execute("CREATE INDEX IF NOT EXISTS index_runs_job_id ON runs (job_id)")
 
 
-def migrate_2_4_0(db: SqliteDB):
+def migrate_2_3_0(db: SqliteDB):
     """
     Create run_summary table and backfill it from runs table.
     """
@@ -99,7 +99,7 @@ def main():
 
     with closing(SqliteDB.open(args.path, timeout=120)) as db:
         migrate_0_33_7(db)
-        migrate_2_4_0(db)
+        migrate_2_3_0(db)
 
         db.conn.commit()
 
