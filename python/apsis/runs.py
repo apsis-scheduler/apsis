@@ -203,7 +203,6 @@ class Run:
         "meta",
         "message",
         "run_state",
-        "_summary_jso_cache",
         "_rowid",
         "_running_program",
     )
@@ -234,8 +233,6 @@ class Run:
         # State information specific to the program, for a running run.
         self.run_state = None
 
-        # Cached summary JSO object.
-        self._summary_jso_cache = None
         # Running program instance, in states starting, running, stopping.
         self._running_program = None
 
@@ -292,9 +289,6 @@ class Run:
 
         # Transition to the new state.
         self.state = state
-
-        # Discard cached JSO.  Used by run_summary_to_json().
-        self._summary_jso_cache = None
 
 
 def validate_args(run, params):
