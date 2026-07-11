@@ -23,6 +23,38 @@ def test_min_timestamp_none(tmp_path):
     assert len(summaries) == 1
 
 
+def test_timestamp_updated(tmp_path):
+    run_store = make_run_store(tmp_path)
+
+    t0 = ora.now()
+    run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=False)
+    run_store.add(run)
+
+    # transition to scheduled so it gets persisted
+    run._transition(t0, State.scheduled, times={"schedule": t0})
+    run_store.update(run, t0)
+
+    summary_db = run_store._RunStore__summary_db
+    conn = summary_db._RunSummaryDB__connection.connection
+
+    # query summary timestamp after initial insert
+    (ts0,) = conn.execute(
+        "SELECT timestamp FROM run_summary WHERE run_id = ?", (run.run_id,)
+    ).fetchone()
+
+    t1 = t0 + 60
+    run._transition(t1, State.starting, times={"starting": t1})
+    run_store.update(run, t1)
+
+    # query summary timestamp after transition
+    (ts1,) = conn.execute(
+        "SELECT timestamp FROM run_summary WHERE run_id = ?", (run.run_id,)
+    ).fetchone()
+
+    # assert timestamp is updated
+    assert ts1 > ts0
+
+
 def test_summaries_includes_expected_runs(tmp_path):
     """Expected (in-memory only) runs appear in summaries()."""
     run_store = make_run_store(tmp_path)

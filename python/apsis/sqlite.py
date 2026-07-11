@@ -544,6 +544,7 @@ class RunSummaryDB:
             VALUES (?, ?, ?)
             ON CONFLICT (run_id)
             DO UPDATE SET
+                timestamp = excluded.timestamp,
                 payload = excluded.payload
             """,
             (run.run_id, dump_time(run.timestamp), payload),
