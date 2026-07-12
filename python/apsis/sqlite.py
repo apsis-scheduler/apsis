@@ -512,6 +512,10 @@ class RunDB:
 
 # -------------------------------------------------------------------------------
 
+# Chosen empirically to balance performance and GC pressure. Smaller batches can be deallocated before they cause a
+# gen 0 collection
+_SUMMARY_BATCH_SIZE = 256
+
 
 class RunSummaryDB:
     TABLE = sa.Table(
@@ -552,14 +556,39 @@ class RunSummaryDB:
         self.__connection.connection.commit()
 
     def query(self, min_timestamp: ora.Time | None = None) -> Iterator[str]:
-        with self.__engine.begin() as conn:
-            stmt = sa.select(self.TABLE.c.payload)
-            if min_timestamp is not None:
-                stmt = stmt.where(self.TABLE.c.timestamp >= dump_time(min_timestamp))
-            stmt = stmt.order_by(self.TABLE.c.timestamp.desc())
-            cursor = conn.execute(stmt)
-            for (payload,) in cursor:
-                yield payload
+        # Use independent paged queries to prevent holding a read cursor across the yield, which seems to cause
+        # write-lock errors when paired with litestream. Note that his problem isn't fully understood and hasn't been
+        # satisfactorily reproduced in isolation.
+
+        # This query logic is passably-incorrect because it does not
+        # fetch from a static snapshot; when summary timestamps are updated mid-iteration they will be missing from the
+        # query. This is ok because the websocket summary endpoint replays all new updates during the query using the
+        # summary publisher.
+        max_ts = None
+        while True:
+            with self.__engine.begin() as conn:
+                stmt = sa.select(self.TABLE.c.timestamp, self.TABLE.c.payload)
+                if min_timestamp is not None:
+                    stmt = stmt.where(self.TABLE.c.timestamp >= dump_time(min_timestamp))
+                if max_ts is not None:
+                    stmt = stmt.where(self.TABLE.c.timestamp < max_ts)
+                stmt = stmt.order_by(self.TABLE.c.timestamp.desc())
+                stmt = stmt.limit(_SUMMARY_BATCH_SIZE)
+                rows = conn.execute(stmt).fetchall()
+
+            if not rows:
+                break
+
+            max_ts = rows[-1][0]
+            count = len(rows)
+            payloads = [r[1] for r in rows]
+            del rows
+
+            yield from payloads
+
+            del payloads
+            if count < _SUMMARY_BATCH_SIZE:
+                break
 
 
 # -------------------------------------------------------------------------------

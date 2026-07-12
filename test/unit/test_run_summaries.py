@@ -1,3 +1,6 @@
+import sqlite3
+import threading
+
 import ora
 import ujson
 
@@ -6,11 +9,14 @@ from apsis.sqlite import SqliteDB
 from apsis.states import State
 
 
-def make_run_store(tmp_path, min_timestamp=ora.now() - 86400):
+def make_db(tmp_path):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
-    db = SqliteDB.open(path)
-    return RunStore(db, min_timestamp=min_timestamp)
+    return SqliteDB.open(path)
+
+
+def make_run_store(tmp_path, min_timestamp=ora.now() - 86400):
+    return RunStore(make_db(tmp_path), min_timestamp=min_timestamp)
 
 
 def test_min_timestamp_none(tmp_path):
@@ -53,6 +59,53 @@ def test_timestamp_updated(tmp_path):
 
     # assert timestamp is updated
     assert ts1 > ts0
+
+
+def test_no_db_lock_truncate(tmp_path):
+    """ClockDB write must not fail when an external process does TRUNCATE checkpoints
+    while a summaries() generator is open.
+    """
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(db_path)
+    db = SqliteDB.open(db_path, timeout=5)
+    run_store = RunStore(db, min_timestamp=ora.now() - 86400)
+
+    for i in range(100):
+        run = Run(Instance("test/job", {"date": f"2026-01-{i:02d}"}), expected=False)
+        run_store.add(run)
+        run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
+        run_store.update(run, ora.now())
+
+    stop = threading.Event()
+    errors = []
+
+    def truncate_loop():
+        conn = sqlite3.connect(str(db_path), timeout=1)
+        conn.execute("PRAGMA journal_mode=WAL")
+        while not stop.is_set():
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.OperationalError:
+                pass
+            stop.wait(0.01)
+        conn.close()
+
+    t = threading.Thread(target=truncate_loop, daemon=True)
+    t.start()
+
+    try:
+        for _ in range(25):
+            gen = run_store.summaries()
+            next(gen)
+            try:
+                db.clock_db.set_time(ora.now())
+            except sqlite3.OperationalError as exc:
+                errors.append(exc)
+    finally:
+        stop.set()
+        t.join()
+
+    assert not errors, f"ClockDB.set_time() failed {len(errors)} times: {errors[0]}"
 
 
 def test_summaries_includes_expected_runs(tmp_path):
