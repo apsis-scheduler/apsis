@@ -465,7 +465,10 @@ class RunStore:
 
     def get(self, run_id):
         if run_id in self.__expected_runs:
-            run = self.__expected_runs[run_id]
+            try:
+                run = self.__expected_runs[run_id]
+            except KeyError:
+                raise LookupError(f"no run: {run_id}")
         else:
             run = self.__run_db.get(run_id)
         return now(), run

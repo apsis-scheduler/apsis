@@ -198,7 +198,7 @@ async def jobs(request):
 async def run(request, run_id):
     try:
         when, run = request.app.apsis.run_store.get(run_id)
-    except KeyError:
+    except LookupError:
         return error(f"unknown run {run_id}", 404)
 
     jso = runs_to_jso(request.app, when, [run])
@@ -209,7 +209,7 @@ async def run(request, run_id):
 async def run_log(request, run_id):
     try:
         run_log = request.app.apsis.get_run_log(run_id)
-    except KeyError:
+    except LookupError:
         return error(f"unknown run {run_id}", 404)
 
     return response_json(
@@ -244,7 +244,7 @@ async def websocket_run_updates(request, ws, run_id):
             # Initialize run metadata.
             try:
                 _, run = apsis.run_store.get(run_id)
-            except KeyError:
+            except LookupError:
                 return error(f"unknown run {run_id}", 404)
 
             # Initialize run log.
@@ -353,14 +353,20 @@ async def websocket_output_updates(request, ws, run_id, output_id):
 
 @API.route("/runs/<run_id>/state", methods={"GET"})
 async def run_state_get(request, run_id):
-    _, run = request.app.apsis.run_store.get(run_id)
+    try:
+        _, run = request.app.apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     return response_json({"state": run.state})
 
 
 @API.route("/runs/<run_id>/skip", methods={"POST"})
 async def run_skip(request, run_id):
     state = request.app.apsis
-    _, run = state.run_store.get(run_id)
+    try:
+        _, run = state.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     await state.skip(run)
     return response_json({})
 
@@ -368,7 +374,10 @@ async def run_skip(request, run_id):
 @API.route("/runs/<run_id>/start", methods={"POST"})
 async def run_start(request, run_id):
     state = request.app.apsis
-    _, run = state.run_store.get(run_id)
+    try:
+        _, run = state.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     await state.start(run)
     return response_json({})
 
@@ -376,7 +385,10 @@ async def run_start(request, run_id):
 @API.route("/runs/<run_id>/rerun", methods={"POST"})
 async def run_rerun(request, run_id):
     state = request.app.apsis
-    _, run = state.run_store.get(run_id)
+    try:
+        _, run = state.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     new_run = await state.rerun(run)
     jso = runs_to_jso(request.app, ora.now(), [new_run])
     # Let UIs know to show the new run.
@@ -388,7 +400,10 @@ async def run_rerun(request, run_id):
 @API.route("/runs/<run_id>/stop", methods={"PUT", "POST"})
 async def run_stop(request, run_id):
     apsis = request.app.apsis
-    _, run = apsis.run_store.get(run_id)
+    try:
+        _, run = apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
 
     try:
         await apsis.stop_run(run)
@@ -403,7 +418,10 @@ async def run_stop(request, run_id):
 @API.route("/runs/<run_id>/signal/<signal>", methods={"PUT", "POST"})
 async def run_signal(request, run_id, signal):
     apsis = request.app.apsis
-    _, run = apsis.run_store.get(run_id)
+    try:
+        _, run = apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
 
     try:
         signal = to_signal(signal)
@@ -422,7 +440,10 @@ async def run_signal(request, run_id, signal):
 async def run_mark(request, run_id, state):
     try:
         apsis = request.app.apsis
-        _, run = apsis.run_store.get(run_id)
+        try:
+            _, run = apsis.run_store.get(run_id)
+        except LookupError:
+            return error(f"unknown run {run_id}", 404)
         try:
             state = to_state(state)
         except ValueError as err:
@@ -438,7 +459,10 @@ async def run_mark(request, run_id, state):
 @API.route("/runs/<run_id>/dependencies")
 async def run_dependencies(request, run_id):
     apsis = request.app.apsis
-    _, run = apsis.run_store.get(run_id)
+    try:
+        _, run = apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
 
     from apsis.cond.dependency import Dependency
 
