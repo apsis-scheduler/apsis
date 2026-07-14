@@ -413,6 +413,10 @@ class RunStore:
 
         # Persist the changes, but not for expected runs.
         if not run.expected:
+            try:
+                self.__expected_runs.pop(run.run_id)
+            except KeyError:
+                pass
             self.__run_db.upsert(run)
             self.__summary_db.upsert(run)
 
