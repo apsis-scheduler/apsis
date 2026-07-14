@@ -505,6 +505,10 @@ async def runs(request):
     # were added to avoid collision with fixed args.
     args = {n[1:] if n.startswith("_") else n: a[-1] for n, a in args.items()}
 
+    # FIXME: add pagination. Without filters this query can return 1M runs and block the event loop for up to a 60s
+    if run_id is None and job_id is None and state is None and since is None and not args:
+        return error("at least one filter (run_id, job_id, state, since, or args) is required", 400)
+
     when, runs = apsis.run_store.query(
         run_ids=run_id,
         job_id=job_id,

@@ -218,6 +218,11 @@ def main():
     # --- command: runs -----------------------------------------------
 
     def cmd_runs(client, arg):
+        # FIXME: add pagination
+        if args.job is None and args.state is None:
+            print("error: at least one filter (--job or --state) is required", file=sys.stderr)
+            raise SystemExit(1)
+
         runs = client.get_runs(
             job_id=args.job,
             state=args.state,
