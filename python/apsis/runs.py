@@ -373,7 +373,7 @@ class RunStore:
         self.__min_timestamp = min_timestamp
 
         # in-memory storage of scheduled runs that came from a schedule ie not reruns or adhoc runs
-        # all runs are not expected unless they cam from the scheduler
+        # all runs are not expected unless they came from the scheduler
         self.__expected_runs: dict[str, Run] = {}
 
         # Publisher for run transitions.  Messages are `Message` objects;
