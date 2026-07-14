@@ -201,3 +201,19 @@ def test_run_store_num_runs_no_double_count(tmp_path):
     _transition(store, run, State.waiting)
 
     assert store.get_stats()["num_runs"] == 1
+
+
+def test_run_store_query_since_filters_expected(tmp_path):
+    """query(since=...) must filter expected (in-memory) runs by timestamp."""
+    store = _make_store(tmp_path)
+
+    early = Run(Instance("job", {"n": "0"}), expected=True)
+    _schedule(store, early)
+
+    # advance time so second run gets a later timestamp
+    late = Run(Instance("job", {"n": "1"}), expected=True)
+    _schedule(store, late)
+
+    # since= the later run's timestamp should exclude the earlier one
+    result = list(store.query(since=late.timestamp)[1])
+    assert [r.run_id for r in result] == [late.run_id]

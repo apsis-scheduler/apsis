@@ -337,7 +337,7 @@ class RunDB:
         if job_id is not None:
             where.append(TBL_RUNS.c.job_id == job_id)
         if since is not None:
-            where.append(TBL_RUNS.c.rowid >= int(since))
+            where.append(TBL_RUNS.c.timestamp >= dump_time(since))
         if state is not None:
             states = py.tupleize(state)
             where.append(TBL_RUNS.c.state.in_([s.name for s in states]))

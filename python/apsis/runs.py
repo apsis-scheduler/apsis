@@ -499,6 +499,10 @@ class RunStore:
             state = set(to_state(s) for s in iterize(state))
             expected = (r for r in expected if r.state in state)
 
+        if since is not None:
+            since = ora.Time(since)
+            expected = (r for r in expected if r.timestamp >= since)
+
         # args takes precedence over with_args
         if args is not None:
             args = {str(k): str(v) for k, v in args.items()}
@@ -521,13 +525,14 @@ class RunStore:
         runs = itertools.chain(
             expected,
             self.__query_run_db(
-                run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args
+                run_ids=run_ids,
+                job_id=job_id,
+                state=state,
+                since=since,
+                args=args,
+                with_args=with_args,
             ),
         )
-
-        if since is not None:
-            since = ora.Time(since)
-            runs = (r for r in runs if r.timestamp >= since)
 
         return now(), list(runs)
 
