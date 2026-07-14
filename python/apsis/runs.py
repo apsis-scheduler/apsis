@@ -437,13 +437,12 @@ class RunStore:
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
-    def retire(self, run_id):
+    def archivable(self, run_id) -> bool:
         """
         :return:
-          True if `run_id` is not in the store, either because it was
-          successfully retired, or because it wasn't there to begin with.
+          True if `run_id` is not in the working set, either because it fished, or because it wasn't there to begin
+          with.
         """
-        log.warning("no-op: RunStore.retire() deprecated")
         try:
             _, run = self.get(run_id)
         except LookupError:
