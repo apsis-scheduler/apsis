@@ -355,9 +355,8 @@ class RunStore:
     """
     Stores runs in memory.
 
-    This is a cache, backed by a write-through persistent run database.  New
-    runs are always added to the cache; use `retire()` to retire older runs from
-    memory.
+    Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
+    summary data in the DB up-to-date.
 
     - Stores runs in all states.
     - Satisfies run queries.
