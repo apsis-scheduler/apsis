@@ -557,12 +557,14 @@ class RunStore:
                 r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
             )
 
+        # No min_timestamp: conditions (MaxRunning, SkipDuplicate) must see
+        # every active run, including any that has been running longer than the
+        # lookback window.
         return len(list(expected)) + self.__run_db.count_runs(
             job_id=job_id,
             state=state,
             args=args,
             with_args=with_args,
-            min_timestamp=self.__min_timestamp,
         )
 
     def get_stats(self):
