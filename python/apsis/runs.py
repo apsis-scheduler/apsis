@@ -404,12 +404,6 @@ class RunStore:
 
         Persists the run if necessary.
         """
-        if run.state != State.new:
-            try:
-                _ = self.get(run.run_id)
-            except LookupError:
-                raise ValueError(f"unable to update unknown run: {run.run_id}")
-
         # Persist the changes, but not for expected runs.
         if not run.expected:
             try:
