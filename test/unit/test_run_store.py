@@ -130,3 +130,74 @@ def test_run_store_populate(tmp_path):
         expected = {r for r in runs if r.inst.job_id == job_id}
         # Compare by run_id since objects may be different instances
         assert {r.run_id for r in q} == {r.run_id for r in expected}
+
+
+def _make_store(tmp_path, min_timestamp=None):
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(path=db_path)
+    return RunStore(SqliteDB.open(db_path), min_timestamp=min_timestamp)
+
+
+def _transition(store, run, state, **kw_args):
+    """Replicates the relevant part of Apsis._transition."""
+    time = ora.now()
+    if run.expected and state not in {State.new, State.scheduled}:
+        run.expected = False
+    run._transition(time, state, **kw_args)
+    store.update(run, time)
+
+
+def _schedule(store, run):
+    store.add(run)
+    _transition(store, run, State.scheduled)
+
+
+def test_run_store_query_with_args(tmp_path):
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {"k": "1"}), expected=True)
+    _schedule(store, run)
+
+    result = list(store.query(with_args={"k": "1"})[1])
+    assert [r.run_id for r in result] == [run.run_id]
+
+    result = list(store.query(with_args={"k": "other"})[1])
+    assert result == []
+
+
+def test_run_store_query_no_duplicates_after_transition(tmp_path):
+    """After a run leaves scheduled, query() must return it exactly once."""
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {"x": "1"}), expected=True)
+    _schedule(store, run)
+
+    _transition(store, run, State.waiting)
+
+    result = list(store.query(job_id="job")[1])
+    assert [r.run_id for r in result] == [run.run_id]
+
+    for state in (State.starting, State.running, State.success):
+        _transition(store, run, state)
+    result = list(store.query()[1])
+    assert [r.run_id for r in result] == [run.run_id]
+
+
+def test_run_store_finished_run_not_in_memory(tmp_path):
+    """A finished run must not be retained in the in-memory expected map."""
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    for state in (State.waiting, State.starting, State.running, State.success):
+        _transition(store, run, state)
+
+    expected_map = store._RunStore__expected_runs
+    assert run.run_id not in expected_map
+
+
+def test_run_store_num_runs_no_double_count(tmp_path):
+    """get_stats()['num_runs'] must count each physical run once."""
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    _transition(store, run, State.waiting)
+
+    assert store.get_stats()["num_runs"] == 1
