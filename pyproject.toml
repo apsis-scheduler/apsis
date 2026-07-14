@@ -113,8 +113,8 @@ filename = "pyproject.toml"
 
 [[tool.bumpversion.files]]
 filename = "uv.lock"
-search = 'name = "apsis"\nversion = "{current_version}"'
-replace = 'name = "apsis"\nversion = "{new_version}"'
+search = "name = \"apsis\"\nversion = \"{current_version}\""
+replace = "name = \"apsis\"\nversion = \"{new_version}\""
 
 [[tool.bumpversion.files]]
 filename = "docs/conf.py"
