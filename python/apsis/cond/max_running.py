@@ -108,13 +108,11 @@ class BoundMaxRunning(NonmonotonicRunStoreCondition):
         )
 
     def check(self, run_store):
-        # Count running jobs.
-        _, running = run_store.query(
+        count = run_store.count_runs(
             job_id=self.__job_id,
             args=self.__args,
             state=(State.starting, State.running),
         )
-        count = len(list(running))
         log.debug(f"found {count} running")
         return count < self.__count
 

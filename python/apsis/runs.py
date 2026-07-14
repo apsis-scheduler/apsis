@@ -537,6 +537,34 @@ class RunStore:
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
 
+    def count_runs(self, *, job_id=None, state=None, args=None, with_args=None):
+        """
+        Counts runs matching the given filters without deserializing Run objects.
+        """
+        # count matching expected (in-memory) runs
+        expected = self.__expected_runs.values()
+        if job_id is not None:
+            expected = (r for r in expected if r.inst.job_id == job_id)
+        if state is not None:
+            states = set(to_state(s) for s in iterize(state))
+            expected = (r for r in expected if r.state in states)
+        if args is not None:
+            args = {str(k): str(v) for k, v in args.items()}
+            expected = (r for r in expected if r.inst.args == args)
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            expected = (
+                r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
+            )
+
+        return len(list(expected)) + self.__run_db.count_runs(
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=self.__min_timestamp,
+        )
+
     def get_stats(self):
         return {
             "num_runs": len(self.__expected_runs)

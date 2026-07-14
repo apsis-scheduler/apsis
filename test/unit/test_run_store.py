@@ -217,3 +217,38 @@ def test_run_store_query_since_filters_expected(tmp_path):
     # since= the later run's timestamp should exclude the earlier one
     result = list(store.query(since=late.timestamp)[1])
     assert [r.run_id for r in result] == [late.run_id]
+
+
+def test_run_store_count_runs(tmp_path):
+    """count_runs() must count both expected (in-memory) and persisted (DB) runs."""
+    store = _make_store(tmp_path)
+
+    # two expected runs for "jobA"
+    a1 = Run(Instance("jobA", {"k": "1"}), expected=True)
+    _schedule(store, a1)
+    a2 = Run(Instance("jobA", {"k": "2"}), expected=True)
+    _schedule(store, a2)
+
+    # one expected run for "jobB"
+    b1 = Run(Instance("jobB", {"k": "1"}), expected=True)
+    _schedule(store, b1)
+
+    # all three are expected (in-memory only)
+    assert store.count_runs() == 3
+    assert store.count_runs(job_id="jobA") == 2
+    assert store.count_runs(job_id="jobB") == 1
+    assert store.count_runs(job_id="jobC") == 0
+
+    # transition a1 through to success — persists to DB, leaves expected map
+    for state in (State.waiting, State.starting, State.running, State.success):
+        _transition(store, a1, state)
+
+    # a1 is now in DB, a2 still in memory
+    assert store.count_runs(job_id="jobA") == 2
+    assert store.count_runs(job_id="jobA", state=(State.success,)) == 1
+    assert store.count_runs(job_id="jobA", state=(State.scheduled,)) == 1
+
+    # filter by args
+    assert store.count_runs(job_id="jobA", args={"k": "1"}) == 1
+    assert store.count_runs(job_id="jobA", args={"k": "2"}) == 1
+    assert store.count_runs(job_id="jobA", args={"k": "99"}) == 0
