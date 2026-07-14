@@ -154,7 +154,7 @@ def _schedule(store, run):
 
 def test_run_store_query_with_args(tmp_path):
     store = _make_store(tmp_path)
-    run = Run(Instance("job", {"k": "1"}), expected=True)
+    run = Run(Instance("job", {"k": "1", "j": "2"}), expected=True)
     _schedule(store, run)
 
     result = list(store.query(with_args={"k": "1"})[1])

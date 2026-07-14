@@ -526,14 +526,6 @@ class RunStore:
             since = ora.Time(since)
             runs = (r for r in runs if r.timestamp >= since)
 
-        if args is not None:
-            args = {str(k): str(v) for k, v in args.items()}
-            runs = (r for r in runs if r.inst.args == args)
-
-        if with_args is not None:
-            with_args = [(str(k), str(v)) for k, v in with_args.items()]
-            runs = (r for r in runs if all(r.inst.args.get(k) == v for k, v in with_args))
-
         return now(), list(runs)
 
     def summaries(self) -> Iterator[str]:
