@@ -353,8 +353,6 @@ def bind(run, job, jobs):
 
 class RunStore:
     """
-    Stores runs in memory.
-
     Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
     summary data in the DB up-to-date.
 
