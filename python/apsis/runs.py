@@ -434,7 +434,7 @@ class RunStore:
     def archivable(self, run_id) -> bool:
         """
         :return:
-          True if `run_id` is not in the working set, either because it fished, or because it wasn't there to begin
+          True if `run_id` is not in the working set, either because it finished, or because it wasn't there to begin
           with.
         """
         try:
