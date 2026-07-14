@@ -539,9 +539,8 @@ class RunStore:
     def summaries(self) -> Iterator[str]:
         from .lib.api import run_to_summary_jso
 
-        for run in self.query()[1]:
-            if run.expected:
-                yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
+        for run in self.__expected_runs.values():
+            yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
 
