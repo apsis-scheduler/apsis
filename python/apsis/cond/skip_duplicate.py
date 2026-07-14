@@ -151,20 +151,12 @@ class BoundSkipDuplicate(NonmonotonicRunStoreCondition):
     # wait() and check().
 
     def check(self, run_store):
-        # fast path: count without deserialization
-        count = run_store.count_runs(
-            job_id=self.__inst.job_id,
-            args=self.__inst.args,
-            state=self.__check_states,
-        )
-        if count < 1:
-            return True
-
-        # need run_id for the message; query to find the duplicate
+        # Must see all active runs regardless of lookback window, so uses limit_lookback=False.
         _, runs = run_store.query(
             job_id=self.__inst.job_id,
             args=self.__inst.args,
             state=self.__check_states,
+            limit_lookback=False,
         )
         runs = [r for r in runs if r.run_id != self.__run_id]
 

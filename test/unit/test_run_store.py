@@ -252,3 +252,75 @@ def test_run_store_count_runs(tmp_path):
     assert store.count_runs(job_id="jobA", args={"k": "1"}) == 1
     assert store.count_runs(job_id="jobA", args={"k": "2"}) == 1
     assert store.count_runs(job_id="jobA", args={"k": "99"}) == 0
+
+
+def test_run_store_limit_lookback(tmp_path):
+    """Test limit_lookback parameter controls whether lookback window is applied."""
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(path=db_path)
+    db = SqliteDB.open(db_path)
+
+    now = ora.now()
+    lookback = 3600  # 1 hour
+    min_timestamp = now - lookback
+
+    # Create store with lookback window
+    store = RunStore(db, min_timestamp=min_timestamp)
+
+    # Create an old run beyond the lookback window
+    old = Run(Instance("job", {"n": "old"}))
+    store.add(old)
+    _transition(store, old, State.scheduled)
+    _transition(store, old, State.waiting)
+    _transition(store, old, State.starting)
+    _transition(store, old, State.running)
+
+    # Backdate it to beyond lookback window
+    old.timestamp = now - 2 * lookback
+    store.update(old, old.timestamp)
+
+    # Create a recent run within lookback window
+    recent = Run(Instance("job", {"n": "recent"}))
+    store.add(recent)
+    _transition(store, recent, State.scheduled)
+
+    # With limit_lookback=True (default), should only see recent run from DB
+    _, runs_with_lookback = store.query(job_id="job", limit_lookback=True)
+    run_ids_with = {r.run_id for r in runs_with_lookback}
+    assert recent.run_id in run_ids_with, "recent run should be visible with lookback"
+    assert old.run_id not in run_ids_with, "old run should be filtered out by lookback"
+
+    # With limit_lookback=False, should see both runs
+    _, runs_no_lookback = store.query(job_id="job", limit_lookback=False)
+    run_ids_no = {r.run_id for r in runs_no_lookback}
+    assert recent.run_id in run_ids_no, "recent run should be visible"
+    assert old.run_id in run_ids_no, "old run should be visible without lookback filter"
+
+    # Test with since parameter and limit_lookback=True
+    # since should be combined with lookback using max()
+    since_old = now - 1.5 * lookback  # older than lookback, so lookback wins
+    _, runs_since_old = store.query(job_id="job", since=since_old, limit_lookback=True)
+    run_ids_since_old = {r.run_id for r in runs_since_old}
+    assert recent.run_id in run_ids_since_old
+    assert old.run_id not in run_ids_since_old, "lookback should be more restrictive than since"
+
+    # since more restrictive than lookback
+    since_recent = now - 0.5 * lookback  # newer than lookback, so since wins
+    _, runs_since_recent = store.query(job_id="job", since=since_recent, limit_lookback=True)
+    run_ids_since_recent = {r.run_id for r in runs_since_recent}
+    assert recent.run_id in run_ids_since_recent
+    assert old.run_id not in run_ids_since_recent
+
+    # With limit_lookback=False and since, only since is applied
+    _, runs_since_no_lookback = store.query(job_id="job", since=since_old, limit_lookback=False)
+    run_ids_since_no = {r.run_id for r in runs_since_no_lookback}
+    assert recent.run_id in run_ids_since_no
+    assert old.run_id not in run_ids_since_no, "since filter alone should exclude old run"
+
+    # count_runs defaults to limit_lookback=True (matches query default)
+    count_with_lookback = store.count_runs(job_id="job")
+    assert count_with_lookback == 1, "count_runs should respect lookback by default"
+
+    # Conditions should explicitly pass limit_lookback=False
+    count_all = store.count_runs(job_id="job", limit_lookback=False)
+    assert count_all == 2, "count_runs with limit_lookback=False should see all runs"

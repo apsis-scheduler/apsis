@@ -108,10 +108,12 @@ class BoundMaxRunning(NonmonotonicRunStoreCondition):
         )
 
     def check(self, run_store):
+        # Must see all active runs regardless of lookback window
         count = run_store.count_runs(
             job_id=self.__job_id,
             args=self.__args,
             state=(State.starting, State.running),
+            limit_lookback=False,
         )
         log.debug(f"found {count} running")
         return count < self.__count

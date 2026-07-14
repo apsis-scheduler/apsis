@@ -320,7 +320,6 @@ class RunDB:
         *,
         run_ids=None,
         job_id=None,
-        since=None,
         state=None,
         args=None,
         with_args=None,
@@ -336,8 +335,6 @@ class RunDB:
             where.append(TBL_RUNS.c.run_id.in_(list(run_ids)))
         if job_id is not None:
             where.append(TBL_RUNS.c.job_id == job_id)
-        if since is not None:
-            where.append(TBL_RUNS.c.timestamp >= dump_time(since))
         if state is not None:
             states = py.tupleize(state)
             where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
@@ -498,7 +495,6 @@ class RunDB:
         *,
         run_ids=None,
         job_id=None,
-        since=None,
         state: Iterable[State] | State | None = None,
         args=None,
         with_args=None,
@@ -520,7 +516,6 @@ class RunDB:
         expr = self.__build_where(
             run_ids=run_ids,
             job_id=job_id,
-            since=since,
             state=state,
             args=args,
             with_args=with_args,
@@ -533,7 +528,7 @@ class RunDB:
             return " ".join(f"{k}={v}" for k, v in kwargs.items() if v is not None)
 
         log.debug(
-            f"query {fmt_params(run_ids=run_ids, job_id=job_id, since=since, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
+            f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
@@ -543,7 +538,6 @@ class RunDB:
         *,
         run_ids=None,
         job_id=None,
-        since=None,
         state: Iterable[State] | State | None = None,
         args=None,
         with_args=None,
@@ -555,7 +549,6 @@ class RunDB:
         expr = self.__build_where(
             run_ids=run_ids,
             job_id=job_id,
-            since=since,
             state=state,
             args=args,
             with_args=with_args,

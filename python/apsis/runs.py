@@ -377,8 +377,13 @@ class RunStore:
         # `state` is none if the run is removed.
         self.publisher = Publisher()
 
-    def __query_run_db(self, *args, **kwargs) -> list[Run]:
-        return self.__run_db.query(*args, min_timestamp=self.__min_timestamp, **kwargs)
+    def __query_run_db(self, *args, min_timestamp=None, **kwargs) -> list[Run]:
+        """
+        Query the run DB.
+
+        :param min_timestamp: Timestamp filter to pass to DB query.
+        """
+        return self.__run_db.query(*args, min_timestamp=min_timestamp, **kwargs)
 
     def add(self, run):
         assert run.state == State.new
@@ -471,15 +476,21 @@ class RunStore:
         since=None,
         args=None,
         with_args=None,
+        limit_lookback=True,
     ):
         """
         :param state:
           Limits results to runs in the specified state(s).
+        :param since:
+          Return only runs with timestamp >= since. Bounded to RunStore min_timestamp if limit_lookback=True.
         :param args:
           Limits results to runs with exactly the specified args.
         :param with_args:
           Limits results to runs with the specified args.  Runs may include
           other args not explicitly given.
+        :param limit_lookback:
+          If True (default), applies lookback window. If False, queries all runs.
+          Set to False for condition checks that need to see all active runs.
         """
         expected = self.__expected_runs.values()
 
@@ -510,15 +521,27 @@ class RunStore:
         if job_id is not None:
             expected = (r for r in expected if r.inst.job_id == job_id)
 
+        # compute effective min_timestamp for DB query
+        if limit_lookback and self.__min_timestamp is not None:
+            if since is not None:
+                # use the more restrictive of user's since or lookback window
+                min_ts = max(self.__min_timestamp, ora.Time(since))
+            else:
+                # just use lookback window
+                min_ts = self.__min_timestamp
+        else:
+            # no lookback, but respect user's since if provided
+            min_ts = ora.Time(since) if since is not None else None
+
         runs = itertools.chain(
             expected,
             self.__query_run_db(
                 run_ids=run_ids,
                 job_id=job_id,
                 state=state,
-                since=since,
                 args=args,
                 with_args=with_args,
+                min_timestamp=min_ts,
             ),
         )
 
@@ -532,9 +555,16 @@ class RunStore:
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
 
-    def count_runs(self, *, job_id=None, state=None, args=None, with_args=None):
+    def count_runs(
+        self, *, job_id=None, state=None, args=None, with_args=None, limit_lookback=True
+    ):
         """
         Counts runs matching the given filters without deserializing Run objects.
+
+        :param limit_lookback:
+          If True (default), applies lookback window. If False, counts all runs.
+          Conditions (MaxRunning, SkipDuplicate) should pass limit_lookback=False
+          to see every active run, including any that has been running longer than lookback.
         """
         # count matching expected (in-memory) runs
         expected = self.__expected_runs.values()
@@ -552,14 +582,13 @@ class RunStore:
                 r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
             )
 
-        # No min_timestamp: conditions (MaxRunning, SkipDuplicate) must see
-        # every active run, including any that has been running longer than the
-        # lookback window.
+        min_ts = self.__min_timestamp if limit_lookback else None
         return len(list(expected)) + self.__run_db.count_runs(
             job_id=job_id,
             state=state,
             args=args,
             with_args=with_args,
+            min_timestamp=min_ts,
         )
 
     def get_stats(self):
