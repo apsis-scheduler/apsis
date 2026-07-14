@@ -205,7 +205,6 @@ class Run:
         "message",
         "run_state",
         "_rowid",
-        "_running_program",
     )
 
     def __init__(self, inst, *, expected=False):
@@ -233,9 +232,6 @@ class Run:
         self.message = None
         # State information specific to the program, for a running run.
         self.run_state = None
-
-        # Running program instance, in states starting, running, stopping.
-        self._running_program = None
 
     def __hash__(self):
         return hash(self.run_id)
