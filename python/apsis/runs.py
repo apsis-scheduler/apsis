@@ -405,12 +405,12 @@ class RunStore:
         """
         # Persist the changes, but not for expected runs.
         if not run.expected:
-            try:
-                self.__expected_runs.pop(run.run_id)
-            except KeyError:
-                pass
+            # Persist before evicting from the in-memory working set, so a
+            # failed upsert leaves the run recoverable in memory rather than
+            # dropping it from both memory and the DB.
             self.__run_db.upsert(run)
             self.__summary_db.upsert(run)
+            self.__expected_runs.pop(run.run_id, None)
 
         # FIXME: Separate transition() so we don't send this on updates.
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
