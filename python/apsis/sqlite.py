@@ -332,7 +332,8 @@ class RunDB:
         """
         where = []
         if run_ids is not None:
-            where.append(TBL_RUNS.c.run_id.in_(list(run_ids)))
+            # convert "r123" to 123 for indexed rowid column
+            where.append(TBL_RUNS.c.rowid.in_(list(_parse_run_id(run_id) for run_id in run_ids)))
         if job_id is not None:
             where.append(TBL_RUNS.c.job_id == job_id)
         if state is not None:
@@ -483,8 +484,9 @@ class RunDB:
             con.commit()
 
     def get(self, run_id):
+        rowid = _parse_run_id(run_id)
         with self.__engine.begin() as conn:
-            run_or_none = list(self.__query_runs(conn, TBL_RUNS.c.run_id == run_id))
+            run_or_none = list(self.__query_runs(conn, TBL_RUNS.c.rowid == rowid))
             if len(run_or_none) == 0:
                 raise LookupError(f"no run: {run_id}")
             (run,) = run_or_none

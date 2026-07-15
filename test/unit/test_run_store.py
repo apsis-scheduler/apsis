@@ -124,7 +124,7 @@ def test_run_store_populate(tmp_path):
 
         assert run.run_id in run_store
 
-    assert "rNOTEXIST" not in run_store
+    assert "r666666666" not in run_store
 
     # Query runs by job ID.
     for job_id in job_ids:
