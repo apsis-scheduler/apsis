@@ -90,10 +90,20 @@ class Scheduler:
             return
 
         log.debug(f"scheduling runs until {stop}")
+        n = 0
         for job in self.__jobs.get_jobs():
             items = get_insts_to_schedule(job, self.__stop, stop)
             for sched_time, stop_time, inst in items:
                 await self.__schedule(sched_time, inst, stop_time=stop_time)
+                # using modulo instead of batching a generator because reducing allocations actually matters here for
+                # because of GC pressure
+                n += 1
+                if n % 5 == 0:
+                    # Performance optimization for cases where apsis is recovering after extended downtime and needs to
+                    # launch thousands of runs at once. Scheduling all the runs to run immediately without yielding can
+                    # make it a long wait until the scheduler will respond to network requests. The number 5 was chosen
+                    # after measuring startup times.
+                    await asyncio.sleep(0)
 
         self.__stop = stop
 
