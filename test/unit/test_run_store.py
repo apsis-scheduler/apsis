@@ -5,6 +5,8 @@ Tests for RunStore with real SQLite database.
 import ora
 import random
 
+import pytest
+
 from apsis.runs import Instance, Run, RunStore
 from apsis.sqlite import SqliteDB
 from apsis.states import State
@@ -324,3 +326,35 @@ def test_run_store_limit_lookback(tmp_path):
     # Conditions should explicitly pass limit_lookback=False
     count_all = store.count_runs(job_id="job", limit_lookback=False)
     assert count_all == 2, "count_runs with limit_lookback=False should see all runs"
+
+
+def test_upsert_durability(tmp_path):
+    SqliteDB.create(path=tmp_path / "apsis.db")
+    db = SqliteDB.open(tmp_path / "apsis.db")
+    store = RunStore(db, min_timestamp=None)
+
+    now = ora.now()
+
+    # scheduled an expected run run ie created from a schedule
+    run = Run(Instance("job", {"x": "1"}), expected=True)
+    store.add(run)
+    run._transition(now, State.scheduled)
+    store.update(run, now)
+    assert [r.run_id for r in store.query(job_id="job")[1]] == [run.run_id]
+
+    # fail the DB write on the scheduled -> waiting transition, which sets expected=False and evicts the run from the
+    # set of expected runs
+    def failing_update(_run):
+        raise RuntimeError("simulated DB write failure")
+
+    db.run_db.upsert = failing_update
+
+    run.expected = False
+    run._transition(now, State.waiting)
+    with pytest.raises(RuntimeError):
+        store.update(run, now)
+
+    # the upsert failed, so the run must still be retrievable
+    assert [r.run_id for r in store.query(job_id="job")[1]] == [run.run_id], (
+        "run lost after run_db upsert failure"
+    )

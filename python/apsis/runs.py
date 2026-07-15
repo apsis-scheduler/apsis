@@ -405,12 +405,10 @@ class RunStore:
         """
         # Persist the changes, but not for expected runs.
         if not run.expected:
-            try:
-                self.__expected_runs.pop(run.run_id)
-            except KeyError:
-                pass
             self.__run_db.upsert(run)
             self.__summary_db.upsert(run)
+            # run is only in expected dict when it was a regularly scheduled run in the in the "scheduled" state
+            self.__expected_runs.pop(run.run_id, None)
 
         # FIXME: Separate transition() so we don't send this on updates.
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
