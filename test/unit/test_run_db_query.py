@@ -266,3 +266,42 @@ def test_count_runs_matches_query_length(tmp_path):
     assert run_db.count_runs(job_id="job/b", state=State.success) == len(
         list(run_db.query(job_id="job/b", state=State.success))
     )
+
+
+def test_get_malformed_run_id(tmp_path):
+    """
+    RunDB.get() must raise LookupError for malformed IDs, not AssertionError
+    or ValueError.  Even under python -O the wrong-run bug ("x123" resolving
+    to rowid 123) must not occur, because _parse_run_id checks the prefix
+    explicitly rather than via assert.
+    """
+    import pytest
+
+    run_db = _setup(tmp_path)
+    _make_run(run_db, "job/a", {}, state=State.success)  # rowid 1 -> "r1"
+
+    # Well-formed but unknown ID: LookupError.
+    with pytest.raises(LookupError):
+        run_db.get("r9999")
+
+    # Malformed IDs: also LookupError (not AssertionError or ValueError).
+    for bad in ("", "abc", "x1", "r", "rabc", "r-1", None, 5):
+        with pytest.raises(LookupError):
+            run_db.get(bad)
+
+
+def test_query_malformed_run_ids(tmp_path):
+    """
+    RunDB.query(run_ids=[...]) must silently skip malformed IDs rather than
+    raising, matching main's behavior for unknown IDs.
+    """
+    run_db = _setup(tmp_path)
+    r1 = _make_run(run_db, "job/a", {})
+
+    # Mix of valid and garbage IDs.
+    runs = run_db.query(run_ids=[r1.run_id, "not_a_run_id", "r99999"])
+    assert [r.run_id for r in runs] == [r1.run_id]
+
+    # All garbage: empty result, no exception.
+    runs = run_db.query(run_ids=["abc", "", "x1"])
+    assert list(runs) == []

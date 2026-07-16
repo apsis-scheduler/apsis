@@ -59,8 +59,22 @@ def _make_run_id(rowid):
 
 
 def _parse_run_id(run_id):
-    assert run_id[0] == "r"
-    return int(run_id[1:])
+    """
+    Parses a run_id ("r123") into its integer rowid.
+
+    :raise ValueError:
+      `run_id` doesn't have the expected shape.  Callers with user-controlled
+      input should catch this and treat the run_id as unknown; on main such
+      inputs returned no-match at the query layer.  (Note: `assert` is not
+      used here because it vanishes under `python -O`, which would let e.g.
+      "x123" resolve to rowid 123 — a different run.)
+    """
+    if not isinstance(run_id, str) or len(run_id) < 2 or run_id[0] != "r":
+        raise ValueError(f"invalid run_id: {run_id!r}")
+    try:
+        return int(run_id[1:])
+    except ValueError:
+        raise ValueError(f"invalid run_id: {run_id!r}") from None
 
 
 # SQLite implicitly includes a 'rowid' column in each table, which SA doesn't
@@ -350,8 +364,15 @@ class RunDB:
         """
         where = []
         if run_ids is not None:
-            # convert "r123" to 123 for indexed rowid column
-            where.append(TBL_RUNS.c.rowid.in_(list(_parse_run_id(run_id) for run_id in run_ids)))
+            # convert "r123" to 123 for indexed rowid column; malformed
+            # run_ids match no rows (mirrors main's behavior for unknown IDs).
+            rowids = []
+            for run_id in run_ids:
+                try:
+                    rowids.append(_parse_run_id(run_id))
+                except ValueError:
+                    pass
+            where.append(TBL_RUNS.c.rowid.in_(rowids))
         if job_id is not None:
             where.append(TBL_RUNS.c.job_id == job_id)
         if state is not None:
@@ -499,7 +520,11 @@ class RunDB:
             con.commit()
 
     def get(self, run_id):
-        rowid = _parse_run_id(run_id)
+        try:
+            rowid = _parse_run_id(run_id)
+        except ValueError:
+            # match main: unknown/malformed IDs are just LookupError, not 500.
+            raise LookupError(f"no run: {run_id}")
         with self.__engine.begin() as conn:
             run_or_none = list(self.__query_runs(conn, TBL_RUNS.c.rowid == rowid))
             if len(run_or_none) == 0:
