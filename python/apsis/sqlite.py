@@ -3,6 +3,7 @@ Persistent state stored in a sqlite file.
 """
 
 import contextlib
+import json
 import logging
 import ora
 from pathlib import Path
@@ -58,8 +59,22 @@ def _make_run_id(rowid):
 
 
 def _parse_run_id(run_id):
-    assert run_id[0] == "r"
-    return int(run_id[1:])
+    """
+    Parses a run_id ("r123") into its integer rowid.
+
+    :raise ValueError:
+      `run_id` doesn't have the expected shape.  Callers with user-controlled
+      input should catch this and treat the run_id as unknown; on main such
+      inputs returned no-match at the query layer.  (Note: `assert` is not
+      used here because it vanishes under `python -O`, which would let e.g.
+      "x123" resolve to rowid 123 — a different run.)
+    """
+    if not isinstance(run_id, str) or len(run_id) < 2 or run_id[0] != "r":
+        raise ValueError(f"invalid run_id: {run_id!r}")
+    try:
+        return int(run_id[1:])
+    except ValueError:
+        raise ValueError(f"invalid run_id: {run_id!r}") from None
 
 
 # SQLite implicitly includes a 'rowid' column in each table, which SA doesn't
@@ -260,6 +275,23 @@ class JobDB:
 
 # -------------------------------------------------------------------------------
 
+
+def canonical_args_json(args) -> str:
+    """
+    Serializes run args to the canonical JSON form used for storage and lookup.
+
+    Uses stdlib json (byte-stable across Python versions) with sorted keys. All writers to runs.args and callers of
+    RunDB.query/count_runs with an exact-match args predicate must produce args through this function, or equality
+    lookups will silently miss rows.
+    """
+    return json.dumps(
+        {str(k): str(v) for k, v in args.items()},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 TBL_RUNS = sa.Table(
     "runs",
     METADATA,
@@ -280,10 +312,10 @@ TBL_RUNS = sa.Table(
     sa.Column("actions", sa.String(), nullable=True),
 )
 
-# This index is used to speed up removal of orphaned jobs during archiving, i.e.
-# (ad hoc) jobs in the `jobs` table that no longer have an associated run.  If
-# we ever remove the `jobs` table, we can remove this.
-sa.Index("index_runs_job_id", TBL_RUNS.c.job_id)
+# compound index for condition queries (max_running, skip_duplicate, dependency)
+# that filter on job_id + args. Args are stored with sorted keys, so equality on
+# the raw JSON string is a direct index lookup.
+sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 
 TBL_RUNS_SELECT = sa.select(
     [
@@ -314,6 +346,52 @@ class RunDB:
         self.__engine = engine
         self.__connection = engine.raw_connection()
         # FIXME: Do we need to clean this up?
+
+    @staticmethod
+    def __build_where(
+        *,
+        run_ids=None,
+        job_id=None,
+        state=None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+    ):
+        """
+        Build WHERE clause for run queries.
+
+        Returns a SQLAlchemy expression suitable for use in WHERE clauses.
+        """
+        where = []
+        if run_ids is not None:
+            # convert "r123" to 123 for indexed rowid column; malformed
+            # run_ids match no rows (mirrors main's behavior for unknown IDs).
+            rowids = []
+            for run_id in run_ids:
+                try:
+                    rowids.append(_parse_run_id(run_id))
+                except ValueError:
+                    pass
+            where.append(TBL_RUNS.c.rowid.in_(rowids))
+        if job_id is not None:
+            where.append(TBL_RUNS.c.job_id == job_id)
+        if state is not None:
+            states = py.tupleize(state)
+            where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
+        if args is not None:
+            # Args are canonicalized on write, so an equality check on the JSON
+            # string is a direct index lookup on idx_runs_job_args.
+            where.append(TBL_RUNS.c.args == canonical_args_json(args))
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            for k, v in with_args.items():
+                # escape key for JSON path to handle dots, quotes, etc
+                path = '$."' + k.replace('"', '\\"') + '"'
+                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
+        if min_timestamp is not None:
+            where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
+
+        return sa.and_(*where)
 
     @staticmethod
     def __query_runs(conn, expr):
@@ -374,7 +452,7 @@ class RunDB:
             run.run_id,
             dump_time(run.timestamp),
             run.inst.job_id,
-            ujson.dumps(run.inst.args),
+            canonical_args_json(run.inst.args),
             run.state.name,
             program,
             conds,
@@ -442,8 +520,16 @@ class RunDB:
             con.commit()
 
     def get(self, run_id):
+        try:
+            rowid = _parse_run_id(run_id)
+        except ValueError:
+            # match main: unknown/malformed IDs are just LookupError, not 500.
+            raise LookupError(f"no run: {run_id}")
         with self.__engine.begin() as conn:
-            (run,) = self.__query_runs(conn, TBL_RUNS.c.run_id == run_id)
+            run_or_none = list(self.__query_runs(conn, TBL_RUNS.c.rowid == rowid))
+            if len(run_or_none) == 0:
+                raise LookupError(f"no run: {run_id}")
+            (run,) = run_or_none
         return run
 
     def query(
@@ -451,7 +537,6 @@ class RunDB:
         *,
         run_ids=None,
         job_id=None,
-        since=None,
         state: Iterable[State] | State | None = None,
         args=None,
         with_args=None,
@@ -470,33 +555,14 @@ class RunDB:
         :param min_timestamp:
           If not none, limits to runs with timestamp not less than this.
         """
-        where = []
-        if run_ids is not None:
-            where.append(TBL_RUNS.c.run_id.in_(list(run_ids)))
-        if job_id is not None:
-            where.append(TBL_RUNS.c.job_id == job_id)
-        if since is not None:
-            where.append(TBL_RUNS.c.rowid >= int(since))
-        if state is not None:
-            states = py.tupleize(state)
-            where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
-        if args is not None:
-            args = {str(k): str(v) for k, v in args.items()}
-            for k, v in args.items():
-                # escape key for JSON path to handle dots, quotes, etc
-                path = '$."' + k.replace('"', '\\"') + '"'
-                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
-            where.append(sa.literal_column("(SELECT count(*) FROM json_each(args))") == len(args))
-        elif with_args is not None:
-            with_args = {str(k): str(v) for k, v in with_args.items()}
-            for k, v in with_args.items():
-                # escape key for JSON path to handle dots, quotes, etc
-                path = '$."' + k.replace('"', '\\"') + '"'
-                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
-        if min_timestamp is not None:
-            where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
-
-        expr = sa.and_(*where)
+        expr = self.__build_where(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_timestamp,
+        )
         with Timer() as timer:
             runs = list(self.__query_runs(self.__engine, expr))
 
@@ -504,10 +570,35 @@ class RunDB:
             return " ".join(f"{k}={v}" for k, v in kwargs.items() if v is not None)
 
         log.debug(
-            f"query {fmt_params(run_ids=run_ids, job_id=job_id, since=since, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
+            f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
+
+    def count_runs(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        state: Iterable[State] | State | None = None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+    ):
+        """
+        Parameters are the same as query(), but returns just the count.
+        """
+        expr = self.__build_where(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_timestamp,
+        )
+        query = sa.select(sa.func.count()).select_from(TBL_RUNS).where(expr)
+        with self.__engine.connect() as conn:
+            return conn.execute(query).scalar()
 
 
 # -------------------------------------------------------------------------------

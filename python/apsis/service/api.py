@@ -26,6 +26,7 @@ from apsis.lib.api import (
     output_to_http_message,
 )
 import apsis.lib.itr
+from apsis.lib.timing import Timer
 from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
@@ -38,8 +39,8 @@ log = logging.getLogger(__name__)
 WS_DRAIN_TIME = 0.5
 # Max number of items to send in one websocket message.
 WS_CHUNK = 4096
-# Time to sleep between websocket messages.
-WS_CHUNK_SLEEP = 0.001
+# Send bigger chunks when the json is pre-serialized
+WS_RAW_CHUNK = 2**16
 
 # -------------------------------------------------------------------------------
 
@@ -198,7 +199,7 @@ async def jobs(request):
 async def run(request, run_id):
     try:
         when, run = request.app.apsis.run_store.get(run_id)
-    except KeyError:
+    except LookupError:
         return error(f"unknown run {run_id}", 404)
 
     jso = runs_to_jso(request.app, when, [run])
@@ -209,7 +210,7 @@ async def run(request, run_id):
 async def run_log(request, run_id):
     try:
         run_log = request.app.apsis.get_run_log(run_id)
-    except KeyError:
+    except LookupError:
         return error(f"unknown run {run_id}", 404)
 
     return response_json(
@@ -244,7 +245,7 @@ async def websocket_run_updates(request, ws, run_id):
             # Initialize run metadata.
             try:
                 _, run = apsis.run_store.get(run_id)
-            except KeyError:
+            except LookupError:
                 return error(f"unknown run {run_id}", 404)
 
             # Initialize run log.
@@ -353,14 +354,20 @@ async def websocket_output_updates(request, ws, run_id, output_id):
 
 @API.route("/runs/<run_id>/state", methods={"GET"})
 async def run_state_get(request, run_id):
-    _, run = request.app.apsis.run_store.get(run_id)
+    try:
+        _, run = request.app.apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     return response_json({"state": run.state})
 
 
 @API.route("/runs/<run_id>/skip", methods={"POST"})
 async def run_skip(request, run_id):
     state = request.app.apsis
-    _, run = state.run_store.get(run_id)
+    try:
+        _, run = state.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     await state.skip(run)
     return response_json({})
 
@@ -368,7 +375,10 @@ async def run_skip(request, run_id):
 @API.route("/runs/<run_id>/start", methods={"POST"})
 async def run_start(request, run_id):
     state = request.app.apsis
-    _, run = state.run_store.get(run_id)
+    try:
+        _, run = state.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     await state.start(run)
     return response_json({})
 
@@ -376,7 +386,10 @@ async def run_start(request, run_id):
 @API.route("/runs/<run_id>/rerun", methods={"POST"})
 async def run_rerun(request, run_id):
     state = request.app.apsis
-    _, run = state.run_store.get(run_id)
+    try:
+        _, run = state.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
     new_run = await state.rerun(run)
     jso = runs_to_jso(request.app, ora.now(), [new_run])
     # Let UIs know to show the new run.
@@ -388,7 +401,10 @@ async def run_rerun(request, run_id):
 @API.route("/runs/<run_id>/stop", methods={"PUT", "POST"})
 async def run_stop(request, run_id):
     apsis = request.app.apsis
-    _, run = apsis.run_store.get(run_id)
+    try:
+        _, run = apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
 
     try:
         await apsis.stop_run(run)
@@ -403,7 +419,10 @@ async def run_stop(request, run_id):
 @API.route("/runs/<run_id>/signal/<signal>", methods={"PUT", "POST"})
 async def run_signal(request, run_id, signal):
     apsis = request.app.apsis
-    _, run = apsis.run_store.get(run_id)
+    try:
+        _, run = apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
 
     try:
         signal = to_signal(signal)
@@ -422,7 +441,10 @@ async def run_signal(request, run_id, signal):
 async def run_mark(request, run_id, state):
     try:
         apsis = request.app.apsis
-        _, run = apsis.run_store.get(run_id)
+        try:
+            _, run = apsis.run_store.get(run_id)
+        except LookupError:
+            return error(f"unknown run {run_id}", 404)
         try:
             state = to_state(state)
         except ValueError as err:
@@ -438,7 +460,10 @@ async def run_mark(request, run_id, state):
 @API.route("/runs/<run_id>/dependencies")
 async def run_dependencies(request, run_id):
     apsis = request.app.apsis
-    _, run = apsis.run_store.get(run_id)
+    try:
+        _, run = apsis.run_store.get(run_id)
+    except LookupError:
+        return error(f"unknown run {run_id}", 404)
 
     from apsis.cond.dependency import Dependency
 
@@ -481,6 +506,10 @@ async def runs(request):
     # were added to avoid collision with fixed args.
     args = {n[1:] if n.startswith("_") else n: a[-1] for n, a in args.items()}
 
+    # FIXME: add pagination. Without filters this query can return 1M runs and block the event loop for up to a 60s
+    if all(x is None for x in (run_id, job_id)):
+        return error("either run_id or job_id filter is required", 400)
+
     when, runs = apsis.run_store.query(
         run_ids=run_id,
         job_id=job_id,
@@ -507,16 +536,15 @@ async def _send_chunked(msgs, ws, prefix):
         json = ujson.dumps(chunk, escape_forward_slashes=False)
         log.debug(f"{prefix} sending {len(chunk)} msgs, {len(json)} bytes")
         await ws.send(json)
-        # Take a break, let others go.
-        await asyncio.sleep(WS_CHUNK_SLEEP)
+        await asyncio.sleep(0)
 
 
 async def _send_raw(json_msgs, ws, prefix):
-    for chunk in apsis.lib.itr.chunks(json_msgs, WS_CHUNK):
+    for chunk in apsis.lib.itr.chunks(json_msgs, WS_RAW_CHUNK):
         json = "[" + ",".join(chunk) + "]"
         log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
         await ws.send(json)
-        await asyncio.sleep(WS_CHUNK_SLEEP)
+        await asyncio.sleep(0)
 
 
 # Message types (see apsis.service.messages) to include in summary.
@@ -551,25 +579,26 @@ async def websocket_summary(request, ws):
             if init:
                 # Full initialization.
 
-                # Send all jobs.
-                jobs = apsis.jobs.get_jobs(ad_hoc=False)
-                job_msgs = (messages.make_job(j, jobs=apsis.jobs) for j in jobs)
+                with Timer(name=f"{prefix} send historical messages", print=log.debug):
+                    # Send all jobs.
+                    jobs = apsis.jobs.get_jobs(ad_hoc=False)
+                    job_msgs = (messages.make_job(j, jobs=apsis.jobs) for j in jobs)
 
-                # Send all procstar agent conns.
-                try:
-                    agent_server = procstar.get_agent_server()
-                except procstar.NoServerError:
-                    conn_msgs = iter([])
-                else:
-                    conn_msgs = (
-                        messages.make_agent_conn(c) for c in agent_server.connections.values()
-                    )
+                    # Send all procstar agent conns.
+                    try:
+                        agent_server = procstar.get_agent_server()
+                    except procstar.NoServerError:
+                        conn_msgs = iter([])
+                    else:
+                        conn_msgs = (
+                            messages.make_agent_conn(c) for c in agent_server.connections.values()
+                        )
 
-                msgs = itertools.chain(job_msgs, conn_msgs)
-                await _send_chunked(msgs, ws, prefix)
+                    msgs = itertools.chain(job_msgs, conn_msgs)
+                    await _send_chunked(msgs, ws, prefix)
 
-                # send run summaries for runs that existed before this websocket connection
-                await _send_raw(apsis.run_store.summaries(), ws, prefix)
+                    # send run summaries for runs that existed before this websocket connection
+                    await _send_raw(apsis.run_store.summaries(), ws, prefix)
 
             while not sub.closed:
                 # Wait for the next msg, then grab all that show up in a short time.

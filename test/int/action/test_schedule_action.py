@@ -24,7 +24,7 @@ def test_schedule_action(inst):
 
     r1 = client.schedule("first", {"label": "foo"})["run_id"]
     # There should be only one one right now.
-    assert {r["run_id"] for r in client.get_runs().values()} == {r1}
+    assert {r["run_id"] for r in client.get_runs(job_id="first").values()} == {r1}
 
     inst.wait_run(r1)
 

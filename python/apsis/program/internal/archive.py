@@ -128,8 +128,8 @@ class ArchiveProgram(_InternalProgram):
 
             count -= chunk
 
-            # Make sure all runs are retired; else skip them.
-            run_ids = [r for r in run_ids if apsis.run_store.retire(r)]
+            # Make sure all runs are completed; else skip them.
+            run_ids = [r for r in run_ids if apsis.run_store.archivable(r)]
 
             if len(run_ids) > 0:
                 # Archive these runs.

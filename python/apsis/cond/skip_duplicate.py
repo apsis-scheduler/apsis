@@ -151,24 +151,22 @@ class BoundSkipDuplicate(NonmonotonicRunStoreCondition):
     # wait() and check().
 
     def check(self, run_store):
-        # Query runs with the same job_id and args as this one.
+        # Must see all active runs regardless of lookback window, so uses limit_lookback=False.
         _, runs = run_store.query(
             job_id=self.__inst.job_id,
             args=self.__inst.args,
             state=self.__check_states,
+            limit_lookback=False,
         )
-        # Exclude this run itself.
         runs = [r for r in runs if r.run_id != self.__run_id]
 
         if len(runs) > 0:
-            # Found a match.  Transition this run.
             return self.Transition(
                 self.__target_state,
                 f"transitioning to {self.__target_state.name} because "
                 f"{runs[0].run_id} {runs[0].state.name}",
             )
         else:
-            # No match; we're good.
             return True
 
     async def wait(self, run_store):

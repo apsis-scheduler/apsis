@@ -1,4 +1,5 @@
 from collections import namedtuple
+import itertools
 import jinja2
 import logging
 import ora
@@ -8,7 +9,7 @@ from typing import Iterator
 
 import ujson
 
-from .states import State, TRANSITIONS, to_state
+from .states import State, TRANSITIONS, ACTIVE_STATES, to_state
 from .lib.asyn import Publisher
 from .lib.calendar import get_calendar
 from .lib.memo import memoize
@@ -204,7 +205,6 @@ class Run:
         "message",
         "run_state",
         "_rowid",
-        "_running_program",
     )
 
     def __init__(self, inst, *, expected=False):
@@ -232,9 +232,6 @@ class Run:
         self.message = None
         # State information specific to the program, for a running run.
         self.run_state = None
-
-        # Running program instance, in states starting, running, stopping.
-        self._running_program = None
 
     def __hash__(self):
         return hash(self.run_id)
@@ -352,11 +349,8 @@ def bind(run, job, jobs):
 
 class RunStore:
     """
-    Stores runs in memory.
-
-    This is a cache, backed by a write-through persistent run database.  New
-    runs are always added to the cache; use `retire()` to retire older runs from
-    memory.
+    Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
+    summary data in the DB up-to-date.
 
     - Stores runs in all states.
     - Satisfies run queries.
@@ -371,30 +365,39 @@ class RunStore:
 
         self.__min_timestamp = min_timestamp
 
-        # Populate cache from database.
-        self.__runs = {r.run_id: r for r in self.__run_db.query(min_timestamp=min_timestamp)}
-        # Keep a lookup of runs by job ID.
-        self.__runs_by_job = {}
-        for run in self.__runs.values():
-            self.__runs_by_job.setdefault(run.inst.job_id, set()).add(run)
+        # in-memory storage of scheduled runs that came from a schedule ie not reruns or adhoc runs
+        # all runs are not expected unless they came from the scheduler
+        self.__expected_runs: dict[str, Run] = {}
+
+        # in-memory mirror of runs in an active state (see ACTIVE_STATES).
+        # populated on transition-in via update() and on-demand via get()/
+        # query(); evicted on transition to a finished state.
+        self.__active_runs: dict[str, Run] = {}
 
         # Publisher for run transitions.  Messages are `Message` objects;
         # `state` is none if the run is removed.
         self.publisher = Publisher()
+
+    def __query_run_db(self, *args, min_timestamp=None, **kwargs) -> list[Run]:
+        """
+        Query the run DB.
+
+        :param min_timestamp: Timestamp filter to pass to DB query.
+        """
+        return self.__run_db.query(*args, min_timestamp=min_timestamp, **kwargs)
 
     def add(self, run):
         assert run.state == State.new
 
         timestamp = now()
         run_id = self.__next_run_id_db.get_next_run_id()
-        assert run.run_id not in self.__runs
 
         run.run_id = run_id
         run.timestamp = timestamp
 
         log.debug(f"new run: {run}")
-        self.__runs[run.run_id] = run
-        self.__runs_by_job.setdefault(run.inst.job_id, set()).add(run)
+        if run.expected:
+            self.__expected_runs[run.run_id] = run
         self.update(run, timestamp)
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
 
@@ -405,13 +408,18 @@ class RunStore:
 
         Persists the run if necessary.
         """
-        # Make sure we know about this run.
-        assert self.__runs[run.run_id] is run
-
         # Persist the changes, but not for expected runs.
         if not run.expected:
             self.__run_db.upsert(run)
             self.__summary_db.upsert(run)
+            # run is only in expected dict when it was a regularly scheduled run in the in the "scheduled" state
+            self.__expected_runs.pop(run.run_id, None)
+
+        # mirror active runs so get() returns the shared object
+        if run.state in ACTIVE_STATES:
+            self.__active_runs[run.run_id] = run
+        else:
+            self.__active_runs.pop(run.run_id, None)
 
         # FIXME: Separate transition() so we don't send this on updates.
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, run.state))
@@ -423,48 +431,65 @@ class RunStore:
         :param expected:
           If true, only an expected run may be removed.
         """
-        run = self.__runs[run_id]
-        assert not expected or run.expected, f"can't remove run {run_id}; not expected"
+        if not expected:
+            raise ValueError("removing unexpected runs not supported")
 
-        del self.__runs[run_id]
-        self.__runs_by_job[run.inst.job_id].remove(run)
+        run = self.__expected_runs[run_id]
+        del self.__expected_runs[run_id]
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
-    def retire(self, run_id):
+    def archivable(self, run_id) -> bool:
         """
         :return:
-          True if `run_id` is not in the store, either because it was
-          successfully retired, or because it wasn't there to begin with.
+          True if `run_id` is not in the working set, either because it finished, or because it wasn't there to begin
+          with.
         """
         try:
-            run = self.__runs[run_id]
-        except KeyError:
+            _, run = self.get(run_id)
+        except LookupError:
             return True
         else:
-            if run.state.finished:
-                self.remove(run_id, expected=False)
-                return True
-            else:
-                return False
-
-    def retire_old(self, min_timestamp):
-        """
-        Retires older runs from memory.
-
-        Only runs in a finished state are retired.  Runs are not removed from
-        the database.
-        """
-        old = [r for r in self.__runs.values() if r.timestamp < min_timestamp]
-        count = sum(self.retire(r.run_id) for r in old)
-        log.info(f"retired {count} runs before {min_timestamp}")
+            # we still need to report if the run is finished for the internal archive program, which shouldn't archive
+            # unfinished runs
+            return run.state.finished
 
     def __contains__(self, run_id):
-        return run_id in self.__runs
+        if run_id in self.__expected_runs or run_id in self.__active_runs:
+            return True
+        try:
+            self.__run_db.get(run_id)
+        except LookupError:
+            return False
+        else:
+            return True
 
     def get(self, run_id):
-        run = self.__runs[run_id]
+        if run_id in self.__expected_runs:
+            return now(), self.__expected_runs[run_id]
+        if run_id in self.__active_runs:
+            return now(), self.__active_runs[run_id]
+        run = self.__run_db.get(run_id)
+        # Mutation entry points (skip, start, stop_run, mark) all go through
+        # get().  If the DB says this run is active, mirror it now so that
+        # any subsequent get() during the same active period returns the
+        # same object and mutations converge.  Covers the restore-window
+        # race where the API can hit an active run before restore's attach.
+        if run.state in ACTIVE_STATES:
+            self.__active_runs[run_id] = run
         return now(), run
+
+    def attach(self, run):
+        """
+        Registers `run` as the authoritative in-memory copy for its run_id.
+
+        Used during restore to install a Run object into the active mirror
+        without persisting it (the DB row is already there).
+        """
+        assert run.state in ACTIVE_STATES, (
+            f"attach: run {run.run_id} is in state {run.state.name}, not active"
+        )
+        self.__active_runs[run.run_id] = run
 
     # FIXME: Remove `when` from the result; I think we don't use it.
     # FIXME: Remove `since`?
@@ -476,63 +501,142 @@ class RunStore:
         since=None,
         args=None,
         with_args=None,
+        limit_lookback=True,
     ):
         """
-        We rely on this function returning queries in ascending order.
-        (See `apsis.service.api.websocket_summary` for example.)
-
         :param state:
           Limits results to runs in the specified state(s).
+        :param since:
+          Return only runs with timestamp >= since. Bounded to RunStore min_timestamp if limit_lookback=True.
         :param args:
           Limits results to runs with exactly the specified args.
         :param with_args:
           Limits results to runs with the specified args.  Runs may include
           other args not explicitly given.
+        :param limit_lookback:
+          If True (default), applies lookback window. If False, queries all runs.
+          Set to False for condition checks that need to see all active runs.
         """
-        if run_ids is not None:
-            # Fast path for query by run IDs.
-            run_ids = set(iterize(run_ids))
-            runs = (r for i in run_ids if (r := self.__runs.get(i)) is not None)
-            if job_id is not None:
-                runs = (r for r in runs if r.inst.job_id == job_id)
-
-        elif job_id is not None:
-            # Fast path if the query is by job ID.
-            runs = self.__runs_by_job.get(job_id, ())
-
-        else:
-            # Slow path: scan.
-            runs = self.__runs.values()
+        # combine expected (scheduled, in-memory) and active (in-memory
+        # mirror of running/waiting/etc) into one filtered iterator of
+        # in-memory runs.
+        in_memory = itertools.chain(self.__expected_runs.values(), self.__active_runs.values())
 
         if state is not None:
             state = set(to_state(s) for s in iterize(state))
-            runs = (r for r in runs if r.state in state)
+            in_memory = (r for r in in_memory if r.state in state)
 
         if since is not None:
             since = ora.Time(since)
-            runs = (r for r in runs if r.timestamp >= since)
+            in_memory = (r for r in in_memory if r.timestamp >= since)
 
+        # args takes precedence over with_args
         if args is not None:
             args = {str(k): str(v) for k, v in args.items()}
-            runs = (r for r in runs if r.inst.args == args)
+            with_args = None
+            in_memory = (r for r in in_memory if r.inst.args == args)
 
-        if with_args is not None:
-            with_args = [(str(k), str(v)) for k, v in with_args.items()]
-            runs = (r for r in runs if all(r.inst.args.get(k) == v for k, v in with_args))
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            in_memory = (
+                r for r in in_memory if all(r.inst.args.get(k) == v for k, v in with_args.items())
+            )
 
-        return now(), list(runs)
+        if run_ids is not None:
+            run_ids = set(iterize(run_ids))
+            in_memory = (r for r in in_memory if r.run_id in run_ids)
+
+        if job_id is not None:
+            in_memory = (r for r in in_memory if r.inst.job_id == job_id)
+
+        # compute effective min_timestamp for DB query
+        if limit_lookback and self.__min_timestamp is not None:
+            if since is not None:
+                # use the more restrictive of user's since or lookback window
+                min_ts = max(self.__min_timestamp, ora.Time(since))
+            else:
+                # just use lookback window
+                min_ts = self.__min_timestamp
+        else:
+            # no lookback, but respect user's since if provided
+            min_ts = ora.Time(since) if since is not None else None
+
+        # apply the same time filter to in-memory runs so lookback semantics
+        # are consistent regardless of whether a run lives in the mirror or
+        # only in SQLite.
+        if min_ts is not None:
+            in_memory = (r for r in in_memory if r.timestamp >= min_ts)
+
+        # materialize in-memory results so we can filter DB rows to avoid
+        # duplicating active runs that are also persisted.
+        in_memory_list = list(in_memory)
+        in_memory_ids = {r.run_id for r in in_memory_list}
+
+        db_runs = [
+            r
+            for r in self.__query_run_db(
+                run_ids=run_ids,
+                job_id=job_id,
+                state=state,
+                args=args,
+                with_args=with_args,
+                min_timestamp=min_ts,
+            )
+            if r.run_id not in in_memory_ids
+        ]
+
+        return now(), in_memory_list + db_runs
 
     def summaries(self) -> Iterator[str]:
         from .lib.api import run_to_summary_jso
 
-        for run in self.query()[1]:
-            if run.expected:
-                yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
+        # expected (scheduled) runs are only in-memory; emit them first.
+        for run in list(self.__expected_runs.values()):
+            yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
 
+    def count_runs(
+        self, *, job_id=None, state=None, args=None, with_args=None, limit_lookback=True
+    ):
+        """
+        Counts runs matching the given filters without deserializing Run objects.
+
+        :param limit_lookback:
+          If True (default), applies lookback window. If False, counts all runs.
+          Conditions (MaxRunning, SkipDuplicate) should pass limit_lookback=False
+          to see every active run, including any that has been running longer than lookback.
+        """
+        # Note: runs in __active_runs are always persisted in the DB too, so
+        # the DB count already reflects them.  Only __expected_runs runs are
+        # in-memory-only (scheduled/new, never in the runs table).
+        expected = self.__expected_runs.values()
+        if job_id is not None:
+            expected = (r for r in expected if r.inst.job_id == job_id)
+        if state is not None:
+            states = set(to_state(s) for s in iterize(state))
+            expected = (r for r in expected if r.state in states)
+        if args is not None:
+            args = {str(k): str(v) for k, v in args.items()}
+            expected = (r for r in expected if r.inst.args == args)
+        elif with_args is not None:
+            with_args = {str(k): str(v) for k, v in with_args.items()}
+            expected = (
+                r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
+            )
+
+        min_ts = self.__min_timestamp if limit_lookback else None
+        return len(list(expected)) + self.__run_db.count_runs(
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_ts,
+        )
+
     def get_stats(self):
         return {
-            "num_runs": len(self.__runs),
+            "num_runs": len(self.__expected_runs)
+            + self.__run_db.count_runs(min_timestamp=self.__min_timestamp),
             "publisher": self.publisher.get_stats(),
         }

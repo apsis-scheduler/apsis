@@ -113,12 +113,14 @@ class Dependency(RunStoreCondition):
 
     async def wait(self, run_store):
         # Wait for a matching run to transition into a matching state.
+        relevant_states = self.exist | self.states if self.exist else self.states
         with run_store.publisher.subscription(
             predicate=lambda m: m.job_id == self.job_id and m.args == self.args
         ) as sub:
             while True:
-                # Look for matching runs.
-                _, runs = run_store.query(job_id=self.job_id, args=self.args)
+                _, runs = run_store.query(
+                    job_id=self.job_id, args=self.args, state=relevant_states, limit_lookback=False
+                )
 
                 # Is the dependency satisfied?
                 if any(r.state in self.states for r in runs):
