@@ -118,7 +118,9 @@ class Dependency(RunStoreCondition):
             predicate=lambda m: m.job_id == self.job_id and m.args == self.args
         ) as sub:
             while True:
-                _, runs = run_store.query(job_id=self.job_id, args=self.args, state=relevant_states)
+                _, runs = run_store.query(
+                    job_id=self.job_id, args=self.args, state=relevant_states, limit_lookback=False
+                )
 
                 # Is the dependency satisfied?
                 if any(r.state in self.states for r in runs):
