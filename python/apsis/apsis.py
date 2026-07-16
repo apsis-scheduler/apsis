@@ -133,7 +133,7 @@ class Apsis:
 
             # Restore scheduled runs from DB.
             log.info("restoring scheduled runs")
-            _, scheduled_runs = self.run_store.query(state=State.scheduled)
+            _, scheduled_runs = self.run_store.query(state=State.scheduled, limit_lookback=False)
             for run in scheduled_runs:
                 assert not run.expected
                 time = run.times["schedule"]
@@ -142,7 +142,7 @@ class Apsis:
 
             # Restore waiting runs from DB.
             log.info("restoring waiting runs")
-            _, waiting_runs = self.run_store.query(state=State.waiting)
+            _, waiting_runs = self.run_store.query(state=State.waiting, limit_lookback=False)
             for run in waiting_runs:
                 assert not run.expected
                 self.run_log.record(run, "restored")
@@ -151,16 +151,29 @@ class Apsis:
             # If a run is starting in the DB, we can't know if it actually
             # started or not, so mark it as error.
             log.info("processing starting runs")
-            _, starting_runs = self.run_store.query(state=State.starting)
+            _, starting_runs = self.run_store.query(state=State.starting, limit_lookback=False)
             for run in starting_runs:
                 self.run_log.record(run, "restored starting: might have started")
                 self._transition(run, State.error)
 
             # Reconnect to running runs.
-            _, running_runs = self.run_store.query(state=State.running)
+            _, running_runs = self.run_store.query(state=State.running, limit_lookback=False)
             log.info("reconnecting running runs")
             for run in running_runs:
-                self.__reconnect(run)
+                try:
+                    self.__reconnect(run)
+                except Exception:
+                    self.run_log.exc(run, "restored running: reconnect failed")
+                    self._transition(run, State.error)
+
+            # If a run is stopping in the DB, we can't know if it stopped or
+            # not, so mark it as error.  Otherwise it stays visible to
+            # conditions forever.
+            log.info("processing stopping runs")
+            _, stopping_runs = self.run_store.query(state=State.stopping, limit_lookback=False)
+            for run in stopping_runs:
+                self.run_log.record(run, "restored stopping: might have stopped")
+                self._transition(run, State.error)
 
             log.info("restoring done")
 
