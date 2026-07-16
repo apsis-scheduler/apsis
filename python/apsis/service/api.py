@@ -39,8 +39,8 @@ log = logging.getLogger(__name__)
 WS_DRAIN_TIME = 0.5
 # Max number of items to send in one websocket message.
 WS_CHUNK = 4096
-# Time to sleep between websocket messages.
-WS_CHUNK_SLEEP = 0.001
+# Send bigger chunks when the json is pre-serialized
+WS_RAW_CHUNK = 2**16
 
 # -------------------------------------------------------------------------------
 
@@ -536,16 +536,15 @@ async def _send_chunked(msgs, ws, prefix):
         json = ujson.dumps(chunk, escape_forward_slashes=False)
         log.debug(f"{prefix} sending {len(chunk)} msgs, {len(json)} bytes")
         await ws.send(json)
-        # Take a break, let others go.
-        await asyncio.sleep(WS_CHUNK_SLEEP)
+        await asyncio.sleep(0)
 
 
 async def _send_raw(json_msgs, ws, prefix):
-    for chunk in apsis.lib.itr.chunks(json_msgs, WS_CHUNK):
+    for chunk in apsis.lib.itr.chunks(json_msgs, WS_RAW_CHUNK):
         json = "[" + ",".join(chunk) + "]"
         log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
         await ws.send(json)
-        await asyncio.sleep(WS_CHUNK_SLEEP)
+        await asyncio.sleep(0)
 
 
 # Message types (see apsis.service.messages) to include in summary.
