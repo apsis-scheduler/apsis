@@ -377,3 +377,106 @@ def test_upsert_durability(tmp_path):
     assert [r.run_id for r in store.query(job_id="job")[1]] == [run.run_id], (
         "run lost after run_db upsert failure"
     )
+
+
+def test_active_run_is_singleton_across_get(tmp_path):
+    """
+    An active run must have a single in-memory identity.
+
+    Every path that resolves an active run (get, query, subsequent get after
+    a transition, subsequent get after eviction from expected) must return
+    the same Python object.  This is what protects API handlers and
+    _process_updates from mutating disjoint copies (see PR #538, findings
+    2/5).
+    """
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+
+    # transition into an active state; run is now persisted and mirrored.
+    _transition(store, run, State.waiting)
+
+    # every get() during the active period returns the same object.
+    _, g1 = store.get(run.run_id)
+    _, g2 = store.get(run.run_id)
+    assert g1 is g2 is run
+
+    # a transition within the active set keeps identity.
+    _transition(store, run, State.starting)
+    _, g3 = store.get(run.run_id)
+    assert g3 is run
+
+    # transition to a finished state evicts the run; subsequent get() must
+    # deserialize a fresh copy from the DB (not the mirror), since the
+    # in-memory identity is no longer needed.
+    _transition(store, run, State.error, force=True)
+    _, g_after = store.get(run.run_id)
+    assert g_after is not run
+    assert g_after.run_id == run.run_id
+    assert g_after.state == State.error
+
+
+def test_active_run_singleton_survives_db_backing(tmp_path):
+    """
+    A run loaded from SQLite (not created via add()) still gets mirrored
+    on first get(), so subsequent get()s return the same object.  This
+    covers the restore-window race: an API call for an active run whose
+    DB row exists but that restore has not yet attach()-ed.
+    """
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(path=db_path)
+    db = SqliteDB.open(db_path)
+
+    # persist an active-state run directly, bypassing the store.
+    run = Run(Instance("job", {}), expected=False)
+    run.run_id = db.next_run_id_db.get_next_run_id()
+    run.timestamp = ora.now()
+    run.state = State.running
+    run.times = {State.running.name: run.timestamp}
+    run.meta = {}
+    db.run_db.upsert(run)
+
+    store = RunStore(db, min_timestamp=None)
+
+    # first get() has to deserialize from SQLite.
+    _, g1 = store.get(run.run_id)
+    assert g1.run_id == run.run_id
+    assert g1.state == State.running
+
+    # every subsequent get() returns that same object.
+    _, g2 = store.get(run.run_id)
+    _, g3 = store.get(run.run_id)
+    assert g1 is g2 is g3
+
+
+def test_active_run_singleton_via_attach(tmp_path):
+    """
+    attach() installs a Run as the authoritative in-memory object for its
+    run_id.  restore() uses this to hand the same object to _wait_loop /
+    __reconnect and to any API request that lands during the restore window.
+    """
+    db_path = tmp_path / "apsis.db"
+    SqliteDB.create(path=db_path)
+    db = SqliteDB.open(db_path)
+
+    run = Run(Instance("job", {}), expected=False)
+    run.run_id = db.next_run_id_db.get_next_run_id()
+    run.timestamp = ora.now()
+    run.state = State.waiting
+    run.times = {State.waiting.name: run.timestamp}
+    run.meta = {}
+    db.run_db.upsert(run)
+
+    store = RunStore(db, min_timestamp=None)
+    store.attach(run)
+
+    _, g = store.get(run.run_id)
+    assert g is run
+
+    # attach() rejects non-active states.
+    finished = Run(Instance("job", {}), expected=False)
+    finished.run_id = db.next_run_id_db.get_next_run_id()
+    finished.timestamp = ora.now()
+    finished.state = State.success
+    with pytest.raises(AssertionError):
+        store.attach(finished)

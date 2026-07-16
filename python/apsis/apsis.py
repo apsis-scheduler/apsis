@@ -145,6 +145,9 @@ class Apsis:
             _, waiting_runs = self.run_store.query(state=State.waiting, limit_lookback=False)
             for run in waiting_runs:
                 assert not run.expected
+                # install as the authoritative in-memory Run so subsequent
+                # get()s and mutations converge on this object.
+                self.run_store.attach(run)
                 self.run_log.record(run, "restored")
                 self._wait(run)
 
@@ -153,6 +156,7 @@ class Apsis:
             log.info("processing starting runs")
             _, starting_runs = self.run_store.query(state=State.starting, limit_lookback=False)
             for run in starting_runs:
+                self.run_store.attach(run)
                 self.run_log.record(run, "restored starting: might have started")
                 self._transition(run, State.error)
 
@@ -160,6 +164,7 @@ class Apsis:
             _, running_runs = self.run_store.query(state=State.running, limit_lookback=False)
             log.info("reconnecting running runs")
             for run in running_runs:
+                self.run_store.attach(run)
                 try:
                     self.__reconnect(run)
                 except Exception:
@@ -172,6 +177,7 @@ class Apsis:
             log.info("processing stopping runs")
             _, stopping_runs = self.run_store.query(state=State.stopping, limit_lookback=False)
             for run in stopping_runs:
+                self.run_store.attach(run)
                 self.run_log.record(run, "restored stopping: might have stopped")
                 self._transition(run, State.error)
 
@@ -586,12 +592,15 @@ class Apsis:
         if run.state != State.running:
             raise RuntimeError(f"can't stop run {run.run_id}: run is {run.state.name}")
 
+        # Ask the run to stop. Guard against a DB row that says running but has no live program (e.g. a zombie left by
+        # an old crash); match send_signal's behavior instead of silently getting stuck in stopping.
+        running_program = self._running_programs.get(run.run_id)
+        if running_program is None:
+            raise RuntimeError(f"no running program for {run.run_id}")
+
         # Transition to stopping.
         self.run_log.record(run, "stopping")
         self._transition(run, State.stopping, run_state=run.run_state | {"stopping": True})
-
-        # Ask the run to stop.
-        running_program = self._running_programs.get(run.run_id)
 
         async def stop():
             try:

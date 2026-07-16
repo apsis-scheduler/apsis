@@ -91,3 +91,13 @@ def reachable(state):
             return reachable
         else:
             reachable |= succ
+
+
+# In-flight states: reachable from scheduled but not finished, excluding
+# scheduled itself.  These are the states where a run has an ongoing task
+# or program associated with it (waiter, running program, stop task), and
+# the RunStore keeps the Run object in memory to preserve identity across
+# API/wait/update paths.
+ACTIVE_STATES = frozenset(
+    s for s in reachable(State.scheduled) - {State.scheduled} if not s.finished
+)
