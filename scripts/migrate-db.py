@@ -57,6 +57,10 @@ def migrate_0_33_7(db: SqliteDB):
             )
 
     conn.execute("CREATE INDEX IF NOT EXISTS index_runs_job_id ON runs (job_id)")
+    # commit before returning: `db.conn` re-access implicitly ROLLBACKs any
+    # pending transaction, so subsequent migrate functions would silently
+    # drop unpersisted work.
+    conn.commit()
 
 
 def migrate_2_3_0(db: SqliteDB):
@@ -90,21 +94,37 @@ def migrate_2_3_0(db: SqliteDB):
             log.info(f"  backfilled {idx} rows")
 
     log.info(f"backfill complete: {len(runs)} rows")
+    conn.commit()
 
 
 def migrate_2_4_0(db: SqliteDB):
     """
-    Replace single-column job_id index with compound (job_id, args) index
-    for faster condition queries (max_running, skip_duplicate, dependency).
+    Two changes bundled into one migration:
 
-    Args are rewritten with sorted keys so equality on the raw JSON string is
-    a direct index lookup.
+    1. Replace single-column job_id index with compound (job_id, args) index
+       for faster condition queries (max_running, skip_duplicate, dependency).
+       Args are rewritten with sorted keys so equality on the raw JSON
+       string is a direct index lookup.
+
+    2. Clean up zombie active-state rows.  Previously the in-memory run
+       store was lookback-bounded, so any run stuck in an active state
+       older than the lookback window was invisible to conditions.  The
+       SQLite-backed run store makes those rows newly visible — one zombie
+       in `stopping` for job X can silently block or skip every future run
+       of X.  Reset them here rather than let restore transition them,
+       which would otherwise fire IncidentAction / NotificationAction for
+       runs that failed months ago.  Cutoff is 21 days (prod lookback):
+       only rows that were already invisible to conditions on main are
+       touched.
     """
+    import time
     import ujson
 
     from apsis.sqlite import canonical_args_json
 
     conn = db.conn
+
+    # part 1: index migration
     conn.execute("DROP INDEX IF EXISTS index_runs_job_id")
 
     log.info("rewriting runs.args to canonical form")
@@ -127,6 +147,31 @@ def migrate_2_4_0(db: SqliteDB):
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_args ON runs (job_id, args)")
     log.info("created idx_runs_job_args")
+
+    # part 2: zombie active-state cleanup
+    lookback_days = 21
+    cutoff = int(time.time()) - lookback_days * 86400
+    result = conn.execute(
+        """
+        UPDATE runs
+        SET state = 'error'
+        WHERE state IN ('scheduled', 'waiting', 'starting', 'running', 'stopping')
+          AND timestamp < ?
+        """,
+        (cutoff,),
+    )
+    zombie_count = result.rowcount
+    if zombie_count > 0:
+        log.info(
+            f"reset {zombie_count} zombie active-state rows (older than {lookback_days}d) to error"
+        )
+    else:
+        log.info("no zombie active-state rows to clean up")
+
+    # commit before returning: `db.conn` re-access implicitly ROLLBACKs any
+    # pending transaction, so subsequent migrate functions would silently
+    # drop unpersisted work.
+    conn.commit()
 
 
 def main():
