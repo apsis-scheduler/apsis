@@ -328,6 +328,25 @@ def test_run_store_limit_lookback(tmp_path):
     assert count_all == 2, "count_runs with limit_lookback=False should see all runs"
 
 
+def test_summaries_concurrent_transition(tmp_path):
+    """summaries() must not raise RuntimeError if a run transitions mid-iteration."""
+    store = _make_store(tmp_path)
+
+    run_a = Run(Instance("job", {"n": "0"}), expected=True)
+    _schedule(store, run_a)
+    run_b = Run(Instance("job", {"n": "1"}), expected=True)
+    _schedule(store, run_b)
+
+    it = store.summaries()
+    next(it)
+
+    # transition a run out of expected (simulates concurrent state change)
+    _transition(store, run_b, State.waiting)
+
+    # consuming the rest must not raise "dictionary changed size during iteration"
+    list(it)
+
+
 def test_upsert_durability(tmp_path):
     SqliteDB.create(path=tmp_path / "apsis.db")
     db = SqliteDB.open(tmp_path / "apsis.db")
