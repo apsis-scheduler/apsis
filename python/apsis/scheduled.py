@@ -137,6 +137,9 @@ class ScheduledRuns:
                     # Start the runs.
                     for run in ready:
                         self.__start_run(run)
+                        # yield back to the event loop to prevent hanging it when many runs are started at the same time
+                        # e.g. at the top of the hour
+                        await asyncio.sleep(0)
 
                 next_time = time + self.LOOP_TIME
                 if len(self.__heap) > 0:
