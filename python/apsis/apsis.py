@@ -100,6 +100,8 @@ class Apsis:
         except KeyError:
             min_timestamp = None
         else:
+            # NOTE: min_timestamp is frozen at process start; the effective query window grows with uptime. Fine for a
+            # typical weekly restart cadence
             min_timestamp = now() - lookback
         self.run_store = RunStore(db, min_timestamp=min_timestamp)
 
