@@ -115,7 +115,7 @@ class BoundMaxRunning(NonmonotonicRunStoreCondition):
             state=(State.starting, State.running),
             limit_lookback=False,
         )
-        log.debug(f"found {count} running")
+        log.debug(f"found {count} running ({self.__job_id})")
         return count < self.__count
 
     async def wait(self, run_store):

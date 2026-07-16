@@ -26,6 +26,7 @@ from apsis.lib.api import (
     output_to_http_message,
 )
 import apsis.lib.itr
+from apsis.lib.timing import Timer
 from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
@@ -579,25 +580,26 @@ async def websocket_summary(request, ws):
             if init:
                 # Full initialization.
 
-                # Send all jobs.
-                jobs = apsis.jobs.get_jobs(ad_hoc=False)
-                job_msgs = (messages.make_job(j, jobs=apsis.jobs) for j in jobs)
+                with Timer(name=f"{prefix} send historical messages", print=log.debug):
+                    # Send all jobs.
+                    jobs = apsis.jobs.get_jobs(ad_hoc=False)
+                    job_msgs = (messages.make_job(j, jobs=apsis.jobs) for j in jobs)
 
-                # Send all procstar agent conns.
-                try:
-                    agent_server = procstar.get_agent_server()
-                except procstar.NoServerError:
-                    conn_msgs = iter([])
-                else:
-                    conn_msgs = (
-                        messages.make_agent_conn(c) for c in agent_server.connections.values()
-                    )
+                    # Send all procstar agent conns.
+                    try:
+                        agent_server = procstar.get_agent_server()
+                    except procstar.NoServerError:
+                        conn_msgs = iter([])
+                    else:
+                        conn_msgs = (
+                            messages.make_agent_conn(c) for c in agent_server.connections.values()
+                        )
 
-                msgs = itertools.chain(job_msgs, conn_msgs)
-                await _send_chunked(msgs, ws, prefix)
+                    msgs = itertools.chain(job_msgs, conn_msgs)
+                    await _send_chunked(msgs, ws, prefix)
 
-                # send run summaries for runs that existed before this websocket connection
-                await _send_raw(apsis.run_store.summaries(), ws, prefix)
+                    # send run summaries for runs that existed before this websocket connection
+                    await _send_raw(apsis.run_store.summaries(), ws, prefix)
 
             while not sub.closed:
                 # Wait for the next msg, then grab all that show up in a short time.
