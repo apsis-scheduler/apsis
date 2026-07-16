@@ -92,6 +92,43 @@ def migrate_2_3_0(db: SqliteDB):
     log.info(f"backfill complete: {len(runs)} rows")
 
 
+def migrate_2_4_0(db: SqliteDB):
+    """
+    Replace single-column job_id index with compound (job_id, args) index
+    for faster condition queries (max_running, skip_duplicate, dependency).
+
+    Args are rewritten with sorted keys so equality on the raw JSON string is
+    a direct index lookup.
+    """
+    import ujson
+
+    from apsis.sqlite import canonical_args_json
+
+    conn = db.conn
+    conn.execute("DROP INDEX IF EXISTS index_runs_job_id")
+
+    log.info("rewriting runs.args to canonical form")
+    cursor = conn.execute("SELECT rowid, args FROM runs")
+    batch = []
+    total = 0
+    for rowid, args_json in cursor:
+        canonical = canonical_args_json(ujson.loads(args_json))
+        if canonical != args_json:
+            batch.append((canonical, rowid))
+        if len(batch) >= 10000:
+            conn.executemany("UPDATE runs SET args = ? WHERE rowid = ?", batch)
+            total += len(batch)
+            log.info(f"  rewrote {total} rows")
+            batch = []
+    if batch:
+        conn.executemany("UPDATE runs SET args = ? WHERE rowid = ?", batch)
+        total += len(batch)
+    log.info(f"rewrote {total} rows")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_args ON runs (job_id, args)")
+    log.info("created idx_runs_job_args")
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("path", metavar="PATH", type=Path, help="migrate db file PATH")
@@ -100,6 +137,7 @@ def main():
     with closing(SqliteDB.open(args.path, timeout=120)) as db:
         migrate_0_33_7(db)
         migrate_2_3_0(db)
+        migrate_2_4_0(db)
 
         db.conn.commit()
 

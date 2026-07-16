@@ -3,6 +3,7 @@ Persistent state stored in a sqlite file.
 """
 
 import contextlib
+import json
 import logging
 import ora
 from pathlib import Path
@@ -260,6 +261,23 @@ class JobDB:
 
 # -------------------------------------------------------------------------------
 
+
+def canonical_args_json(args) -> str:
+    """
+    Serializes run args to the canonical JSON form used for storage and lookup.
+
+    Uses stdlib json (byte-stable across Python versions) with sorted keys. All writers to runs.args and callers of
+    RunDB.query/count_runs with an exact-match args predicate must produce args through this function, or equality
+    lookups will silently miss rows.
+    """
+    return json.dumps(
+        {str(k): str(v) for k, v in args.items()},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 TBL_RUNS = sa.Table(
     "runs",
     METADATA,
@@ -280,10 +298,10 @@ TBL_RUNS = sa.Table(
     sa.Column("actions", sa.String(), nullable=True),
 )
 
-# This index is used to speed up removal of orphaned jobs during archiving, i.e.
-# (ad hoc) jobs in the `jobs` table that no longer have an associated run.  If
-# we ever remove the `jobs` table, we can remove this.
-sa.Index("index_runs_job_id", TBL_RUNS.c.job_id)
+# compound index for condition queries (max_running, skip_duplicate, dependency)
+# that filter on job_id + args. Args are stored with sorted keys, so equality on
+# the raw JSON string is a direct index lookup.
+sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 
 TBL_RUNS_SELECT = sa.select(
     [
@@ -340,12 +358,9 @@ class RunDB:
             states = py.tupleize(state)
             where.append(TBL_RUNS.c.state.in_([s.name for s in states]))
         if args is not None:
-            args = {str(k): str(v) for k, v in args.items()}
-            for k, v in args.items():
-                # escape key for JSON path to handle dots, quotes, etc
-                path = '$."' + k.replace('"', '\\"') + '"'
-                where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
-            where.append(sa.literal_column("(SELECT count(*) FROM json_each(args))") == len(args))
+            # Args are canonicalized on write, so an equality check on the JSON
+            # string is a direct index lookup on idx_runs_job_args.
+            where.append(TBL_RUNS.c.args == canonical_args_json(args))
         elif with_args is not None:
             with_args = {str(k): str(v) for k, v in with_args.items()}
             for k, v in with_args.items():
@@ -416,7 +431,7 @@ class RunDB:
             run.run_id,
             dump_time(run.timestamp),
             run.inst.job_id,
-            ujson.dumps(run.inst.args),
+            canonical_args_json(run.inst.args),
             run.state.name,
             program,
             conds,
