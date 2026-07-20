@@ -169,6 +169,77 @@ def test_archive_chunks(tmp_path):
             assert all(r[0] in run_ids and r[1] == "success" for r in rows)
 
 
+def test_archive_truncated(tmp_path):
+    """
+    When `count` is exhausted while eligible runs remain, the run fails, and the
+    archived runs are still reported.
+    """
+    path = tmp_path / "archive.db"
+    job_dir = tmp_path / "jobs"
+    job_dir.mkdir()
+
+    with closing(
+        ApsisService(
+            cfg={"schedule": {"horizon": 1}},
+            job_dir=job_dir,
+        )
+    ) as inst:
+        inst.create_db()
+        inst.write_cfg()
+        inst.start_serve()
+        inst.wait_for_serve()
+
+        client = inst.client
+
+        # Run 20 runs.
+        res = client.schedule_adhoc("now", {"program": {"type": "no-op"}}, count=20)
+        run_ids = {r["run_id"] for r in res}
+        for run_id in run_ids:
+            inst.wait_run(run_id)
+
+        time.sleep(1)
+
+        # Archive, with a max age of 1 s but a count of only 5: fewer than the
+        # eligible runs, so archiving is truncated.
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.archive.ArchiveProgram",
+                    "age": 1,
+                    "count": 5,
+                    "path": str(path),
+                },
+            },
+        )
+        truncated_run_id = res["run_id"]
+        res = inst.wait_run(truncated_run_id)
+        # The run failed loudly, because eligible runs remain.
+        assert res["state"] == "failure"
+        # The failure message explains why: count 5 ran out with 15 runs left.
+        log = client.get_run_log(truncated_run_id)
+        assert any("count 5 exhausted with 15 eligible runs remaining" in e["message"] for e in log)
+        # The archived runs are still reported.
+        assert res["meta"]["program"]["run count"] == 5
+
+        # A follow-up archive with a large enough count clears the rest and
+        # succeeds.
+        res = client.schedule_adhoc(
+            "now",
+            {
+                "program": {
+                    "type": "apsis.program.internal.archive.ArchiveProgram",
+                    "age": 1,
+                    "count": 100,
+                    "path": str(path),
+                },
+            },
+        )
+        res = inst.wait_run(res["run_id"])
+        # Count was not exhausted, so the run succeeds.
+        assert res["state"] == "success"
+
+
 def test_clean_up_jobs(tmp_path):
     path = tmp_path / "archive.db"
     job_dir = tmp_path / "jobs"

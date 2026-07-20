@@ -437,6 +437,10 @@ starting scheduled runs.  If the `chunk_size` parameter is omitted, all runs are
 archived in one chunk.  If the `chunk_sleep` parameter is omitted, Apsis does
 not pause between chunks.
 
+If `count` is exhausted while eligible runs remain, the run **fails**.  This
+signals that `count` is too small, or the program runs too infrequently, and the
+database will grow; raise `count` or archive more often.
+
 The archive file is also an SQLite3 database file, and contains the subset of
 columns from the main database file that contains run data.  The archive file
 cannot be used directly by Apsis, but may be useful for historical analysis and
