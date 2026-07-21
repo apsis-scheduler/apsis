@@ -2,7 +2,7 @@ import asyncio
 import logging
 import ora
 
-from ..base import _InternalProgram, ProgramRunning, ProgramSuccess
+from ..base import _InternalProgram, ProgramFailure, ProgramRunning, ProgramSuccess
 from apsis.lib.json import check_schema, nkey
 from apsis.lib.parse import parse_duration
 from apsis.lib.timing import Timer
@@ -36,7 +36,8 @@ class ArchiveProgram(_InternalProgram):
           Path to the archive file, a SQLite database in a format similar to the
           Apsis database file.
         :param count:
-          Maximum number of runs to archive per run of this program.
+          Maximum number of runs to archive per run of this program.  If it is
+          exhausted while eligible runs remain, the run fails.
         :param chunk_size:
           Number of runs to archive in one chunk.  Each chunk is blocking.
         :param chunk_sleep:
@@ -145,6 +146,22 @@ class ArchiveProgram(_InternalProgram):
             if count > 0 and self.__chunk_sleep is not None:
                 # Yield to the event loop.
                 await asyncio.sleep(self.__chunk_sleep)
+
+        if count <= 0:
+            # `count` was exhausted; if eligible runs remain, it's too small and
+            # the database will accumulate a backlog.  Fail loudly rather than
+            # succeed quietly, reporting how many runs are still eligible so the
+            # operator knows how much to raise `count`.  The metadata still
+            # reports the archived runs.
+            remaining = db.count_archive_run_ids(before=archive_cutoff)
+            if remaining > 0:
+                msg = (
+                    f"archive count {self.__count} exhausted with {remaining} "
+                    f"eligible runs remaining; increase count or archive more "
+                    f"frequently"
+                )
+                log.error(msg)
+                raise ProgramFailure(msg, meta=meta)
 
         return ProgramSuccess(meta=meta)
 

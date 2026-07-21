@@ -1009,6 +1009,26 @@ class SqliteDB:
         log.info(f"obtained {len(run_ids)} runs to archive in {timer.elapsed:.3f} s")
         return run_ids
 
+    def count_archive_run_ids(self, *, before):
+        """
+        Counts runs eligible for archive.
+
+        :param before:
+          Time before which to archive runs.
+        :return:
+          The number of eligible runs.
+        """
+        # Only finished runs are eligible for archiving.
+        FINISHED_STATES = [s.name for s in State if s.finished]
+
+        with self.__engine.begin() as tx:
+            return tx.execute(
+                sa.select(sa.func.count())
+                .select_from(TBL_RUNS)
+                .where(TBL_RUNS.c.timestamp < dump_time(before))
+                .where(TBL_RUNS.c.state.in_(FINISHED_STATES))
+            ).scalar()
+
     def archive(self, path, run_ids):
         """
         Archives data for `run_ids` to sqlite archive file `path`.
