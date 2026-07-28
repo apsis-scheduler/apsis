@@ -5,6 +5,7 @@ import logging
 from ..base import _InternalProgram, ProgramRunning, ProgramSuccess, program_outputs
 from apsis.lib.json import check_schema
 from apsis.lib.py import or_none, nstr
+from apsis.lib.timing import Timer
 from apsis.runs import template_expand
 
 log = logging.getLogger(__name__)
@@ -47,10 +48,12 @@ class StatsProgram(_InternalProgram):
         return ProgramRunning(run_state), self.wait(apsis)
 
     async def wait(self, apsis):
-        stats = json.dumps(apsis.get_stats())
+        with Timer("got stats", print=log.debug):
+            stats = json.dumps(apsis.get_stats())
         if self.__path is not None:
-            with open(self.__path, "a") as file:
-                print(stats, file=file)
+            with Timer("wrote stats", print=log.debug):
+                with open(self.__path, "a") as file:
+                    print(stats, file=file)
         return ProgramSuccess(outputs=program_outputs(stats.encode()))
 
     def reconnect(self, run_id, run_state, apsis):
