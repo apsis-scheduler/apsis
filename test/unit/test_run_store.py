@@ -195,14 +195,36 @@ def test_run_store_finished_run_not_in_memory(tmp_path):
     assert run.run_id not in expected_map
 
 
-def test_run_store_num_runs_no_double_count(tmp_path):
-    """get_stats()['num_runs'] must count each physical run once."""
+def test_run_store_count_runs_no_double_count(tmp_path):
+    """count_runs() must count each physical run once."""
     store = _make_store(tmp_path)
     run = Run(Instance("job", {}), expected=True)
     _schedule(store, run)
     _transition(store, run, State.waiting)
 
-    assert store.get_stats()["num_runs"] == 1
+    assert store.count_runs() == 1
+
+
+def test_run_store_get_stats_does_not_query_db(tmp_path):
+    """
+    get_stats() must not count runs in the DB.
+
+    That query scans the runs table, which blocks the event loop for tens of
+    seconds on a large database.  See RunStore.get_stats().
+    """
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    _transition(store, run, State.waiting)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("get_stats() must not count runs in the DB")
+
+    store._RunStore__run_db.count_runs = fail
+
+    stats = store.get_stats()
+    assert stats["num_active_runs"] == 1
+    assert "num_runs" not in stats
 
 
 def test_run_store_query_since_filters_expected(tmp_path):
