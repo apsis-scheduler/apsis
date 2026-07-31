@@ -195,14 +195,14 @@ def test_run_store_finished_run_not_in_memory(tmp_path):
     assert run.run_id not in expected_map
 
 
-def test_run_store_num_runs_no_double_count(tmp_path):
-    """get_stats()['num_runs'] must count each physical run once."""
+def test_run_store_count_runs_no_double_count(tmp_path):
+    """count_runs() must count each physical run once."""
     store = _make_store(tmp_path)
     run = Run(Instance("job", {}), expected=True)
     _schedule(store, run)
     _transition(store, run, State.waiting)
 
-    assert store.get_stats()["num_runs"] == 1
+    assert store.count_runs() == 1
 
 
 def test_run_store_query_since_filters_expected(tmp_path):
