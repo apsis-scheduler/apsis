@@ -644,5 +644,7 @@ class RunStore:
         # TODO: expose a total run count that doesn't require a DB query on the
         # event loop, e.g. maintained incrementally or sampled off-thread.
         return {
+            "num_expected_runs": len(self.__expected_runs),
+            "num_active_runs": len(self.__active_runs),
             "publisher": self.publisher.get_stats(),
         }
