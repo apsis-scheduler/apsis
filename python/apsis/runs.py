@@ -635,8 +635,14 @@ class RunStore:
         )
 
     def get_stats(self):
+        # Note: deliberately no DB count here.  Counting runs in the lookback window
+        # requires a query over the runs table, which has no index on timestamp and
+        # stores wide JSON payloads inline; the scan reads GBs and takes tens of
+        # seconds when the page cache is cold.  Since get_stats() runs on the event
+        # loop, that blocks all of Apsis.  Report only in-memory counts, which are
+        # O(1).  Use count_runs() if you need a run count from the DB.
+        # TODO: expose a total run count that doesn't require a DB query on the
+        # event loop, e.g. maintained incrementally or sampled off-thread.
         return {
-            "num_runs": len(self.__expected_runs)
-            + self.__run_db.count_runs(min_timestamp=self.__min_timestamp),
             "publisher": self.publisher.get_stats(),
         }
