@@ -502,6 +502,7 @@ class RunStore:
         args=None,
         with_args=None,
         limit_lookback=True,
+        expected=None,
     ):
         """
         :param state:
@@ -516,11 +517,19 @@ class RunStore:
         :param limit_lookback:
           If True (default), applies lookback window. If False, queries all runs.
           Set to False for condition checks that need to see all active runs.
+        :param expected:
+          If true, return expected runs only.  Expected runs are never
+          persisted (see `update()`), so this skips the DB query entirely and
+          serves the results from memory.  If none (default), return both
+          expected and unexpected runs.
         """
         # combine expected (scheduled, in-memory) and active (in-memory
         # mirror of running/waiting/etc) into one filtered iterator of
         # in-memory runs.
-        in_memory = itertools.chain(self.__expected_runs.values(), self.__active_runs.values())
+        if expected:
+            in_memory = iter(self.__expected_runs.values())
+        else:
+            in_memory = itertools.chain(self.__expected_runs.values(), self.__active_runs.values())
 
         if state is not None:
             state = set(to_state(s) for s in iterize(state))
@@ -571,6 +580,12 @@ class RunStore:
         # duplicating active runs that are also persisted.
         in_memory_list = list(in_memory)
         in_memory_ids = {r.run_id for r in in_memory_list}
+
+        if expected:
+            # Expected runs live only in memory, so the DB can hold no match.
+            # Skip the query: it scans the (large) runs table for rows that
+            # would all be discarded.
+            return now(), in_memory_list
 
         db_runs = [
             r

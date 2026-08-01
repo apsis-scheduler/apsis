@@ -227,6 +227,55 @@ def test_run_store_get_stats_does_not_query_db(tmp_path):
     assert "num_runs" not in stats
 
 
+def test_run_store_query_expected_does_not_query_db(tmp_path):
+    """
+    query(expected=True) must not query the runs table.
+
+    Expected runs are never persisted (RunStore.update() only upserts runs that
+    are not expected), so the DB can hold no match.  Querying it anyway reads
+    and deserializes every persisted run of that job_id -- hundreds of
+    thousands of rows for a high-frequency job -- only to discard them all.
+    This blocks the event loop; see _unschedule_runs().
+    """
+    store = _make_store(tmp_path)
+
+    # An expected (scheduled) run, and a persisted one for the same job.
+    scheduled = Run(Instance("job", {"n": "0"}), expected=True)
+    _schedule(store, scheduled)
+    finished = Run(Instance("job", {"n": "1"}), expected=True)
+    _schedule(store, finished)
+    for state in (State.waiting, State.starting, State.running, State.success):
+        _transition(store, finished, state)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("query(expected=True) must not query the runs table")
+
+    store._RunStore__run_db.query = fail
+
+    _, runs = store.query(job_id="job", state=State.scheduled, expected=True)
+    assert [r.run_id for r in runs] == [scheduled.run_id]
+
+
+def test_run_store_query_expected_excludes_persisted_runs(tmp_path):
+    """query(expected=True) must return only expected runs, never persisted ones."""
+    store = _make_store(tmp_path)
+
+    scheduled = Run(Instance("job", {"n": "0"}), expected=True)
+    _schedule(store, scheduled)
+
+    # A run that is still active, so it is persisted and in the active mirror.
+    running = Run(Instance("job", {"n": "1"}), expected=True)
+    _schedule(store, running)
+    _transition(store, running, State.waiting)
+
+    _, runs = store.query(job_id="job", expected=True)
+    assert [r.run_id for r in runs] == [scheduled.run_id]
+
+    # Without the flag, both are visible, exactly once each.
+    _, runs = store.query(job_id="job")
+    assert sorted(r.run_id for r in runs) == sorted([scheduled.run_id, running.run_id])
+
+
 def test_run_store_query_since_filters_expected(tmp_path):
     """query(since=...) must filter expected (in-memory) runs by timestamp."""
     store = _make_store(tmp_path)

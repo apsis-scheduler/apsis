@@ -800,8 +800,7 @@ def _unschedule_runs(apsis, job_id):
     """
     Deletes all scheduled expected runs of `job_id`.
     """
-    _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled)
-    runs = [r for r in runs if r.expected]
+    _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled, expected=True)
 
     for run in runs:
         log.info(f"removing: {run.run_id}")
