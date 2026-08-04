@@ -634,6 +634,45 @@ class RunStore:
             min_timestamp=min_ts,
         )
 
+    def get_schedule_times(self, *, min_timestamp):
+        """
+        Returns the nominal schedule times of runs created from job schedules.
+
+        Used to avoid recreating a run that already exists for a given nominal
+        schedule time.  See `Apsis.schedule`.
+
+        Covers in-memory runs (expected and active) as well as persisted runs,
+        since a scheduled expected run is not persisted until it starts.
+
+        :param min_timestamp:
+          Ignore runs older than this.  Bounds the work; runs older than this
+          are not candidates for rescheduling anyway.
+        :return:
+          Mapping from `(job_id, canonical args JSON)` to the set of nominal
+          schedule times for which a run exists, in any state.
+        """
+        from .sqlite import canonical_args_json
+
+        res = {}
+
+        def add(job_id, args_json, time):
+            if time is None:
+                # Nothing to key on.
+                return
+            res.setdefault((job_id, args_json), set()).add(time)
+
+        # In-memory runs: expected (scheduled, not yet persisted) and active.
+        for run in itertools.chain(self.__expected_runs.values(), self.__active_runs.values()):
+            add(run.inst.job_id, canonical_args_json(run.inst.args), run.times.get("schedule"))
+
+        # Persisted runs, including finished ones.
+        for job_id, args_json, time in self.__run_db.query_schedule_times(
+            min_timestamp=min_timestamp
+        ):
+            add(job_id, args_json, time)
+
+        return res
+
     def get_stats(self):
         # Note: deliberately no DB count here.  Counting runs in the lookback window
         # requires a query over the runs table, which has no index on timestamp and

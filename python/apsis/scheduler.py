@@ -4,6 +4,7 @@ import logging
 from ora import Time, now
 
 from .runs import Instance
+from .sqlite import canonical_args_json
 from apsis.lib.parse import parse_duration
 
 log = logging.getLogger(__name__)
@@ -39,12 +40,17 @@ class Scheduler:
     Does not own any runs.
     """
 
-    def __init__(self, cfg, jobs, schedule, stop):
+    def __init__(self, cfg, jobs, schedule, stop, *, get_schedule_times=None):
         """
         :param jobs:
           Jobs object.
         :param schedule:
           Function of `time, run` that schedules a run.
+        :param get_schedule_times:
+          Function of no args returning a mapping from `(job_id, args JSON)` to
+          the set of nominal schedule times for which a run already exists.
+          Used to avoid recreating runs after a restart.  If none, no such
+          check is made.
         """
         cfg = cfg.get("schedule", {})
 
@@ -68,6 +74,7 @@ class Scheduler:
         self.__schedule = schedule
         self.__horizon = horizon
         self.__max_age = max_age
+        self.__get_schedule_times = get_schedule_times
 
     def set_jobs(self, jobs):
         """
@@ -90,10 +97,30 @@ class Scheduler:
             return
 
         log.debug(f"scheduling runs until {stop}")
+
+        # Nominal schedule times of runs that already exist, so that we don't
+        # create a second run for a schedule time we already handled.  Only
+        # needed when scheduling into the past, i.e. catching up after
+        # downtime; in steady state the window is in the future and empty.
+        if self.__get_schedule_times is not None and self.__stop < now():
+            existing = self.__get_schedule_times()
+            log.info(f"scheduling from {self.__stop}: {len(existing)} existing run keys")
+        else:
+            existing = None
+
         n = 0
+        skipped = 0
         for job in self.__jobs.get_jobs():
             items = get_insts_to_schedule(job, self.__stop, stop)
             for sched_time, stop_time, inst in items:
+                if existing is not None and sched_time in existing.get(
+                    (inst.job_id, canonical_args_json(inst.args)), ()
+                ):
+                    # A run for this job, args, and schedule time already
+                    # exists; don't create another.
+                    skipped += 1
+                    continue
+
                 await self.__schedule(sched_time, inst, stop_time=stop_time)
                 # using modulo instead of batching a generator because reducing allocations actually matters here for
                 # because of GC pressure
@@ -104,6 +131,9 @@ class Scheduler:
                     # make it a long wait until the scheduler will respond to network requests. The number 5 was chosen
                     # after measuring startup times.
                     await asyncio.sleep(0)
+
+        if skipped > 0:
+            log.info(f"skipped {skipped} runs that already exist")
 
         self.__stop = stop
 
