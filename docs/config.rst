@@ -26,6 +26,7 @@ config file.
       since: null               # now, or YYYY-MM-DDTHH:MM:SSZ
       max_age: null             # seconds
       horizon: 86400            # seconds
+      clock_margin: 1800        # duration
 
     waiting:
       max_time: null            # duration
@@ -93,6 +94,18 @@ than this.  This prevents very old runs from running spuriously.
 
 `schedule.horizon` specifies how far forward in time, in seconds, to schedule new
 runs.
+
+`schedule.clock_margin` specifies how far before the stored schedule time to
+start scheduling runs on startup.  Apsis records the time through which it has
+started scheduled runs, but it does so before those runs are stored, so if Apsis
+stops abruptly the recorded time can be later than the last run that was
+actually stored.  Without a margin, runs in that gap are never started.
+
+Apsis does not create a run for a schedule time if a run for the same job, args,
+and schedule time already exists, so the margin does not cause runs to be
+started twice.  Note, however, that a job added while Apsis was down has no
+existing runs, so its runs are created back to the margin; keep the margin small
+enough that this is acceptable.  Set to 0 to disable.
 
 
 Waiting
