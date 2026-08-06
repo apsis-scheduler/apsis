@@ -13,7 +13,6 @@ from .actions import Action
 from .actions.schedule import successor_from_jso
 from .cond import Condition
 from .exc import JobError, JobsDirErrors, SchemaError
-from .lib import itr
 from .lib.json import to_array, to_narray, check_schema
 from .lib.py import tupleize, format_ctor
 from .program import Program, NoOpProgram
@@ -251,14 +250,11 @@ async def load_jobs_dir(path, yaml_loader=None):
             async with aiofiles.open(path, mode="r") as file:
                 content = await file.read()
 
-            def _parse():
-                if yaml_loader is not None:
-                    job_jso = yaml.load(content, Loader=yaml_loader)
-                else:
-                    job_jso = YAML().load(content)
-                return Job.from_jso(job_jso, job_id)
-
-            job = await asyncio.to_thread(_parse)
+            if yaml_loader is not None:
+                job_jso = yaml.load(content, Loader=yaml_loader)
+            else:
+                job_jso = YAML().load(content)
+            job = Job.from_jso(job_jso, job_id)
             return job_id, job, None
         except DuplicateKeyError as exc:
             err_msg = exc.problem if exc.problem else str(exc)
@@ -270,14 +266,15 @@ async def load_jobs_dir(path, yaml_loader=None):
             exc.job_id = job_id
             return job_id, None, exc
 
-    load_coros = [load_job(path, job_id) for path, job_id in list_yaml_files(jobs_path)]
-    for chunk in itr.chunks(load_coros, 100):
-        results = await asyncio.gather(*chunk)
-        for job_id, job, exc in results:
-            if job is not None:
-                jobs[job_id] = job
-            if exc is not None:
-                errors.append(exc)
+    # Load one file at a time, yielding to the loop after each, so a reload
+    # doesn't block the event loop.
+    for path, job_id in list_yaml_files(jobs_path):
+        _, job, exc = await load_job(path, job_id)
+        if job is not None:
+            jobs[job_id] = job
+        if exc is not None:
+            errors.append(exc)
+        await asyncio.sleep(0)
 
     jobs_dir = JobsDir(jobs_path, jobs)
 
