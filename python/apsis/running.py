@@ -46,6 +46,19 @@ async def _maybe_compress(outputs, *, compression="br", min_size=16384):
     return dict(zip(outputs.keys(), o))
 
 
+def _program_meta(meta):
+    """
+    Returns a run metadata update for program metadata `meta`.
+
+    A run's program metadata is replaced by, rather than merged with, the
+    metadata of each program update, so a program that reports no metadata must
+    produce no update at all.  Otherwise it would erase what is already known
+    about the program, such as the host and pid of a process that Apsis has
+    lost track of.
+    """
+    return {"program": meta} if meta else {}
+
+
 async def _process_updates(apsis, run):
     """
     Processes program `updates` for `run` until the program is finished.
@@ -65,7 +78,7 @@ async def _process_updates(apsis, run):
                     # Handle intermediate updates during startup
                     if update.outputs is not None:
                         apsis._update_output_data(run, update.outputs, False)
-                    apsis._update_metadata(run, {"program": update.meta})
+                    apsis._update_metadata(run, _program_meta(update.meta))
 
                 case ProgramRunning() as running:
                     apsis.run_log.record(run, "running")
@@ -73,7 +86,7 @@ async def _process_updates(apsis, run):
                         run,
                         State.running,
                         run_state=running.run_state,
-                        meta={"program": running.meta},
+                        meta=_program_meta(running.meta),
                         times=running.times,
                     )
                     break
@@ -84,7 +97,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
-                        meta={"program": error.meta},
+                        meta=_program_meta(error.meta),
                         times=error.times,
                     )
                     return
@@ -117,8 +130,7 @@ async def _process_updates(apsis, run):
                 case ProgramUpdate() as update:
                     if update.outputs is not None:
                         apsis._update_output_data(run, update.outputs, False)
-                    if update.meta is not None:
-                        apsis._update_metadata(run, {"program": update.meta})
+                    apsis._update_metadata(run, _program_meta(update.meta))
 
                 case ProgramSuccess() as success:
                     apsis.run_log.record(run, "success")
@@ -126,7 +138,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.success,
-                        meta={"program": success.meta},
+                        meta=_program_meta(success.meta),
                         times=success.times,
                     )
 
@@ -137,7 +149,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.failure,
-                        meta={"program": failure.meta},
+                        meta=_program_meta(failure.meta),
                         times=failure.times,
                     )
 
@@ -147,7 +159,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
-                        meta={"program": error.meta},
+                        meta=_program_meta(error.meta),
                         times=error.times,
                     )
 
