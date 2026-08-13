@@ -50,6 +50,38 @@ def test_reconnect():
         assert len(agent.client.get_procs()) == 0
 
 
+def test_reconnect_failed_keeps_metadata():
+    """
+    Tests that a run keeps its metadata when Apsis can't reconnect to it.
+
+    A run whose process Apsis has lost track of is precisely the run whose
+    metadata is needed, to go find the process, so the metadata must survive
+    the transition to error.
+    """
+    with ApsisService(job_dir=JOB_DIR) as svc, svc.agent() as agent:
+        run_id = svc.client.schedule("sleep", {"time": 30})["run_id"]
+        # Wait for the run to start; only a running run has program metadata.
+        assert svc.wait_for_run_to_start(run_id)["state"] == "running"
+        meta = svc.client.get_run(run_id)["meta"]["program"]
+        assert meta["procstar_proc_id"] is not None
+        assert meta["procstar_conn"]["conn_id"] == agent.conn_id
+
+        # Take Apsis down, then restart the agent with a new connection ID, so
+        # that Apsis can't reconnect to the run's process.
+        svc.stop_serve()
+        agent.restart()
+        svc.start_serve()
+        svc.wait_for_serve()
+
+        # The run errors, since Apsis can't reconnect to it.
+        res = svc.wait_run(run_id, timeout=30)
+        assert res["state"] == "error"
+        assert any("reconnect failed" in r["message"] for r in svc.client.get_run_log(run_id))
+
+        # Its metadata is intact.
+        assert svc.client.get_run(run_id)["meta"]["program"] == meta
+
+
 def test_reconnect_many(num=256):
     """
     Tests reconnecting to many running runs after Apsis restart.
