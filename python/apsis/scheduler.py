@@ -98,10 +98,11 @@ class Scheduler:
 
         log.debug(f"scheduling runs until {stop}")
 
-        # Nominal schedule times of runs that already exist, so that we don't
-        # create a second run for a schedule time we already handled.  Only
-        # needed when scheduling into the past, i.e. catching up after
-        # downtime; in steady state the window is in the future and empty.
+        # Counts of runs that already exist, by job, args, and nominal schedule
+        # time, so that we don't create a second run for a schedule time we
+        # already handled.  Only needed when scheduling into the past, i.e.
+        # catching up after downtime; in steady state the window is in the
+        # future, where no run exists yet.
         if self.__get_schedule_times is not None and self.__stop < now():
             existing = self.__get_schedule_times()
             log.info(f"scheduling from {self.__stop}: {len(existing)} existing run keys")
@@ -113,13 +114,17 @@ class Scheduler:
         for job in self.__jobs.get_jobs():
             items = get_insts_to_schedule(job, self.__stop, stop)
             for sched_time, stop_time, inst in items:
-                if existing is not None and sched_time in existing.get(
-                    (inst.job_id, canonical_args_json(inst.args)), ()
-                ):
-                    # A run for this job, args, and schedule time already
-                    # exists; don't create another.
-                    skipped += 1
-                    continue
+                if existing is not None:
+                    # Account for each existing run against one schedule that
+                    # would produce it.  A job may have several schedules that
+                    # produce the same schedule time and args, in which case
+                    # each is a run of its own, so match them up one for one
+                    # rather than skipping every schedule that collides.
+                    times = existing.get((inst.job_id, canonical_args_json(inst.args)))
+                    if times is not None and times.get(sched_time, 0) > 0:
+                        times[sched_time] -= 1
+                        skipped += 1
+                        continue
 
                 await self.__schedule(sched_time, inst, stop_time=stop_time)
                 # using modulo instead of batching a generator because reducing allocations actually matters here for

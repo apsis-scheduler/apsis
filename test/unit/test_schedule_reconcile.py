@@ -9,6 +9,7 @@ which a run already exists.
 """
 
 import asyncio
+from collections import Counter
 import ora
 import pytest
 
@@ -23,21 +24,24 @@ INTERVAL = 300
 
 class _Job:
     """
-    A job with a single interval schedule and no params.
+    A job with `count` identical interval schedules and no params.
+
+    More than one schedule produces the same schedule time and args, as a job
+    with overlapping schedules does; each is a run in its own right.
     """
 
     job_id = JOB_ID
     params = frozenset()
 
-    def __init__(self):
+    def __init__(self, count=1):
         from apsis.schedule.interval import IntervalSchedule
 
-        self.schedules = [IntervalSchedule(INTERVAL, {})]
+        self.schedules = [IntervalSchedule(INTERVAL, {}) for _ in range(count)]
 
 
 class _Jobs:
-    def __init__(self):
-        self.__jobs = [_Job()]
+    def __init__(self, schedules=1):
+        self.__jobs = [_Job(schedules)]
 
     def get_jobs(self):
         return self.__jobs
@@ -47,12 +51,12 @@ class _Recorder:
     """
     Stands in for `Apsis.schedule`, recording what would be created.
 
-    Also serves as the store of existing runs, keyed as
+    Also serves as the store of existing runs, keyed and counted as
     `RunStore.get_schedule_times` does.
     """
 
     def __init__(self):
-        # Nominal schedule times of runs that exist.
+        # Counts of runs that exist, by key and schedule time.
         self.existing = {}
         # Schedule times passed to schedule(), in order.
         self.created = []
@@ -60,11 +64,13 @@ class _Recorder:
         self.crash_after = None
 
     def get_schedule_times(self):
-        return self.existing
+        # A fresh copy each call, as the real callback returns; the scheduler
+        # decrements the counts it is given.
+        return {key: Counter(times) for key, times in self.existing.items()}
 
-    def add_existing(self, time, args={}):
+    def add_existing(self, time, args={}, count=1):
         key = (JOB_ID, canonical_args_json(args))
-        self.existing.setdefault(key, set()).add(time)
+        self.existing.setdefault(key, Counter())[time] += count
 
     async def schedule(self, time, inst, *, stop_time=None):
         if self.crash_after is not None and len(self.created) >= self.crash_after:
@@ -80,10 +86,10 @@ class _Crash(BaseException):
     """
 
 
-def _scheduler(recorder, stop, *, reconcile=True):
+def _scheduler(recorder, stop, *, reconcile=True, schedules=1):
     return Scheduler(
         {"schedule": {}},
-        _Jobs(),
+        _Jobs(schedules),
         recorder.schedule,
         stop,
         get_schedule_times=(recorder.get_schedule_times if reconcile else None),
@@ -261,6 +267,79 @@ async def test_no_check_when_scheduling_future():
 
     assert calls == 0, "existing-run lookup should be skipped for future windows"
     assert len(rec.created) > 0
+
+
+@pytest.mark.asyncio
+async def test_overlapping_schedules_all_created():
+    """
+    Tests that a job whose schedules overlap gets a run for each.
+
+    Two schedules of a job may produce the same schedule time and args, for
+    instance schedules on different calendars that share a date.  Each is a run
+    in its own right, so the check must not collapse them into one.
+    """
+    now = ora.now()
+    start = now - 3600
+    expected = _boundaries(start, now)
+
+    rec = _Recorder()
+    await _scheduler(rec, start, schedules=3).schedule(now)
+
+    counts = Counter(rec.created)
+    assert sorted(counts) == expected
+    assert all(c == 3 for c in counts.values()), f"expected 3 runs each, got {counts}"
+
+
+@pytest.mark.asyncio
+async def test_overlapping_schedules_partial_existing():
+    """
+    Tests that only the missing runs of an overlapping schedule are created.
+
+    After a crash partway through, some of the runs for a schedule time exist
+    and the rest don't.  Each existing run accounts for one schedule, so the
+    remainder are still created.
+    """
+    now = ora.now()
+    start = now - 3600
+    expected = _boundaries(start, now)
+
+    rec = _Recorder()
+    # One of the three runs for each schedule time already exists.
+    for time in expected:
+        rec.add_existing(time)
+
+    await _scheduler(rec, start, schedules=3).schedule(now)
+
+    # Two more created for each, for three in total.
+    counts = Counter(rec.created)
+    assert sorted(counts) == expected
+    assert all(c == 2 for c in counts.values()), f"expected 2 more each, got {counts}"
+
+
+@pytest.mark.asyncio
+async def test_overlapping_schedules_crash_converges():
+    """
+    Tests that overlapping schedules converge across crashes.
+
+    Regression test: matching on the presence of a schedule time rather than
+    counting dropped every run but the first for each schedule time.
+    """
+    now = ora.now()
+    start = now - 3600
+    expected = _boundaries(start, now)
+
+    rec = _Recorder()
+    for crash_after in (1, 4, 9):
+        rec.crash_after = len(rec.created) + crash_after
+        with pytest.raises(_Crash):
+            await _scheduler(rec, start, schedules=3).schedule(now)
+
+    rec.crash_after = None
+    await _scheduler(rec, start, schedules=3).schedule(now)
+
+    counts = Counter(rec.created)
+    assert sorted(counts) == expected
+    assert all(c == 3 for c in counts.values()), f"expected 3 runs each, got {counts}"
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import Counter, namedtuple
 import itertools
 import jinja2
 import logging
@@ -636,7 +636,7 @@ class RunStore:
 
     def get_schedule_times(self, *, min_timestamp):
         """
-        Returns the nominal schedule times of runs created from job schedules.
+        Counts runs by nominal schedule time.
 
         Used to avoid recreating a run that already exists for a given nominal
         schedule time.  See `Apsis.schedule`.
@@ -644,12 +644,17 @@ class RunStore:
         Covers in-memory runs (expected and active) as well as persisted runs,
         since a scheduled expected run is not persisted until it starts.
 
+        Counts rather than merely noting presence, since a job may have several
+        schedules that produce the same schedule time and args, and each is a
+        run in its own right.
+
         :param min_timestamp:
           Ignore runs older than this.  Bounds the work; runs older than this
           are not candidates for rescheduling anyway.
         :return:
-          Mapping from `(job_id, canonical args JSON)` to the set of nominal
-          schedule times for which a run exists, in any state.
+          Mapping from `(job_id, canonical args JSON)` to a mapping from nominal
+          schedule time to the number of runs with that schedule time, in any
+          state.
         """
         from .sqlite import canonical_args_json
 
@@ -659,7 +664,8 @@ class RunStore:
             if time is None:
                 # Nothing to key on.
                 return
-            res.setdefault((job_id, args_json), set()).add(time)
+            times = res.setdefault((job_id, args_json), Counter())
+            times[time] += 1
 
         # In-memory runs: expected (scheduled, not yet persisted) and active.
         for run in itertools.chain(self.__expected_runs.values(), self.__active_runs.values()):
