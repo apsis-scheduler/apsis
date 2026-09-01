@@ -15,6 +15,14 @@ log = logging.getLogger(__name__)
 
 TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
+# Prefix for environment variables carrying a run's bound args to its process.
+APSIS_ARG_ENV_PREFIX = "APSIS_ARG_"
+
+
+def normalize_args(args):
+    """Returns an args mapping as a `{str: str}` dict."""
+    return {str(k): str(v) for k, v in (args or {}).items()}
+
 # -------------------------------------------------------------------------------
 
 
@@ -254,6 +262,12 @@ class Program(TypedJso):
     def bind(self, args):
         """
         Returns a new program with parameters bound to `args`.
+        """
+
+    def set_run_args(self, args):
+        """
+        Records the run's bound args on the bound program.  Override to expose
+        them to the process; by default does nothing.
         """
 
     # FIXME: Find a better way to get run_id into logging without passing it in.

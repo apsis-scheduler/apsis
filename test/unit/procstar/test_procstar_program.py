@@ -5,14 +5,20 @@ import pytest
 import apsis.program.procstar.agent
 from test.unit.util import create_fddata, create_running_result, create_success_result
 from apsis.exc import SchemaError
+from apsis.jobs import InMemoryJobs, Job
 from apsis.program import Program
-from apsis.program.procstar.agent import RunningProcstarProgram, ProcstarProgram
+from apsis.program.procstar.agent import (
+    RunningProcstarProgram,
+    ProcstarProgram,
+    ProcstarShellProgram,
+)
 from apsis.program.base import (
     ProgramSuccess,
     ProgramFailure,
     ProgramError,
     ProgramRunning,
 )
+from apsis.runs import Instance, Run, bind
 
 # -------------------------------------------------------------------------------
 
@@ -111,13 +117,160 @@ def test_systemd_properties():
         )
 
 
+def _spec_env(bound, run_id="r123", cfg={}):
+    """Returns the env vars of the proc spec for a bound program."""
+    return bound.run(run_id, cfg)._spec.to_jso()["env"]["vars"]
+
+
+def test_run_args_env_vars():
+    """
+    A run's bound args are exposed to the process as APSIS_ARG_* env vars,
+    including args that aren't referenced in the command.
+    """
+    args = {"date": "2026-09-01", "database": "asd_hoard"}
+    # `date` is not referenced in argv; it should still be exported.
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "{{ database }}"]).bind(args)
+    bound.set_run_args(args)
+
+    env = _spec_env(bound, "r123")
+    assert env["APSIS_RUN_ID"] == "r123"
+    assert env["APSIS_ARG_date"] == "2026-09-01"
+    assert env["APSIS_ARG_database"] == "asd_hoard"
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        # Real param combinations from asd/jobs.
+        {"date": "2026-09-01"},
+        {"time": "2026-09-01T09:00:00Z"},
+        {"date": "2026-09-01", "daytime": "09:00:00"},
+        {"date": "2026-09-01", "instance": "eq-us-01"},
+        {"strat": "st_stat", "date": "2026-09-01"},
+        {"date": "2026-09-01", "macro_portfolio": "global_macro"},  # underscore
+        # Robustness: digits and underscores in names.
+        {"model_v2": "abc", "region3": "us", "run_7": "x"},
+    ],
+)
+def test_run_args_env_names(args):
+    """A variety of realistic param names map to APSIS_ARG_<name>."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    bound.set_run_args(args)
+
+    env = _spec_env(bound, "r123")
+    assert env["APSIS_RUN_ID"] == "r123"
+    for name, value in args.items():
+        assert env[f"APSIS_ARG_{name}"] == value
+
+
+def test_shell_program_run_args_env():
+    """ProcstarShellProgram exposes run args as env vars too."""
+    args = {"database": "asd_hoard"}
+    bound = ProcstarShellProgram(command="echo {{ database }}").bind(args)
+    bound.set_run_args(args)
+
+    assert _spec_env(bound)["APSIS_ARG_database"] == "asd_hoard"
+
+
+def test_run_args_via_runs_bind():
+    """
+    The full runs.bind() path wires a run's args onto the bound program and,
+    from there, into the process environment.  This mirrors production.
+    """
+    program = ProcstarProgram(argv=["/usr/bin/echo", "{{ database }}"])
+    job = Job("job1", {"date", "database"}, program=program)
+    jobs = InMemoryJobs([job])
+    run = Run(Instance("job1", {"date": "2026-09-01", "database": "asd_hoard"}))
+
+    bind(run, job, jobs)
+
+    assert run.program.args == {"date": "2026-09-01", "database": "asd_hoard"}
+    env = _spec_env(run.program, "r1")
+    assert env["APSIS_ARG_date"] == "2026-09-01"
+    assert env["APSIS_ARG_database"] == "asd_hoard"
+
+
+def test_run_args_stringified():
+    """Non-string arg values are stringified for the environment."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    bound.set_run_args({"count": 5, "ratio": 1.5})
+
+    env = _spec_env(bound)
+    assert env["APSIS_ARG_count"] == "5"
+    assert env["APSIS_ARG_ratio"] == "1.5"
+
+
+def test_run_args_env_inherits():
+    """Adding run args doesn't disable environment inheritance."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    bound.set_run_args({"database": "asd_hoard"})
+
+    assert bound.run("r1", {})._spec.to_jso()["env"]["inherit"] is True
+
+
+def test_no_run_args_env():
+    """Without bound args, only APSIS_RUN_ID is set (no APSIS_ARG_* vars)."""
+    running = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({}).run("r123", {})
+    env = running._spec.to_jso()["env"]["vars"]
+    assert env == {"APSIS_RUN_ID": "r123"}
+
+
+def test_run_args_jso_roundtrip():
+    """Bound args survive a JSO round trip (e.g. reconnect after restart)."""
+    args = {"date": "2026-09-01", "database": "asd_hoard"}
+    program = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    program.set_run_args(args)
+    assert program.to_jso()["args"] == args
+
+    program = Program.from_jso(program.to_jso())
+    assert program.args == args
+
+
+def test_run_args_env_after_reconnect():
+    """Args survive JSO reconstruction and are still emitted (reconnect path)."""
+    args = {"date": "2026-09-01", "database": "asd_hoard"}
+    program = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    program.set_run_args(args)
+
+    restored = Program.from_jso(program.to_jso())
+    running = restored.connect("r1", {"conn_id": "c", "proc_id": "p"}, {})
+    env = running._spec.to_jso()["env"]["vars"]
+    assert env["APSIS_ARG_date"] == "2026-09-01"
+    assert env["APSIS_ARG_database"] == "asd_hoard"
+
+
+def test_set_run_args_overwrites():
+    """set_run_args replaces any previously set args."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    bound.set_run_args({"database": "asd_hoard"})
+    bound.set_run_args({"date": "2026-09-01"})
+    assert bound.args == {"date": "2026-09-01"}
+
+
+def test_run_args_run_id_not_clobbered():
+    """An arg named RUN_ID becomes APSIS_ARG_RUN_ID, distinct from APSIS_RUN_ID."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    bound.set_run_args({"RUN_ID": "not-the-run-id"})
+
+    env = _spec_env(bound, "r123")
+    assert env["APSIS_RUN_ID"] == "r123"
+    assert env["APSIS_ARG_RUN_ID"] == "not-the-run-id"
+
+
+def test_run_args_empty_string_value():
+    """An empty-string arg value is exported as an empty env var."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    bound.set_run_args({"date": ""})
+    assert _spec_env(bound)["APSIS_ARG_date"] == ""
+
+
 @pytest.mark.asyncio
 async def test_final_fddata_normal_case(mock_proc):
     """
     Test the normal case where final FdData arrives properly. This should complete
     successfully with a ProgramSuccess result.
     """
-    program = ProcstarProgram(argv=["/bin/echo", "test"])
+    program = ProcstarProgram(argv=["/bin/echo", "test"]).bind({})
     running_program = RunningProcstarProgram(
         run_id="test-run-123", program=program, cfg={}, run_state=None
     )
@@ -151,7 +304,7 @@ async def test_missing_final_fddata(mock_proc, monkeypatch):
     # let's not wait 30s
     monkeypatch.setattr(apsis.program.procstar.agent, "FD_DATA_TIMEOUT", 0.1)
 
-    program = ProcstarProgram(argv=["/bin/echo", "test"])
+    program = ProcstarProgram(argv=["/bin/echo", "test"]).bind({})
     running_program = RunningProcstarProgram(
         run_id="test-run-123", program=program, cfg={}, run_state=None
     )

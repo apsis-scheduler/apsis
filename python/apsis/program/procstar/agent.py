@@ -21,11 +21,13 @@ from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
 from apsis.program import base
 from apsis.program.base import (
+    APSIS_ARG_ENV_PREFIX,
     ProgramSuccess,
     ProgramFailure,
     ProgramError,
     Timeout,
     get_global_runtime_timeout,
+    normalize_args,
 )
 from apsis.program.process import Stop, BoundStop
 from apsis.runs import join_args, template_expand
@@ -349,6 +351,7 @@ class BoundProcstarProgram(base.Program):
         stop=BoundStop(),
         timeout=None,
         resources=BoundResources(),
+        args=None,
     ):
         self.argv = [str(a) for a in argv]
         self.group_id = str(group_id)
@@ -356,9 +359,13 @@ class BoundProcstarProgram(base.Program):
         self.stop = stop
         self.timeout = timeout
         self.resources = resources
+        self.args = normalize_args(args)
 
     def __str__(self):
         return join_args(self.argv)
+
+    def set_run_args(self, args):
+        self.args = normalize_args(args)
 
     def to_jso(self):
         jso = (
@@ -370,6 +377,7 @@ class BoundProcstarProgram(base.Program):
             | if_not_none("sudo_user", self.sudo_user)
             | ifkey("resources", self.resources.to_jso(), {})
             | ifkey("stop", self.stop.to_jso(), {})
+            | ifkey("args", self.args, {})
         )
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
@@ -384,6 +392,7 @@ class BoundProcstarProgram(base.Program):
             stop = pop("stop", BoundStop.from_jso, BoundStop())
             timeout = pop("timeout", Timeout.from_jso, None)
             resources = pop("resources", BoundResources.from_jso, BoundResources())
+            args = pop("args", default={})
         return cls(
             argv,
             group_id=group_id,
@@ -391,6 +400,7 @@ class BoundProcstarProgram(base.Program):
             stop=stop,
             timeout=timeout,
             resources=resources,
+            args=args,
         )
 
     def run(self, run_id, cfg):
@@ -458,8 +468,15 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         return procstar.spec.Proc(
             self._spec_argv,
             env=procstar.spec.Proc.Env(
+                # APSIS_RUN_ID is set first, then the run's args; the ordering
+                # keeps args from shadowing it.  Arg names are trusted (not
+                # validated as env-var identifiers).
                 vars={
                     "APSIS_RUN_ID": self.run_id,
+                    **{
+                        f"{APSIS_ARG_ENV_PREFIX}{k}": v
+                        for k, v in self.program.args.items()
+                    },
                 },
                 # Inherit the entire environment from procstar, since it probably
                 # includes important configuration.

@@ -12,6 +12,7 @@ from apsis.lib.py import get_cfg, or_none
 from apsis.program.base import (
     Program,
     Timeout,
+    normalize_args,
 )
 from apsis.program.process import BoundStop, Stop
 from apsis.program.procstar.agent import BaseRunningProcstarProgram
@@ -174,6 +175,7 @@ class BoundProcstarECSProgram(Program):
         disk_gb: Optional[int] = None,
         role: Optional[str] = None,
         task_definition: Optional[str] = None,
+        args=None,
     ):
         self.argv = [str(a) for a in argv]
         self.stop = stop
@@ -185,9 +187,13 @@ class BoundProcstarECSProgram(Program):
         self.task_definition = task_definition
         # ECS programs don't have a predefined group_id - it's generated per-run
         self.group_id = None
+        self.args = normalize_args(args)
 
     def __str__(self):
         return join_args(self.argv)
+
+    def set_run_args(self, args):
+        self.args = normalize_args(args)
 
     def to_jso(self):
         jso = (
@@ -199,6 +205,7 @@ class BoundProcstarECSProgram(Program):
             | ifkey("disk_gb", self.disk_gb, None)
             | ifkey("role", self.role, None)
             | ifkey("task_definition", self.task_definition, None)
+            | ifkey("args", self.args, {})
         )
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
@@ -215,6 +222,7 @@ class BoundProcstarECSProgram(Program):
             disk_gb = pop("disk_gb", default=None)
             role = pop("role", default=None)
             task_definition = pop("task_definition", default=None)
+            args = pop("args", default={})
         return cls(
             argv,
             stop=stop,
@@ -224,6 +232,7 @@ class BoundProcstarECSProgram(Program):
             disk_gb=disk_gb,
             role=role,
             task_definition=task_definition,
+            args=args,
         )
 
     def run(self, run_id: str, cfg) -> "RunningProcstarECSProgram":
