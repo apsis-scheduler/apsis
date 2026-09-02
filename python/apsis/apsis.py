@@ -242,6 +242,7 @@ class Apsis:
         # Start the run by running its program.
         self.run_log.record(run, "starting")
         self._transition(run, State.starting)
+        run.program.set_run_args(run.inst.args)
         # Call the program.  This produces an async iterator of updates.
         self._running_programs[run.run_id] = run.program.run(
             run.run_id,

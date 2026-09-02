@@ -342,7 +342,6 @@ def bind(run, job, jobs):
         run.conds = [bc for c in job.conds if (bc := c.bind(run, jobs)) is not None]
     if run.program is None:
         run.program = job.program.bind(get_bind_args(run))
-        run.program.set_run_args(run.inst.args)
 
 
 # -------------------------------------------------------------------------------

@@ -205,7 +205,6 @@ class BoundProcstarECSProgram(Program):
             | ifkey("disk_gb", self.disk_gb, None)
             | ifkey("role", self.role, None)
             | ifkey("task_definition", self.task_definition, None)
-            | ifkey("args", self.args, {})
         )
         if self.timeout is not None:
             jso["timeout"] = self.timeout.to_jso()
@@ -222,7 +221,6 @@ class BoundProcstarECSProgram(Program):
             disk_gb = pop("disk_gb", default=None)
             role = pop("role", default=None)
             task_definition = pop("task_definition", default=None)
-            args = pop("args", default={})
         return cls(
             argv,
             stop=stop,
@@ -232,7 +230,6 @@ class BoundProcstarECSProgram(Program):
             disk_gb=disk_gb,
             role=role,
             task_definition=task_definition,
-            args=args,
         )
 
     def run(self, run_id: str, cfg) -> "RunningProcstarECSProgram":

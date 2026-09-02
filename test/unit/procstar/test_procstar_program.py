@@ -172,10 +172,10 @@ def test_shell_program_run_args_env():
     assert _spec_env(bound)["APSIS_ARG_database"] == "asd_hoard"
 
 
-def test_run_args_via_runs_bind():
+def test_runs_bind_does_not_apply_run_args():
     """
-    The full runs.bind() path wires a run's args onto the bound program and,
-    from there, into the process environment.  This mirrors production.
+    runs.bind builds the bound program but does not apply run args; those are
+    applied at start/reconnect (so restored programs pick them up too).
     """
     program = ProcstarProgram(argv=["/usr/bin/echo", "{{ database }}"])
     job = Job("job1", {"date", "database"}, program=program)
@@ -184,7 +184,10 @@ def test_run_args_via_runs_bind():
 
     bind(run, job, jobs)
 
-    assert run.program.args == {"date": "2026-09-01", "database": "asd_hoard"}
+    assert run.program.args == {}
+
+    # What _start / __reconnect do: apply the run's args, then run.
+    run.program.set_run_args(run.inst.args)
     env = _spec_env(run.program, "r1")
     assert env["APSIS_ARG_date"] == "2026-09-01"
     assert env["APSIS_ARG_database"] == "asd_hoard"
@@ -215,26 +218,28 @@ def test_no_run_args_env():
     assert env == {"APSIS_RUN_ID": "r123"}
 
 
-def test_run_args_jso_roundtrip():
-    """Bound args survive a JSO round trip (e.g. reconnect after restart)."""
-    args = {"date": "2026-09-01", "database": "asd_hoard"}
+def test_run_args_not_persisted():
+    """Args are not serialized, so a rollback to older Apsis can still load the row."""
     program = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
-    program.set_run_args(args)
-    assert program.to_jso()["args"] == args
-
-    program = Program.from_jso(program.to_jso())
-    assert program.args == args
+    program.set_run_args({"date": "2026-09-01", "database": "asd_hoard"})
+    assert "args" not in program.to_jso()
+    assert Program.from_jso(program.to_jso()).args == {}
 
 
-def test_run_args_env_after_reconnect():
-    """Args survive JSO reconstruction and are still emitted (reconnect path)."""
+def test_run_args_env_after_restore_and_start():
+    """
+    A run bound before a restart loses its in-memory args (not persisted), but
+    when started after the restart _start re-applies them from the run, so the
+    process still gets APSIS_ARG_*.
+    """
     args = {"date": "2026-09-01", "database": "asd_hoard"}
     program = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
     program.set_run_args(args)
 
     restored = Program.from_jso(program.to_jso())
-    running = restored.connect("r1", {"conn_id": "c", "proc_id": "p"}, {})
-    env = running._spec.to_jso()["env"]["vars"]
+    assert restored.args == {}
+    restored.set_run_args(args)  # what _start does before run()
+    env = restored.run("r1", {})._spec.to_jso()["env"]["vars"]
     assert env["APSIS_ARG_date"] == "2026-09-01"
     assert env["APSIS_ARG_database"] == "asd_hoard"
 

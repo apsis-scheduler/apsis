@@ -41,15 +41,19 @@ def test_run_args_env_vars_ecs():
     assert env["APSIS_ARG_database"] == "asd_hoard"
 
 
-def test_run_args_jso_roundtrip():
-    """A run's bound args survive a JSO round trip on the ECS program."""
-    args = {"date": "2026-09-01", "database": "asd_hoard"}
-    program = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
-    program.set_run_args(args)
-    assert program.to_jso()["args"] == args
+def test_no_run_args_env_ecs():
+    """Without bound args, the ECS proc spec sets only APSIS_RUN_ID."""
+    bound = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
+    running = RunningProcstarECSProgram("r1", bound, ECS_CFG)
+    assert running._spec.to_jso()["env"]["vars"] == {"APSIS_RUN_ID": "r1"}
 
-    program = Program.from_jso(program.to_jso())
-    assert program.args == args
+
+def test_run_args_not_persisted():
+    """Args are not serialized on the ECS program (rollback safety)."""
+    program = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
+    program.set_run_args({"date": "2026-09-01", "database": "asd_hoard"})
+    assert "args" not in program.to_jso()
+    assert Program.from_jso(program.to_jso()).args == {}
 
 
 def test_no_run_args():
