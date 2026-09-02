@@ -473,10 +473,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                 # validated as env-var identifiers).
                 vars={
                     "APSIS_RUN_ID": self.run_id,
-                    **{
-                        f"{APSIS_ARG_ENV_PREFIX}{k}": v
-                        for k, v in self.program.args.items()
-                    },
+                    **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.program.args.items()},
                 },
                 # Inherit the entire environment from procstar, since it probably
                 # includes important configuration.

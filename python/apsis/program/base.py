@@ -23,6 +23,7 @@ def normalize_args(args):
     """Returns an args mapping as a `{str: str}` dict."""
     return {str(k): str(v) for k, v in (args or {}).items()}
 
+
 # -------------------------------------------------------------------------------
 
 
