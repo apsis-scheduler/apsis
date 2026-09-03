@@ -1,13 +1,14 @@
 import aiofiles
 import asyncio
+from collections.abc import Hashable
 import logging
 import os
 from pathlib import Path
 import random
+import re
 import string
 import yaml
 from ruamel.yaml import YAML
-from ruamel.yaml.constructor import DuplicateKeyError
 
 from .actions import Action
 from .actions.schedule import successor_from_jso
@@ -155,6 +156,122 @@ def dump_yaml(file, job):
     YAML().dump(job_to_jso(job), file)
 
 
+class DuplicateKeyError(Exception):
+    """A YAML mapping contains a duplicate key."""
+
+
+class _DupCheckSafeLoader(yaml.CSafeLoader):
+    """
+    Fast libyaml loader that matches ruamel: it rejects duplicate keys and
+    resolves scalars per the YAML 1.2 core schema (plus timestamps, which ruamel
+    also resolves), whereas PyYAML defaults to YAML 1.1 (e.g. `12:00:00` -> int,
+    `NO` -> bool).
+
+    Constructors and resolvers are wired up in `_build_yaml_loader`.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        # Detect duplicates among the explicit keys before expanding `<<`
+        # merges, so an explicit key that overrides a merged one isn't itself
+        # flagged as a duplicate.
+        seen = set()
+        seen_merge = False
+        for key_node, value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                if seen_merge:
+                    raise DuplicateKeyError('found duplicate merge key "<<"')
+                seen_merge = True
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, Hashable):
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    "found unhashable key",
+                    key_node.start_mark,
+                )
+            if key in seen:
+                raise DuplicateKeyError(
+                    f'found duplicate key "{key}" with value "{value_node.value}"'
+                )
+            seen.add(key)
+        self.flatten_mapping(node)
+        return {
+            self.construct_object(k, deep=deep): self.construct_object(v, deep=deep)
+            for k, v in node.value
+        }
+
+    def construct_int(self, node):
+        # YAML 1.2 treats a leading zero as decimal and `0x`/`0o` as hex/octal;
+        # PyYAML's inherited constructor would read a leading zero as octal.
+        # Underscores are digit-group separators (`1_000`), like ruamel.
+        value = self.construct_scalar(node)
+        try:
+            sign = -1 if value.startswith("-") else 1
+            digits = value[1:] if value[0] in "+-" else value
+            base = (
+                16
+                if digits[:2] in ("0x", "0X")
+                else 8
+                if digits[:2] in ("0o", "0O")
+                else 2
+                if digits[:2] in ("0b", "0B")
+                else 10
+            )
+            return sign * int(digits.replace("_", ""), base)
+        except (IndexError, ValueError) as exc:
+            raise yaml.constructor.ConstructorError(
+                "while constructing an int", node.start_mark, str(exc), node.start_mark
+            ) from exc
+
+
+def _build_yaml_loader():
+    """
+    Build the job-file YAML loader: `_DupCheckSafeLoader` with its constructors
+    registered and PyYAML's YAML 1.1 scalar resolvers replaced by the YAML 1.2
+    core schema.  Each resolver is (tag, pattern, first-characters), where the
+    last is a PyYAML lookup hint listing the chars a match may start with.
+    """
+    resolvers = (
+        ("tag:yaml.org,2002:bool", r"^(?:true|True|TRUE|false|False|FALSE)$", "tTfF"),
+        (
+            "tag:yaml.org,2002:int",
+            r"^[-+]?(?:[0-9][0-9_]*|0b[01_]+|0o[0-7_]+|0x[0-9a-fA-F_]+)$",
+            "-+0123456789",
+        ),
+        (
+            "tag:yaml.org,2002:float",
+            r"^(?:[-+]?(?:\.[0-9][0-9_]*|[0-9][0-9_]*(?:\.[0-9_]*)?)(?:[eE][-+]?[0-9]+)?"
+            r"|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$",
+            "-+0123456789.",
+        ),
+        # "" matches an empty scalar (`key:`) so it resolves to null, not "".
+        ("tag:yaml.org,2002:null", r"^(?:~|null|Null|NULL|)$", ["~", "n", "N", ""]),
+        ("tag:yaml.org,2002:merge", r"^(?:<<)$", "<"),
+    )
+
+    loader = _DupCheckSafeLoader
+    loader.add_constructor("tag:yaml.org,2002:map", loader.construct_mapping)
+    loader.add_constructor("tag:yaml.org,2002:int", loader.construct_int)
+    loader.yaml_implicit_resolvers = {}
+    for tag, pattern, first in resolvers:
+        loader.add_implicit_resolver(tag, re.compile(pattern), list(first))
+
+    ts = "tag:yaml.org,2002:timestamp"
+    ts_re = next(
+        rx
+        for chars in yaml.SafeLoader.yaml_implicit_resolvers.values()
+        for tag, rx in chars
+        if tag == ts
+    )
+    loader.add_implicit_resolver(ts, ts_re, list("0123456789"))
+    loader.add_constructor(ts, loader.construct_yaml_timestamp)
+    return loader
+
+
+DupCheckSafeLoader = _build_yaml_loader()
+
+
 def list_yaml_files(dir_path):
     dir_path = Path(dir_path)
     for dir, dirs, names in os.walk(dir_path):
@@ -223,13 +340,13 @@ class JobsDir:
         return jobs
 
 
-async def load_jobs_dir(path, yaml_loader=None):
+async def load_jobs_dir(path, yaml_loader=DupCheckSafeLoader):
     """
     Attempts to loads jobs from a jobs dir.
 
     :param yaml_loader:
-      An optional PyYAML loader class (e.g. ``yaml.CSafeLoader``) to use
-      instead of the default ruamel YAML loader.
+      The PyYAML loader class used to parse each job file.  Defaults to
+      `DupCheckSafeLoader` (libyaml-backed, fast, rejects duplicate keys).
     :return:
       The successfully loaded `JobsDir`.
     :raise NotADirectoryError:
@@ -254,17 +371,13 @@ async def load_jobs_dir(path, yaml_loader=None):
                 content = await file.read()
 
             def _parse():
-                if yaml_loader is not None:
-                    job_jso = yaml.load(content, Loader=yaml_loader)
-                else:
-                    job_jso = YAML().load(content)
+                job_jso = yaml.load(content, Loader=yaml_loader)
                 return Job.from_jso(job_jso, job_id)
 
             job = await asyncio.to_thread(_parse)
             return job_id, job, None
-        except DuplicateKeyError as exc:
-            err_msg = exc.problem if exc.problem else str(exc)
-            schema_err = SchemaError(err_msg)
+        except (DuplicateKeyError, yaml.YAMLError) as exc:
+            schema_err = SchemaError(str(exc))
             schema_err.job_id = job_id
             return job_id, None, schema_err
         except SchemaError as exc:
