@@ -157,7 +157,9 @@ def dump_yaml(file, job):
 
 def list_yaml_files(dir_path):
     dir_path = Path(dir_path)
-    for dir, _, names in os.walk(dir_path):
+    for dir, dirs, names in os.walk(dir_path):
+        # Don't go into hidden dirs (e.g. `.git`)
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
         dir = Path(dir)
         paths = (dir / n for n in names if not n.startswith("."))
         paths = (p for p in paths if p.suffix == ".yaml")
@@ -270,10 +272,10 @@ async def load_jobs_dir(path, yaml_loader=None):
             exc.job_id = job_id
             return job_id, None, exc
 
-    load_coros = [load_job(path, job_id) for path, job_id in list_yaml_files(jobs_path)]
-    for chunk in itr.chunks(load_coros, 100):
-        results = await asyncio.gather(*chunk)
-        for job_id, job, exc in results:
+    for chunk in itr.chunks(list_yaml_files(jobs_path), 16):
+        for job_id, job, exc in await asyncio.gather(
+            *(load_job(path, job_id) for path, job_id in chunk)
+        ):
             if job is not None:
                 jobs[job_id] = job
             if exc is not None:
