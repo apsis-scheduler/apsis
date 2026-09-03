@@ -166,9 +166,7 @@ def test_dup_check_loader_uses_yaml_1_2_scalars(text, expected):
 
 
 def test_dup_check_loader_resolves_timestamps():
-    assert yaml.load("d: 2027-03-03\n", Loader=DupCheckSafeLoader)["d"] == datetime.date(
-        2027, 3, 3
-    )
+    assert yaml.load("d: 2027-03-03\n", Loader=DupCheckSafeLoader)["d"] == datetime.date(2027, 3, 3)
     assert yaml.load("t: 2027-03-03 12:00:00\n", Loader=DupCheckSafeLoader)[
         "t"
     ] == datetime.datetime(2027, 3, 3, 12, 0, 0)

@@ -200,9 +200,12 @@ class _DupCheckSafeLoader(yaml.CSafeLoader):
         sign = -1 if value.startswith("-") else 1
         digits = value[1:] if value[0] in "+-" else value
         base = (
-            16 if digits[:2] in ("0x", "0X")
-            else 8 if digits[:2] in ("0o", "0O")
-            else 2 if digits[:2] in ("0b", "0B")
+            16
+            if digits[:2] in ("0x", "0X")
+            else 8
+            if digits[:2] in ("0o", "0O")
+            else 2
+            if digits[:2] in ("0b", "0B")
             else 10
         )
         return sign * int(digits, base)
@@ -217,7 +220,11 @@ def _build_yaml_loader():
     """
     resolvers = (
         ("tag:yaml.org,2002:bool", r"^(?:true|True|TRUE|false|False|FALSE)$", "tTfF"),
-        ("tag:yaml.org,2002:int", r"^[-+]?(?:[0-9]+|0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+)$", "-+0123456789"),
+        (
+            "tag:yaml.org,2002:int",
+            r"^[-+]?(?:[0-9]+|0b[01]+|0o[0-7]+|0x[0-9a-fA-F]+)$",
+            "-+0123456789",
+        ),
         (
             "tag:yaml.org,2002:float",
             r"^(?:[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?"
