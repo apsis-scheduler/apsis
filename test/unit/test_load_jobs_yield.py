@@ -1,17 +1,16 @@
-"""
-Tests that `load_jobs_dir` stays cooperative: it walks and parses the jobs dir
-without blocking the event loop for the whole (potentially slow, NFS-backed)
-traversal.
-"""
+"""Tests that `load_jobs_dir` doesn't block the event loop while loading."""
 
 import asyncio
+import datetime
 import os
 import time
 
 import pytest
+import yaml
 
 import apsis.exc
 import apsis.jobs
+from apsis.jobs import DupCheckSafeLoader, DuplicateKeyError
 
 # -------------------------------------------------------------------------------
 
@@ -47,8 +46,8 @@ async def test_load_jobs_dir_interleaves_slow_walk(tmp_path, monkeypatch):
     real_walk = os.walk
 
     def slow_walk(*args, **kwargs):
+        # Simulate slow NFS metadata reads, one blocking step per directory.
         for entry in real_walk(*args, **kwargs):
-            # Simulate a slow scandir for each directory.
             time.sleep(delay)
             yield entry
 
@@ -57,6 +56,7 @@ async def test_load_jobs_dir_interleaves_slow_walk(tmp_path, monkeypatch):
     gaps = []
     stop = False
 
+    # Ticker records the gap between its wakeups; a blocked loop -> big gap.
     async def ticker():
         last = time.perf_counter()
         while not stop:
@@ -66,16 +66,12 @@ async def test_load_jobs_dir_interleaves_slow_walk(tmp_path, monkeypatch):
             last = now
 
     task = asyncio.create_task(ticker())
-    # Let the ticker start and establish its baseline before the load begins,
-    # so it can observe a stall that happens at the very start of the walk.
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.01)  # let the ticker establish a baseline
     jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
     stop = True
     await task
 
-    # All jobs loaded correctly through the sequential loop.
     assert len(list(jobs_dir.get_jobs())) == n_dirs
-
     # The whole walk costs ~n_dirs * delay.  If the loop were blocked for the
     # entire walk (e.g. by consuming it eagerly into a list), the worst stall
     # would approach that total.  Batched iteration bounds it to about one
@@ -96,13 +92,107 @@ async def test_load_jobs_dir_loads_all_jobs(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_load_jobs_dir_skips_hidden_dirs(tmp_path):
+    """Hidden dirs (e.g. `.git`) are not descended into."""
+    _write_job(tmp_path / "real.yaml")
+    git = tmp_path / ".git" / "objects"
+    git.mkdir(parents=True)
+    _write_job(git / "nope.yaml")
+    jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
+    assert {j.job_id for j in jobs_dir.get_jobs()} == {"real"}
+
+
+@pytest.mark.asyncio
 async def test_load_jobs_dir_reports_bad_yaml(tmp_path):
     """A malformed job still surfaces as an error through the sequential loop."""
     _write_job(tmp_path / "good.yaml")
-    # Valid YAML but missing the required `program`: raises SchemaError,
-    # which the loader collects rather than propagating.
+    # Valid YAML, but missing the required `program` -> collected SchemaError.
     (tmp_path / "bad.yaml").write_text("params: [x]\n")
+    # Malformed YAML syntax -> collected, not raised out of the whole reload.
+    (tmp_path / "broken.yaml").write_text("params: [x\nprogram\n")
     with pytest.raises(apsis.exc.JobsDirErrors) as exc_info:
         await apsis.jobs.load_jobs_dir(tmp_path)
-    assert len(exc_info.value.errors) == 1
-    assert exc_info.value.errors[0].job_id == "bad"
+    assert {e.job_id for e in exc_info.value.errors} == {"bad", "broken"}
+
+
+# -------------------------------------------------------------------------------
+# DupCheckSafeLoader
+
+
+def test_dup_check_loader_rejects_duplicate_keys():
+    with pytest.raises(DuplicateKeyError):
+        yaml.load("command: one\ncommand: two\n", Loader=DupCheckSafeLoader)
+
+
+def test_dup_check_loader_parses_normal_mapping():
+    assert yaml.load("a: 1\nb: two\n", Loader=DupCheckSafeLoader) == {"a": 1, "b": "two"}
+
+
+def test_dup_check_loader_empty_scalar_is_null():
+    assert yaml.load("a:\n", Loader=DupCheckSafeLoader) == {"a": None}
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # YAML 1.1 would parse these as an int (43200) and a bool; the YAML 1.2
+        # core schema (like ruamel) keeps them as strings.
+        ("12:00:00", "12:00:00"),
+        ("NO", "NO"),
+        ("no", "no"),
+        ("on", "on"),
+        ("off", "off"),
+        ("yes", "yes"),
+        # ...while these still resolve as scalars.
+        ("true", True),
+        ("false", False),
+        ("null", None),
+        ("42", 42),
+        ("1.5", 1.5),
+        # Leading-zero ints are decimal (YAML 1.2), not YAML 1.1 octal; `09`
+        # isn't even valid octal and would raise under the inherited constructor.
+        ("010", 10),
+        ("0123", 123),
+        ("09", 9),
+        ("0x1A", 26),
+        ("0o17", 15),
+        ("0b101", 5),
+    ],
+)
+def test_dup_check_loader_uses_yaml_1_2_scalars(text, expected):
+    result = yaml.load(f"x: {text}\n", Loader=DupCheckSafeLoader)["x"]
+    assert result == expected
+    assert type(result) is type(expected)
+
+
+def test_dup_check_loader_resolves_timestamps():
+    assert yaml.load("d: 2027-03-03\n", Loader=DupCheckSafeLoader)["d"] == datetime.date(
+        2027, 3, 3
+    )
+    assert yaml.load("t: 2027-03-03 12:00:00\n", Loader=DupCheckSafeLoader)[
+        "t"
+    ] == datetime.datetime(2027, 3, 3, 12, 0, 0)
+
+
+def test_dup_check_loader_honors_merge_keys():
+    doc = "base: &b {a: 1, b: 2}\nchild:\n  <<: *b\n  c: 3\n"
+    assert yaml.load(doc, Loader=DupCheckSafeLoader)["child"] == {"a": 1, "b": 2, "c": 3}
+
+
+def test_dup_check_loader_merge_override_is_not_a_duplicate():
+    # An explicit key overriding one from `<<` must win, not raise.
+    doc = "base: &b {a: 1, p: 9}\nchild:\n  <<: *b\n  p: 3\n"
+    assert yaml.load(doc, Loader=DupCheckSafeLoader)["child"] == {"a": 1, "p": 3}
+
+
+def test_dup_check_loader_still_rejects_real_duplicate_with_merge():
+    # A genuine duplicate among explicit keys still raises, merge present or not.
+    doc = "base: &b {a: 1}\nchild:\n  <<: *b\n  p: 1\n  p: 2\n"
+    with pytest.raises(DuplicateKeyError):
+        yaml.load(doc, Loader=DupCheckSafeLoader)
+
+
+def test_dup_check_loader_rejects_duplicate_merge_keys():
+    doc = "a: &a {x: 1}\nb: &b {y: 2}\nchild:\n  <<: *a\n  <<: *b\n"
+    with pytest.raises(DuplicateKeyError):
+        yaml.load(doc, Loader=DupCheckSafeLoader)
