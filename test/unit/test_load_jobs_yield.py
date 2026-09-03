@@ -34,17 +34,16 @@ async def test_load_jobs_dir_interleaves_slow_walk(tmp_path, monkeypatch):
     A slow directory walk must not block the event loop for its whole duration.
 
     We inject a synchronous per-directory delay (simulating slow NFS metadata
-    reads) and assert that a concurrent task still runs *between* directories,
-    so the worst single stall is about one directory's delay -- not the sum
-    over all directories (which is what eagerly consuming the walk would cost).
+    reads) and assert that a concurrent task still runs *between* batches, so the
+    worst stall is about one batch's worth of directories -- not the sum over all
+    directories (which is what eagerly consuming the whole walk would cost).
     """
-    # 20 dirs keeps a wide margin between the cooperative worst stall
-    # (~2 dirs, due to the yaml-less root coalescing with the first) and
-    # the eager whole-walk stall, so the threshold is not flaky on CI.
-    n_dirs = 20
+    # Many more dirs than the load batch (16) so the worst stall -- about one
+    # batch of walking -- stays well under the whole-walk time.
+    n_dirs = 64
     _make_jobs_tree(tmp_path, n_dirs)
 
-    delay = 0.02
+    delay = 0.005
     real_walk = os.walk
 
     def slow_walk(*args, **kwargs):
@@ -79,8 +78,8 @@ async def test_load_jobs_dir_interleaves_slow_walk(tmp_path, monkeypatch):
 
     # The whole walk costs ~n_dirs * delay.  If the loop were blocked for the
     # entire walk (e.g. by consuming it eagerly into a list), the worst stall
-    # would approach that total.  Cooperative iteration bounds the worst stall
-    # to roughly a single directory's delay.
+    # would approach that total.  Batched iteration bounds it to about one
+    # batch's worth of directories.
     total_walk = delay * (n_dirs + 1)
     assert max(gaps) < total_walk / 2, (
         f"event loop blocked {max(gaps) * 1000:.0f}ms; whole walk is {total_walk * 1000:.0f}ms"
@@ -94,6 +93,17 @@ async def test_load_jobs_dir_loads_all_jobs(tmp_path):
     jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
     job_ids = {j.job_id for j in jobs_dir.get_jobs()}
     assert job_ids == {f"d{d}/job{f}" for d in range(3) for f in range(4)}
+
+
+@pytest.mark.asyncio
+async def test_load_jobs_dir_skips_hidden_dirs(tmp_path):
+    """Hidden dirs (e.g. `.git`) are not descended into."""
+    _write_job(tmp_path / "real.yaml")
+    git = tmp_path / ".git" / "objects"
+    git.mkdir(parents=True)
+    _write_job(git / "nope.yaml")
+    jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
+    assert {j.job_id for j in jobs_dir.get_jobs()} == {"real"}
 
 
 @pytest.mark.asyncio
