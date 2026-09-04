@@ -49,8 +49,7 @@ def _sudo_wrap(cfg, argv, sudo_user, arg_env_names=()):
         return argv
     else:
         sudo_argv = get_cfg(cfg, "sudo.argv", SUDO_ARGV_DEFAULT)
-        # sudo scrubs the environment; preserve this run's APSIS_ARG_* vars so
-        # they survive to the job.  Adds to any --preserve-env in `sudo_argv`.
+        # sudo scrubs env; extend its --preserve-env allowlist with this run's args.
         preserve = [f"--preserve-env={','.join(arg_env_names)}"] if arg_env_names else []
         return (
             [str(a) for a in sudo_argv]
