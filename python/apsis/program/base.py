@@ -196,6 +196,15 @@ class RunningProgram:
 
     def __init__(self, run_id):
         self.run_id = run_id
+        # The run's bound args, applied via `set_run_args` before the process
+        # starts, for exposing to it.
+        self.args = {}
+
+    def set_run_args(self, args):
+        """
+        Records the run's bound args, for exposing to the process.
+        """
+        self.args = normalize_args(args)
 
     @property
     def updates(self):
@@ -263,12 +272,6 @@ class Program(TypedJso):
     def bind(self, args):
         """
         Returns a new program with parameters bound to `args`.
-        """
-
-    def set_run_args(self, args):
-        """
-        Records the run's bound args on the bound program.  Override to expose
-        them to the process; by default does nothing.
         """
 
     # FIXME: Find a better way to get run_id into logging without passing it in.

@@ -27,7 +27,6 @@ from apsis.program.base import (
     ProgramError,
     Timeout,
     get_global_runtime_timeout,
-    normalize_args,
 )
 from apsis.program.process import Stop, BoundStop
 from apsis.runs import join_args, template_expand
@@ -351,7 +350,6 @@ class BoundProcstarProgram(base.Program):
         stop=BoundStop(),
         timeout=None,
         resources=BoundResources(),
-        args=None,
     ):
         self.argv = [str(a) for a in argv]
         self.group_id = str(group_id)
@@ -359,13 +357,9 @@ class BoundProcstarProgram(base.Program):
         self.stop = stop
         self.timeout = timeout
         self.resources = resources
-        self.args = normalize_args(args)
 
     def __str__(self):
         return join_args(self.argv)
-
-    def set_run_args(self, args):
-        self.args = normalize_args(args)
 
     def to_jso(self):
         jso = (
@@ -467,7 +461,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
             env=procstar.spec.Proc.Env(
                 vars={
                     "APSIS_RUN_ID": self.run_id,
-                    **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.program.args.items()},
+                    **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.args.items()},
                 },
                 # Inherit the entire environment from procstar, since it probably
                 # includes important configuration.
