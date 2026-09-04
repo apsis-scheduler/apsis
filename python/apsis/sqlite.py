@@ -575,6 +575,29 @@ class RunDB:
         )
         return runs
 
+    def query_schedule_times(self, *, min_timestamp=None):
+        """
+        Returns `(job_id, args, schedule_time)` for runs, without building
+        `Run` objects.
+
+        Only the nominal schedule time is extracted from the `times` column,
+        which makes this much cheaper than `query()` for the whole table: no
+        program, conds, or actions are deserialized.
+
+        :return:
+          Iterator of `(job_id, args_json, schedule_time)`, where `args_json`
+          is the canonical args JSON and `schedule_time` may be `None` if the
+          run has no schedule time.
+        """
+        query = sa.select([TBL_RUNS.c.job_id, TBL_RUNS.c.args, TBL_RUNS.c.times])
+        if min_timestamp is not None:
+            query = query.where(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
+
+        with self.__engine.connect() as conn:
+            for job_id, args_json, times_json in conn.execute(query):
+                time = ujson.loads(times_json).get("schedule")
+                yield job_id, args_json, None if time is None else ora.Time(time)
+
     def count_runs(
         self,
         *,
