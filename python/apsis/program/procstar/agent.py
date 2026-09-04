@@ -27,7 +27,6 @@ from apsis.program.base import (
     Timeout,
     arg_env_vars,
     get_global_runtime_timeout,
-    normalize_args,
 )
 from apsis.program.process import Stop, BoundStop
 from apsis.runs import join_args, template_expand
@@ -433,8 +432,6 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         super().__init__(run_id)
         if program.timeout is None:
             program.timeout = get_global_runtime_timeout(cfg)
-        # The run's args, set by `set_run_args()` before `updates` is iterated.
-        self.args = {}
         self.program = program
         self.cfg = get_cfg(cfg, "procstar.agent", {})
         self.run_state = run_state
@@ -443,9 +440,6 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         self.stopping = False
         self.stop_signals = []
         self.timed_out = False
-
-    def set_run_args(self, args):
-        self.args = normalize_args(args)
 
     @property
     def _spec_argv(self):

@@ -242,14 +242,17 @@ class RunningProgram:
 
     def __init__(self, run_id):
         self.run_id = run_id
+        # The args of the run this program is running; see `set_run_args()`.
+        self.args = {}
 
     def set_run_args(self, args):
         """
         Records the args of the run this program is running.
 
-        Apsis calls this immediately after `Program.run()` / `connect()`, before
-        iterating `updates`.  Override to expose the args to the process; by
-        default does nothing.
+        Apsis calls this immediately after `Program.run()` / `connect()`, and
+        always before iterating `updates`, which is where a subclass may use
+        them -- a program that exposes the args to its process must not read
+        them any earlier.
 
         The args live here, on the running program, and not on the bound
         program, because the bound program is serialized into the run: the run's
@@ -258,6 +261,7 @@ class RunningProgram:
         older Apsis rejects (`check_schema` raises on unexpected keys), so a
         rollback could not read runs written by a newer Apsis.
         """
+        self.args = normalize_args(args)
 
     @property
     def updates(self):
