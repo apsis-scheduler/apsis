@@ -117,6 +117,22 @@ class Client:
     def __get(self, *path, **query):
         return self.__request("GET", *path, **query)
 
+    def __get_paged_runs(self, *path, **query):
+        """
+        Fetches all runs from a paginated runs endpoint, following the
+        `paging.next` cursor across pages, and returns the merged
+        `{run_id: run}` dict.
+        """
+        runs = {}
+        cursor = None
+        while True:
+            # `cursor` is None on the first request; __url drops None query args.
+            resp = self.__get(*path, cursor=cursor, **query)
+            runs.update(resp["runs"])
+            cursor = resp.get("paging", {}).get("next")
+            if cursor is None:
+                return runs
+
     def __post(self, *path, data=None, **query):
         return self.__request("POST", *path, data=data, **query)
 
@@ -253,7 +269,7 @@ class Client:
         return self.__post("/api/v1/runs", run_id, "mark", state_name)
 
     def get_runs(self, *, job_id=None, state=None, args={}):
-        return self.__get(
+        return self.__get_paged_runs(
             "/api/v1/runs",
             job_id=job_id,
             state=state,
@@ -261,10 +277,10 @@ class Client:
             # fixed arg names.
             # FIXME: Oh so hacky.
             **{
-                "_" + n if n in {"job_id", "run_id", "state", "since"} else n: a
+                "_" + n if n in {"job_id", "run_id", "state", "since", "cursor", "limit"} else n: a
                 for n, a in args.items()
             },
-        )["runs"]
+        )
 
     def get_run(self, run_id):
         return self.__get("/api/v1/runs", run_id)["runs"][run_id]

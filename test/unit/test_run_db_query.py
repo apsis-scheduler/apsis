@@ -305,3 +305,118 @@ def test_query_malformed_run_ids(tmp_path):
     # All garbage: empty result, no exception.
     runs = run_db.query(run_ids=["abc", "", "x1"])
     assert list(runs) == []
+
+
+# --- query_paged ---------------------------------------------------------------
+
+
+def _rowid(run_id):
+    return int(run_id[1:])
+
+
+def test_query_paged_orders_by_rowid_desc(tmp_path):
+    run_db = _setup(tmp_path)
+    runs = [_make_run(run_db, "job/a", {}) for _ in range(5)]
+    expected = [r.run_id for r in sorted(runs, key=lambda r: _rowid(r.run_id), reverse=True)]
+
+    page = run_db.query_paged(job_id="job/a", limit=10)
+    assert [r.run_id for r in page] == expected
+
+
+def test_query_paged_respects_limit(tmp_path):
+    run_db = _setup(tmp_path)
+    for _ in range(10):
+        _make_run(run_db, "job/a", {})
+
+    page = run_db.query_paged(job_id="job/a", limit=3)
+    assert len(page) == 3
+    # newest three, descending
+    assert [_rowid(r.run_id) for r in page] == sorted(
+        (_rowid(r.run_id) for r in run_db.query(job_id="job/a")), reverse=True
+    )[:3]
+
+
+def test_query_paged_cursor_excludes_at_and_above(tmp_path):
+    run_db = _setup(tmp_path)
+    runs = [_make_run(run_db, "job/a", {}) for _ in range(6)]
+    mid = runs[3]
+    page = run_db.query_paged(job_id="job/a", max_rowid=_rowid(mid.run_id), limit=10)
+    # strictly less than the cursor rowid
+    assert all(_rowid(r.run_id) < _rowid(mid.run_id) for r in page)
+    assert mid.run_id not in {r.run_id for r in page}
+
+
+def test_query_paged_full_scroll_no_dup_no_skip(tmp_path):
+    run_db = _setup(tmp_path)
+    made = {_make_run(run_db, "job/a", {}).run_id for _ in range(37)}
+    _make_run(run_db, "job/b", {})  # noise, different job
+
+    seen = []
+    cursor = None
+    while True:
+        page = run_db.query_paged(job_id="job/a", max_rowid=cursor, limit=5)
+        if not page:
+            break
+        seen.extend(r.run_id for r in page)
+        cursor = _rowid(page[-1].run_id)
+
+    assert seen == sorted(seen, key=_rowid, reverse=True)  # ordered
+    assert len(seen) == len(set(seen))  # no duplicates
+    assert set(seen) == made  # no skips, no cross-job leakage
+
+
+def test_query_paged_with_args_and_state(tmp_path):
+    run_db = _setup(tmp_path)
+    r1 = _make_run(run_db, "job/a", {"date": "d1"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "d2"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "d1"}, state=State.failure)
+
+    page = run_db.query_paged(
+        job_id="job/a", with_args={"date": "d1"}, state=State.success, limit=10
+    )
+    assert [r.run_id for r in page] == [r1.run_id]
+
+
+def test_query_paged_min_timestamp(tmp_path):
+    run_db = _setup(tmp_path)
+    old = _make_run(run_db, "job/a", {})
+    old.timestamp = ora.now() - 10000
+    old.times = {old.state.name: old.timestamp}
+    run_db.upsert(old)
+    new = _make_run(run_db, "job/a", {})
+
+    page = run_db.query_paged(job_id="job/a", min_timestamp=ora.now() - 100, limit=10)
+    assert [r.run_id for r in page] == [new.run_id]
+
+
+def test_query_paged_empty(tmp_path):
+    run_db = _setup(tmp_path)
+    assert run_db.query_paged(job_id="nope", limit=10) == []
+
+
+def test_open_backfills_pagination_index(tmp_path):
+    """
+    Opening a database that predates the (job_id, rowid) pagination index must
+    create it, so existing deployments get the index without a manual migration.
+    """
+    import sqlalchemy as sa
+
+    path = tmp_path / "apsis.db"
+    SqliteDB.create(path=path)
+
+    def indexes():
+        engine = sa.create_engine(f"sqlite:///{path}")
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("PRAGMA index_list('runs')")).fetchall()
+        engine.dispose()
+        return {r[1] for r in rows}
+
+    # Simulate an older DB by dropping the index create() added.
+    engine = sa.create_engine(f"sqlite:///{path}")
+    engine.execute("DROP INDEX IF EXISTS idx_runs_job_rowid")
+    engine.dispose()
+    assert "idx_runs_job_rowid" not in indexes()
+
+    # open() backfills it.
+    SqliteDB.open(path)
+    assert "idx_runs_job_rowid" in indexes()

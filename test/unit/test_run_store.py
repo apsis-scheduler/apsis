@@ -502,3 +502,167 @@ def test_active_run_singleton_via_attach(tmp_path):
     finished.state = State.success
     with pytest.raises(AssertionError):
         store.attach(finished)
+
+
+# --- query_paged ---------------------------------------------------------------
+
+
+def _rowid(run_id):
+    return int(run_id[1:])
+
+
+def _persist_run(store, job_id, args=None, state=State.success, timestamp=None):
+    """Insert a finished run straight into the DB (not the in-memory maps)."""
+    db = store._RunStore__run_db
+    run = Run(Instance(job_id, args or {}), expected=False)
+    run.run_id = store._RunStore__next_run_id_db.get_next_run_id()
+    run.timestamp = ora.now() if timestamp is None else timestamp
+    run.state = state
+    run.times = {state.name: run.timestamp}
+    run.meta = {}
+    db.upsert(run)
+    return run
+
+
+def _scroll(store, limit, **kwargs):
+    """Walk all pages, return the list of run_ids seen in order."""
+    seen = []
+    cursor = None
+    while True:
+        page, nxt = store.query_paged(cursor=cursor, limit=limit, **kwargs)
+        assert len(page) <= limit
+        seen.extend(r.run_id for r in page)
+        if nxt is None:
+            break
+        cursor = nxt
+    return seen
+
+
+def test_query_paged_matches_query_across_page_sizes(tmp_path):
+    """Scrolling every page equals the unpaged query() set, deduped + ordered."""
+    store = _make_store(tmp_path)
+    # persisted DB runs + in-memory expected runs, interleaved
+    for _ in range(40):
+        _persist_run(store, "job")
+    for _ in range(6):
+        _schedule(store, Run(Instance("job", {}), expected=True))
+    _persist_run(store, "other")  # noise
+
+    all_ids = {r.run_id for r in store.query(job_id="job")[1]}
+    for limit in (1, 2, 5, 13, 1000):
+        seen = _scroll(store, limit, job_id="job")
+        assert seen == sorted(seen, key=_rowid, reverse=True)
+        assert len(seen) == len(set(seen))
+        assert set(seen) == all_ids
+
+
+def test_query_paged_dedups_active_run_in_memory_and_db(tmp_path):
+    """An active run mirrored in memory and persisted in the DB appears once."""
+    store = _make_store(tmp_path)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    # waiting/running are ACTIVE_STATES: run is now in the in-memory mirror AND
+    # persisted to the DB.
+    _transition(store, run, State.waiting)
+
+    seen = _scroll(store, 10, job_id="job")
+    assert seen == [run.run_id]
+
+
+def test_query_paged_last_page_next_is_none(tmp_path):
+    store = _make_store(tmp_path)
+    for _ in range(3):
+        _persist_run(store, "job")
+
+    page, nxt = store.query_paged(job_id="job", limit=3)
+    assert len(page) == 3
+    assert nxt is None
+
+    # exactly-full first page but more remain -> next set, then None
+    page1, nxt1 = store.query_paged(job_id="job", limit=2)
+    assert len(page1) == 2 and nxt1 is not None
+    page2, nxt2 = store.query_paged(job_id="job", limit=2, cursor=nxt1)
+    assert len(page2) == 1 and nxt2 is None
+
+
+def test_query_paged_stable_when_expected_run_persists_mid_scroll(tmp_path):
+    """
+    A run that transitions (expected in-memory -> persisted in the DB) between
+    pages must still appear exactly once and never be skipped: its run number
+    is immutable, so the cursor is unaffected.
+    """
+    store = _make_store(tmp_path)
+    persisted = [_persist_run(store, "job").run_id for _ in range(10)]
+    expected = []
+    for _ in range(10):
+        r = Run(Instance("job", {}), expected=True)
+        _schedule(store, r)
+        expected.append(r)
+    all_ids = set(persisted) | {r.run_id for r in expected}
+
+    seen = []
+    cursor = None
+    flipped = False
+    while True:
+        page, nxt = store.query_paged(job_id="job", cursor=cursor, limit=4)
+        seen.extend(r.run_id for r in page)
+        # after the first page, transition a still-expected run to running
+        # (moves it from the expected map into the DB mirror) — its rowid stays.
+        if not flipped and expected:
+            _transition(store, expected[0], State.waiting)
+            flipped = True
+        if nxt is None:
+            break
+        cursor = nxt
+
+    assert len(seen) == len(set(seen))
+    assert set(seen) == all_ids
+
+
+def test_query_paged_applies_lookback_on_every_page(tmp_path):
+    """Runs older than the lookback window never appear on any page."""
+    min_ts = ora.now() - 3600
+    store = _make_store(tmp_path, min_timestamp=min_ts)
+    fresh = {_persist_run(store, "job", timestamp=ora.now()).run_id for _ in range(8)}
+    for _ in range(8):
+        _persist_run(store, "job", timestamp=min_ts - 100)  # too old
+
+    seen = _scroll(store, 3, job_id="job")
+    assert set(seen) == fresh
+
+
+def test_query_paged_invalid_cursor_raises(tmp_path):
+    store = _make_store(tmp_path)
+    _persist_run(store, "job")
+    with pytest.raises(ValueError):
+        store.query_paged(job_id="job", cursor="not-a-run-id", limit=5)
+
+
+def test_query_paged_run_ids_filter(tmp_path):
+    store = _make_store(tmp_path)
+    runs = [_persist_run(store, "job") for _ in range(5)]
+    wanted = {runs[0].run_id, runs[3].run_id}
+    seen = _scroll(store, 2, run_ids=list(wanted))
+    assert set(seen) == wanted
+
+
+def test_query_paged_dedups_full_page_of_active_runs(tmp_path):
+    """
+    Adversarial dedup: when the newest runs are all active (present in BOTH the
+    in-memory mirror and the DB), a page's limit+1 DB fetch is entirely dupes.
+    The merge must still return each run once and reach the older DB-only runs.
+    """
+    store = _make_store(tmp_path)
+    older = {_persist_run(store, "job").run_id for _ in range(12)}
+    active = set()
+    for _ in range(8):
+        r = Run(Instance("job", {}), expected=True)
+        _schedule(store, r)
+        _transition(store, r, State.waiting)  # ACTIVE_STATES: mirror + DB
+        active.add(r.run_id)
+    all_ids = older | active
+
+    seen = _scroll(store, 5, job_id="job")  # small page -> first window all dupes
+    assert seen == sorted(seen, key=_rowid, reverse=True)
+    assert len(seen) == len(set(seen))
+    assert set(seen) == all_ids
