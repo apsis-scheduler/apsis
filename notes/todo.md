@@ -59,7 +59,6 @@ instructions to Apsis, who then applies them, rather than applying them directly
 - attach job to run when scheduling, rather than loading jobs later
 - job label search
 - schedule time jitter
-- better env vars in running programs, ala `APSIS_RUN_ID`.
 - send debug log to file, from config
 - handle more runs
   - query db for older runs instead of holding them in memory (not possible?)

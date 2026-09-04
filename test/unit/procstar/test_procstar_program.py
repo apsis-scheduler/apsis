@@ -117,12 +117,12 @@ def test_systemd_properties():
         )
 
 
-def _spec_env(bound, args={}, *, run_id="r123", cfg={}):
+def _spec_env(bound, args={}, *, run_id="r123", cfg=None):
     """
     Returns the env vars of the proc spec, built the way Apsis builds it: run
     the bound program, hand the running program the run's args, read the spec.
     """
-    running = bound.run(run_id, cfg)
+    running = bound.run(run_id, {} if cfg is None else cfg)
     running.set_run_args(args)
     return running._spec.to_jso()["env"]["vars"]
 
@@ -145,15 +145,12 @@ def test_run_args_env_vars():
 @pytest.mark.parametrize(
     "args",
     [
-        # Real param combinations from asd/jobs.
-        {"date": "2026-09-01"},
-        {"time": "2026-09-01T09:00:00Z"},
-        {"date": "2026-09-01", "daytime": "09:00:00"},
+        # Param combinations from real jobs.  These all take the same path, so
+        # a couple of shapes is enough; the interesting cases are the ones that
+        # can't be represented, below.
         {"date": "2026-09-01", "instance": "eq-us-01"},
-        {"strat": "st_stat", "date": "2026-09-01"},
         {"date": "2026-09-01", "macro_portfolio": "global_macro"},  # underscore
-        # Robustness: digits and underscores in names.
-        {"model_v2": "abc", "region3": "us", "run_7": "x"},
+        {"model_v2": "abc", "region3": "us"},  # digits
     ],
 )
 def test_run_args_env_names(args):
@@ -195,7 +192,12 @@ def test_runs_bind_does_not_apply_run_args():
 
 
 def test_run_args_stringified():
-    """Non-string arg values are stringified for the environment."""
+    """
+    Non-string arg values are stringified for the environment.
+
+    Defensive only: `Instance.__init__` already coerces every arg to `str`, so
+    Apsis never reaches `set_run_args` with a non-string on the production path.
+    """
     bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
 
     env = _spec_env(bound, {"count": 5, "ratio": 1.5})

@@ -132,19 +132,27 @@ def test_signal():
         assert res["state"] == "success"
 
 
+def _parse_env(output):
+    """
+    Parses the output of `/usr/bin/env` into a dict.
+
+    Flawed parsing: multiline environment variables will be incomplete, but this
+    works for testing purposes.
+    """
+    env_vars = {}
+    for line in output.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            env_vars[key] = value
+    return env_vars
+
+
 def test_run_id_env():
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent():
         run_id = svc.client.schedule("env", args={})["run_id"]
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
-        output = svc.client.get_output(run_id, "output").decode()
-        # Flawed parsing: multiline environment variables will be incomplete,
-        # but this works for testing purposes
-        env_vars = {}
-        for line in output.splitlines():
-            if "=" in line:
-                key, value = line.split("=", 1)
-                env_vars[key] = value
+        env_vars = _parse_env(svc.client.get_output(run_id, "output").decode())
         assert env_vars["APSIS_RUN_ID"] == run_id
 
 
@@ -153,12 +161,7 @@ def test_run_args_env():
         run_id = svc.client.schedule("env_args", args={"database": "asd_hoard"})["run_id"]
         res = svc.wait_run(run_id)
         assert res["state"] == "success"
-        output = svc.client.get_output(run_id, "output").decode()
-        env_vars = {}
-        for line in output.splitlines():
-            if "=" in line:
-                key, value = line.split("=", 1)
-                env_vars[key] = value
+        env_vars = _parse_env(svc.client.get_output(run_id, "output").decode())
         assert env_vars["APSIS_ARG_database"] == "asd_hoard"
         assert env_vars["APSIS_RUN_ID"] == run_id
 
