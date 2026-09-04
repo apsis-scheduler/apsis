@@ -44,13 +44,17 @@ FD_DATA_TIMEOUT = 60
 if_not_none = lambda k, v: {} if v is None else {k: v}
 
 
-def _sudo_wrap(cfg, argv, sudo_user):
+def _sudo_wrap(cfg, argv, sudo_user, arg_env_names=()):
     if sudo_user is None:
         return argv
     else:
         sudo_argv = get_cfg(cfg, "sudo.argv", SUDO_ARGV_DEFAULT)
+        # sudo scrubs the environment; preserve this run's APSIS_ARG_* vars so
+        # they survive to the job.  Adds to any --preserve-env in `sudo_argv`.
+        preserve = [f"--preserve-env={','.join(arg_env_names)}"] if arg_env_names else []
         return (
             [str(a) for a in sudo_argv]
+            + preserve
             + ["--non-interactive", "--user", str(sudo_user), "--"]
             + list(argv)
         )
@@ -755,7 +759,8 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
 
     @property
     def _spec_argv(self):
-        return _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user)
+        arg_env_names = [f"{APSIS_ARG_ENV_PREFIX}{k}" for k in self.args]
+        return _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user, arg_env_names)
 
     @property
     def _spec_systemd_properties(self):

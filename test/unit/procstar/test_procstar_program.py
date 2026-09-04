@@ -258,6 +258,26 @@ def test_run_args_empty_string_value():
     assert _spec_env(bound, {"date": ""})["APSIS_ARG_date"] == ""
 
 
+def test_sudo_preserves_run_arg_env():
+    """
+    sudo scrubs the environment, so a sudo job must add its APSIS_ARG_* to
+    sudo's --preserve-env allowlist for them to reach the process.
+    """
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"], sudo_user="produser").bind({})
+    running = bound.run("r1", {})
+    running.set_run_args({"date": "2026-09-01", "database": "asd_hoard"})
+
+    argv = running._spec.to_jso()["argv"]
+    assert "--preserve-env=APSIS_ARG_date,APSIS_ARG_database" in argv
+
+
+def test_sudo_no_run_args_no_preserve_flag():
+    """A sudo job with no run args adds no APSIS_ARG_* preserve flag."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"], sudo_user="produser").bind({})
+    argv = bound.run("r1", {})._spec.to_jso()["argv"]
+    assert not any(a.startswith("--preserve-env=APSIS_ARG_") for a in argv)
+
+
 @pytest.mark.asyncio
 async def test_final_fddata_normal_case(mock_proc):
     """
