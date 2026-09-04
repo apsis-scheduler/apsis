@@ -242,12 +242,17 @@ class Apsis:
         # Start the run by running its program.
         self.run_log.record(run, "starting")
         self._transition(run, State.starting)
-        run.program.set_run_args(run.inst.args)
         # Call the program.  This produces an async iterator of updates.
-        self._running_programs[run.run_id] = run.program.run(
+        running_program = run.program.run(
             run.run_id,
             self if isinstance(run.program, _InternalProgram) else self.cfg,
         )
+        # Hand the run's args to the running program, which may expose them to
+        # the process.  The args belong to the run, not to the program, which is
+        # why they are passed in here rather than bound; see
+        # `RunningProgram.set_run_args`.
+        running_program.set_run_args(run.inst.args)
+        self._running_programs[run.run_id] = running_program
         # Start a task to process updates from the program.
         run_task = _process_updates(self, run)
         self.__run_tasks.add(run.run_id, run_task)
@@ -264,11 +269,15 @@ class Apsis:
         assert run.run_id not in self._running_programs
         self.run_log.record(run, "reconnecting")
         # Connect to the program.  This produces an async iterator of updates.
-        self._running_programs[run.run_id] = run.program.connect(
+        running_program = run.program.connect(
             run.run_id,
             run.run_state,
             self if isinstance(run.program, _InternalProgram) else self.cfg,
         )
+        # The process already has its environment, so this changes nothing about
+        # it; set the args anyway, so that a running program always knows them.
+        running_program.set_run_args(run.inst.args)
+        self._running_programs[run.run_id] = running_program
         # Start a task to process updates from the program.
         run_task = _process_updates(self, run)
         self.__run_tasks.add(run.run_id, run_task)

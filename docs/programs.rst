@@ -94,6 +94,55 @@ splitting, or substitution.  Note Apsis still performs :doc:`binding <./jobs>` o
 strings, as described above.
 
 
+.. _program-environment:
+
+Environment
+^^^^^^^^^^^
+
+The program process inherits the Procstar agent's environment, plus these
+variables:
+
+- `APSIS_RUN_ID`: the run ID, for example `r12345`.
+
+- `APSIS_ARG_<name>`: one variable for each of the run's args, holding the arg's
+  (string) value.  For a run of `vacuum(date, database)` with
+  `date=2026-09-01 database=hoard`, the process sees
+  `APSIS_ARG_date=2026-09-01` and `APSIS_ARG_database=hoard`.
+
+Arg names are used verbatim, and are case-sensitive, so a param named `date`
+gives `APSIS_ARG_date` and not `APSIS_ARG_DATE`.
+
+.. warning::
+
+    A param name that is not a valid shell identifier -- anything other than
+    letters, digits, and underscore, not starting with a digit -- produces an
+    environment variable a shell cannot reference.  `$APSIS_ARG_my-param` does
+    not expand to the arg value: a shell parses it as `$APSIS_ARG_my`, which is
+    unset, followed by the literal text `-param`, so the program silently sees
+    the wrong value.  Such a variable is still visible to `printenv` and to
+    programs that read the environment directly.  Prefer param names that are
+    valid identifiers.
+
+An arg that cannot be represented as an environment variable is omitted, and
+Apsis logs a warning naming it.  This applies to a name containing `=`, which
+could not be told apart from the `NAME=value` separator; a name or value
+containing a NUL character, which the agent cannot pass to `execve`; and a
+`NAME=value` string of 128 KiB or more, which `execve` rejects.  The run itself
+still starts.
+
+Since these are ordinary environment variables, they are inherited by any child
+process the program starts, and are visible to anyone who can read
+`/proc/<pid>/environ` for the process.  Don't pass secrets as job params.
+
+.. note::
+
+    Apsis sets the variables for the run's own args, but the process also
+    inherits the agent's environment as it is.  If the agent itself was started
+    with an `APSIS_ARG_*` variable set -- for instance by a job that restarts
+    agents -- that variable is visible to every program the agent runs, and is
+    indistinguishable from one of the run's own args.
+
+
 Running as another user
 ^^^^^^^^^^^^^^^^^^^^^^^
 

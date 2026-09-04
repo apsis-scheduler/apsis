@@ -18,10 +18,56 @@ TIMEOUT_SIGNAL = Signals.SIGTERM.name
 # Prefix for environment variables carrying a run's bound args to its process.
 APSIS_ARG_ENV_PREFIX = "APSIS_ARG_"
 
+# Linux caps a single "NAME=value" string passed to execve at MAX_ARG_STRLEN,
+# counted in bytes.  Beyond it, exec fails with E2BIG.
+MAX_ENV_STR_LEN = 1 << 17  # 128 KiB
+
 
 def normalize_args(args):
     """Returns an args mapping as a `{str: str}` dict."""
     return {str(k): str(v) for k, v in (args or {}).items()}
+
+
+def arg_env_vars(args, *, run_id=None):
+    """
+    Builds the `APSIS_ARG_*` environment mapping for a run's `args`.
+
+    An arg that can't be represented as an environment variable is skipped with
+    a warning, rather than allowed to break the process:
+
+    - A NUL in a name or value aborts the exec in the agent, leaving the run
+      running with no process behind it.
+
+    - An `=` in a name is indistinguishable from the `NAME=value` separator, so
+      the process would read back a different name and value than the run has.
+
+    - A `NAME=value` string at or past `MAX_ENV_STR_LEN` bytes fails exec with
+      E2BIG.  Note this is a limit per variable; a large enough number of args
+      that each fit can still exceed the total the kernel allows for argv plus
+      environment, which this does not attempt to police.
+
+    Note that a name may still be a valid environment variable without being a
+    valid *shell* identifier; see the environment section of the program docs.
+
+    :param run_id:
+      Used for logging only.
+    """
+    vars = {}
+    for name, value in args.items():
+        if name == "" or "=" in name or "\0" in name:
+            log.warning(f"{run_id}: arg not passed in environment; bad name: {name!r}")
+            continue
+        if "\0" in value:
+            log.warning(f"{run_id}: arg not passed in environment; NUL in value: {name}")
+            continue
+        var = APSIS_ARG_ENV_PREFIX + name
+        # The kernel limit is on bytes, so measure the encoded length: a value of
+        # multi-byte characters is longer than len() suggests.
+        if len(var.encode()) + 1 + len(value.encode()) >= MAX_ENV_STR_LEN:
+            log.warning(f"{run_id}: arg not passed in environment; too long: {name}")
+            continue
+        vars[var] = value
+    return vars
 
 
 # -------------------------------------------------------------------------------
@@ -197,6 +243,22 @@ class RunningProgram:
     def __init__(self, run_id):
         self.run_id = run_id
 
+    def set_run_args(self, args):
+        """
+        Records the args of the run this program is running.
+
+        Apsis calls this immediately after `Program.run()` / `connect()`, before
+        iterating `updates`.  Override to expose the args to the process; by
+        default does nothing.
+
+        The args live here, on the running program, and not on the bound
+        program, because the bound program is serialized into the run: the run's
+        own `inst.args` is the single source of truth for them, and a second
+        copy in the program JSO would both duplicate it and add a key that an
+        older Apsis rejects (`check_schema` raises on unexpected keys), so a
+        rollback could not read runs written by a newer Apsis.
+        """
+
     @property
     def updates(self):
         """
@@ -263,12 +325,6 @@ class Program(TypedJso):
     def bind(self, args):
         """
         Returns a new program with parameters bound to `args`.
-        """
-
-    def set_run_args(self, args):
-        """
-        Records the run's bound args on the bound program.  Override to expose
-        them to the process; by default does nothing.
         """
 
     # FIXME: Find a better way to get run_id into logging without passing it in.

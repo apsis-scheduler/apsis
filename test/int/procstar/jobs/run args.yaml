@@ -1,0 +1,5 @@
+params: [date, database]
+
+program:
+  type: procstar-shell
+  command: "echo date=$APSIS_ARG_date database=$APSIS_ARG_database run=$APSIS_RUN_ID"

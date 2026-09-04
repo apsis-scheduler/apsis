@@ -21,11 +21,11 @@ from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
 from apsis.program import base
 from apsis.program.base import (
-    APSIS_ARG_ENV_PREFIX,
     ProgramSuccess,
     ProgramFailure,
     ProgramError,
     Timeout,
+    arg_env_vars,
     get_global_runtime_timeout,
     normalize_args,
 )
@@ -351,7 +351,6 @@ class BoundProcstarProgram(base.Program):
         stop=BoundStop(),
         timeout=None,
         resources=BoundResources(),
-        args=None,
     ):
         self.argv = [str(a) for a in argv]
         self.group_id = str(group_id)
@@ -359,13 +358,9 @@ class BoundProcstarProgram(base.Program):
         self.stop = stop
         self.timeout = timeout
         self.resources = resources
-        self.args = normalize_args(args)
 
     def __str__(self):
         return join_args(self.argv)
-
-    def set_run_args(self, args):
-        self.args = normalize_args(args)
 
     def to_jso(self):
         jso = (
@@ -438,6 +433,8 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         super().__init__(run_id)
         if program.timeout is None:
             program.timeout = get_global_runtime_timeout(cfg)
+        # The run's args, set by `set_run_args()` before `updates` is iterated.
+        self.args = {}
         self.program = program
         self.cfg = get_cfg(cfg, "procstar.agent", {})
         self.run_state = run_state
@@ -446,6 +443,9 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         self.stopping = False
         self.stop_signals = []
         self.timed_out = False
+
+    def set_run_args(self, args):
+        self.args = normalize_args(args)
 
     @property
     def _spec_argv(self):
@@ -467,7 +467,9 @@ class BaseRunningProcstarProgram(base.RunningProgram):
             env=procstar.spec.Proc.Env(
                 vars={
                     "APSIS_RUN_ID": self.run_id,
-                    **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.program.args.items()},
+                    # Note the prefix makes a collision with APSIS_RUN_ID
+                    # unreachable, whatever an arg is named.
+                    **arg_env_vars(self.args, run_id=self.run_id),
                 },
                 # Inherit the entire environment from procstar, since it probably
                 # includes important configuration.

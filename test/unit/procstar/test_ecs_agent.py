@@ -32,9 +32,9 @@ def test_run_args_env_vars_ecs():
     """ECS jobs expose run args as APSIS_ARG_* via the shared proc spec."""
     args = {"date": "2026-09-01", "database": "asd_hoard"}
     bound = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
-    bound.set_run_args(args)
 
     running = RunningProcstarECSProgram("r1", bound, ECS_CFG)
+    running.set_run_args(args)
     env = running._spec.to_jso()["env"]["vars"]
     assert env["APSIS_RUN_ID"] == "r1"
     assert env["APSIS_ARG_date"] == "2026-09-01"
@@ -42,22 +42,33 @@ def test_run_args_env_vars_ecs():
 
 
 def test_no_run_args_env_ecs():
-    """Without bound args, the ECS proc spec sets only APSIS_RUN_ID."""
+    """Without args, the ECS proc spec sets only APSIS_RUN_ID."""
     bound = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
     running = RunningProcstarECSProgram("r1", bound, ECS_CFG)
     assert running._spec.to_jso()["env"]["vars"] == {"APSIS_RUN_ID": "r1"}
 
 
-def test_run_args_not_persisted():
-    """Args are not serialized on the ECS program (rollback safety)."""
+def test_run_args_not_on_bound_program_ecs():
+    """
+    As for the plain Procstar program: the args are not part of the bound ECS
+    program, so they cannot be serialized into the run.
+    """
     program = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
-    program.set_run_args({"date": "2026-09-01", "database": "asd_hoard"})
-    assert "args" not in program.to_jso()
-    assert Program.from_jso(program.to_jso()).args == {}
+    assert not hasattr(program, "args")
+    assert not hasattr(program, "set_run_args")
+
+    jso = program.to_jso()
+    assert "args" not in jso
+    assert not hasattr(Program.from_jso(jso), "args")
 
 
-def test_no_run_args():
-    """Without bound args, the ECS program carries an empty args dict."""
-    program = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
-    assert program.args == {}
-    assert "args" not in program.to_jso()
+def test_run_args_unrepresentable_skipped_ecs():
+    """An arg that can't be an environment variable is dropped, as for procstar."""
+    bound = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
+    running = RunningProcstarECSProgram("r1", bound, ECS_CFG)
+    running.set_run_args({"date": "ok", "a=b": "c", "blob": "a\x00b"})
+
+    assert running._spec.to_jso()["env"]["vars"] == {
+        "APSIS_RUN_ID": "r1",
+        "APSIS_ARG_date": "ok",
+    }
