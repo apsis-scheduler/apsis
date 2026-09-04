@@ -317,6 +317,12 @@ TBL_RUNS = sa.Table(
 # the raw JSON string is a direct index lookup.
 sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 
+# compound index supporting keyset pagination of a job's runs by run number:
+# "job X's runs, newest first, below cursor" becomes a direct index seek instead
+# of scanning + sorting every row for that job.  rowid is the run number (run_id
+# "rN" ↔ rowid N), which is immutable, so it is a stable pagination cursor.
+sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
+
 TBL_RUNS_SELECT = sa.select(
     [
         TBL_RUNS.columns[n]
@@ -394,9 +400,7 @@ class RunDB:
         return sa.and_(*where)
 
     @staticmethod
-    def __query_runs(conn, expr):
-        query = TBL_RUNS_SELECT.where(expr)
-        cursor = conn.execute(query)
+    def __decode_rows(cursor):
         for (
             rowid,
             run_id,
@@ -435,6 +439,10 @@ class RunDB:
             run.run_state = ujson.loads(run_state)
             run._rowid = rowid
             yield run
+
+    @staticmethod
+    def __query_runs(conn, expr):
+        return RunDB.__decode_rows(conn.execute(TBL_RUNS_SELECT.where(expr)))
 
     def upsert(self, run):
         assert not run.expected
@@ -571,6 +579,52 @@ class RunDB:
 
         log.debug(
             f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
+            f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
+        )
+        return runs
+
+    def query_paged(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        state: Iterable[State] | State | None = None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+        max_rowid=None,
+        limit,
+    ):
+        """
+        Like `query()`, but returns a single page of at most `limit` runs,
+        ordered by rowid (run number) descending.
+
+        :param max_rowid:
+          If not none, limits to runs with rowid strictly less than this; this is
+          the keyset cursor for pagination.  rowid is immutable, so paging on it
+          never duplicates or skips runs even as runs are written concurrently.
+        :param limit:
+          Maximum number of runs to return.
+
+        Each call runs in its own transaction (no cursor held across the fetch),
+        mirroring `RunSummaryDB.query` to stay safe alongside litestream.
+        """
+        expr = self.__build_where(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_timestamp,
+        )
+        if max_rowid is not None:
+            expr = sa.and_(expr, TBL_RUNS.c.rowid < max_rowid)
+        query = TBL_RUNS_SELECT.where(expr).order_by(TBL_RUNS.c.rowid.desc()).limit(limit)
+        with Timer() as timer:
+            with self.__engine.begin() as conn:
+                runs = list(self.__decode_rows(conn.execute(query)))
+        log.debug(
+            f"query_paged job_id={job_id} max_rowid={max_rowid} limit={limit} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
@@ -945,6 +999,10 @@ class SqliteDB:
                 raise FileNotFoundError(path)
 
         engine = cls.__get_engine(path, timeout=timeout)
+        # Backfill indexes added after a database's initial schema.  CREATE INDEX
+        # IF NOT EXISTS is a no-op when the index is already present, so this is
+        # safe to run on every open and cheap on already-migrated databases.
+        engine.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_rowid ON runs (job_id, rowid)")
         # FIXME: Check that tables exist.
         return cls(engine)
 

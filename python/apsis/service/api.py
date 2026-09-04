@@ -31,7 +31,7 @@ from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
 from ..jobs import jso_to_job
-from ..runs import Instance, RunError
+from ..runs import Instance, RunError, _run_number
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,46 @@ WS_DRAIN_TIME = 0.5
 WS_CHUNK = 4096
 # Send bigger chunks when the json is pre-serialized
 WS_RAW_CHUNK = 2**16
+
+# Pagination page sizes for the runs endpoints.  DEFAULT is used when the client
+# doesn't request a page size; MAX caps any client-requested `limit` so a single
+# page can't grow large enough to stall the event loop while it's decoded and
+# serialized.
+DEFAULT_PAGE_SIZE = 500
+MAX_PAGE_SIZE = 5_000
+
+
+def _parse_paging_args(args):
+    """
+    Pops and validates the `cursor` and `limit` pagination query params from a
+    request's `args` (mutating it), shared by the runs listing endpoints.
+
+    Uses `args.pop`, not `args.get`: sanic's `RequestParameters.get` returns the
+    scalar last value, which would break the `(x,) = ...` unpack.
+
+    :return:
+      `(cursor, limit)`, with `limit` defaulted to DEFAULT_PAGE_SIZE and clamped
+      to MAX_PAGE_SIZE, and `cursor` a validated run_id string or None.
+    :raise ValueError:
+      `cursor` or `limit` is malformed; the caller should return a 400.
+    """
+    (cursor,) = args.pop("cursor", (None,))
+    (limit,) = args.pop("limit", (None,))
+    if limit is None:
+        limit = DEFAULT_PAGE_SIZE
+    else:
+        try:
+            limit = int(limit)
+        except ValueError:
+            raise ValueError(f"invalid limit: {limit}")
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        limit = min(limit, MAX_PAGE_SIZE)
+    if cursor is not None:
+        # Validate the cursor is a run_id ("rN"); raises ValueError otherwise.
+        _run_number(cursor)
+    return cursor, limit
+
 
 # -------------------------------------------------------------------------------
 
@@ -165,6 +205,13 @@ async def job(request, job_id):
 
 @API.route("/jobs/<job_id:path>/runs")
 async def job_runs(request, job_id):
+    # NOTE: This endpoint is intentionally left unpaginated for now.  It shares
+    # the same event-loop-blocking risk as GET /runs and could reuse
+    # run_store.query_paged, but the route `/jobs/<job_id:path>/runs` is
+    # ambiguous with `/jobs/<job_id:path>` under sanic-routing (the path
+    # converter can capture ".../runs" into job_id), which resolves
+    # non-deterministically.  Paginating it is deferred to a follow-up that also
+    # disambiguates the route.  It has no current callers.
     job_id = match_job_id(request.app.apsis.jobs, unquote(job_id))
     when, runs = request.app.apsis.run_store.query(job_id=job_id)
     jso = runs_to_jso(request.app, when, runs)
@@ -501,6 +548,10 @@ async def runs(request):
         job_id = match_job_id(apsis.jobs, job_id)
     (state,) = args.pop("state", (None,))
     (since,) = args.pop("since", (None,))
+    try:
+        cursor, limit = _parse_paging_args(args)
+    except ValueError as exc:
+        return error(str(exc), 400)
 
     # Remainders are args to match, though strip off leading underscores, which
     # were added to avoid collision with fixed args.
@@ -509,37 +560,25 @@ async def runs(request):
     if all(x is None for x in (run_id, job_id)):
         return error("either run_id or job_id filter is required", 400)
 
-    # FIXME: really bad hack to protect event loop. Gotta add pagination!
-    MAX_QUERY_RUNS = 10_000
-    if run_id is None:
-        count = apsis.run_store.count_runs(
-            job_id=job_id,
-            state=None if state is None else to_state(state),
-            with_args=args,
-        )
-        if count > MAX_QUERY_RUNS:
-            return error(
-                f"query would return {count} runs (limit {MAX_QUERY_RUNS}); "
-                f"add args or state filter to narrow",
-                400,
-            )
-
-    when, runs = apsis.run_store.query(
+    when = ora.now()
+    runs, next_cursor = apsis.run_store.query_paged(
         run_ids=run_id,
         job_id=job_id,
         state=None if state is None else to_state(state),
         since=since,
         with_args=args,
+        cursor=cursor,
+        limit=limit,
     )
 
     # offload JSON serialization to thread pool to avoid blocking event loop
-    # runs is a generator, so materialize it first in the async context
-    runs_list = list(runs)
-
     def serialize_runs():
-        return runs_to_jso(request.app, when, runs_list, summary=summary)
+        return runs_to_jso(request.app, when, runs, summary=summary)
 
     result = await asyncio.to_thread(serialize_runs)
+    # Add the pagination envelope in the handler (not runs_to_jso, which is shared
+    # with the single-run mutation endpoints).  `next` is null on the last page.
+    result["paging"] = {"next": next_cursor}
 
     return response_json(result)
 

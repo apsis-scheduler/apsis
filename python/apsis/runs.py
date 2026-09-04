@@ -347,6 +347,22 @@ def bind(run, job, jobs):
 # -------------------------------------------------------------------------------
 
 
+def _run_number(run_id):
+    """
+    Returns the integer run number encoded in a run_id ("rN" → N).
+
+    The run number is assigned monotonically at run creation and never changes,
+    and equals the run's sqlite rowid once persisted, so it is a stable keyset
+    cursor for pagination.
+
+    :raise ValueError:
+      `run_id` isn't of the form "rN".
+    """
+    if not (isinstance(run_id, str) and run_id.startswith("r")):
+        raise ValueError(f"invalid run_id: {run_id!r}")
+    return int(run_id[1:])
+
+
 class RunStore:
     """
     Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
@@ -517,9 +533,34 @@ class RunStore:
           If True (default), applies lookback window. If False, queries all runs.
           Set to False for condition checks that need to see all active runs.
         """
-        # combine expected (scheduled, in-memory) and active (in-memory
-        # mirror of running/waiting/etc) into one filtered iterator of
-        # in-memory runs.
+        in_memory_list, db_kwargs = self.__prepare_query(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            since=since,
+            args=args,
+            with_args=with_args,
+            limit_lookback=limit_lookback,
+        )
+        in_memory_ids = {r.run_id for r in in_memory_list}
+
+        db_runs = [r for r in self.__query_run_db(**db_kwargs) if r.run_id not in in_memory_ids]
+
+        return now(), in_memory_list + db_runs
+
+    def __prepare_query(self, *, run_ids, job_id, state, since, args, with_args, limit_lookback):
+        """
+        Shared filtering/normalization for `query` and `query_paged`.
+
+        Combines expected (scheduled, in-memory) and active (in-memory mirror)
+        runs into one filtered, materialized list, and normalizes the filter
+        arguments for the DB query.
+
+        :return:
+          `(in_memory_list, db_kwargs)`, where `db_kwargs` are the normalized
+          keyword arguments (run_ids, job_id, state, args, with_args,
+          min_timestamp) for `RunDB.query`/`RunDB.query_paged`.
+        """
         in_memory = itertools.chain(self.__expected_runs.values(), self.__active_runs.values())
 
         if state is not None:
@@ -570,22 +611,83 @@ class RunStore:
         # materialize in-memory results so we can filter DB rows to avoid
         # duplicating active runs that are also persisted.
         in_memory_list = list(in_memory)
+        db_kwargs = dict(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_ts,
+        )
+        return in_memory_list, db_kwargs
+
+    def query_paged(
+        self,
+        run_ids=None,
+        job_id=None,
+        state=None,
+        since=None,
+        args=None,
+        with_args=None,
+        limit_lookback=True,
+        *,
+        cursor=None,
+        limit,
+    ):
+        """
+        Returns a single page of matching runs, newest run number first.
+
+        Filters are identical to `query`.  Pagination is keyed on the run number
+        (run_id "rN"), which is immutable across a run's lifecycle, so paging is
+        stable even as runs are created or transition between the in-memory
+        mirror and the DB while the caller walks pages: no run is duplicated or
+        skipped.  Runs created after paging began (with higher run numbers than
+        the first page) simply don't appear in that walk.
+
+        :param cursor:
+          A run_id ("rN") from a previous page's result; returns only runs with a
+          strictly smaller run number.  None starts from the newest run.
+        :param limit:
+          Maximum number of runs on the page.
+
+        :return:
+          `(runs, next_cursor)`, where `runs` is a list of at most `limit` Run
+          objects ordered by run number descending, and `next_cursor` is the
+          run_id to pass as `cursor` for the next page, or None if this is the
+          last page.
+        """
+        in_memory_list, db_kwargs = self.__prepare_query(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            since=since,
+            args=args,
+            with_args=with_args,
+            limit_lookback=limit_lookback,
+        )
+
+        max_rowid = None if cursor is None else _run_number(cursor)
+        if max_rowid is not None:
+            in_memory_list = [r for r in in_memory_list if _run_number(r.run_id) < max_rowid]
         in_memory_ids = {r.run_id for r in in_memory_list}
 
-        db_runs = [
+        # Fetch one extra DB row so we can tell whether more pages follow without
+        # a second query.  Active runs are mirrored in memory and in the DB, so
+        # drop any DB row already represented in memory (dedup).
+        db_page = [
             r
-            for r in self.__query_run_db(
-                run_ids=run_ids,
-                job_id=job_id,
-                state=state,
-                args=args,
-                with_args=with_args,
-                min_timestamp=min_ts,
-            )
+            for r in self.__run_db.query_paged(**db_kwargs, max_rowid=max_rowid, limit=limit + 1)
             if r.run_id not in in_memory_ids
         ]
 
-        return now(), in_memory_list + db_runs
+        # in_memory_list is fully materialized (all matching in-memory runs below
+        # the cursor); the DB side is capped at limit+1.  Sorting the union and
+        # taking the top `limit` therefore yields the true newest `limit` runs,
+        # and len(merged) > limit reliably signals a further page.
+        merged = sorted(in_memory_list + db_page, key=lambda r: _run_number(r.run_id), reverse=True)
+        page = merged[:limit]
+        next_cursor = page[-1].run_id if page and len(merged) > limit else None
+        return page, next_cursor
 
     def summaries(self) -> Iterator[str]:
         from .lib.api import run_to_summary_jso
