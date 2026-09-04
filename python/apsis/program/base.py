@@ -15,7 +15,6 @@ log = logging.getLogger(__name__)
 
 TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
-# Prefix for environment variables carrying a run's bound args to its process.
 APSIS_ARG_ENV_PREFIX = "APSIS_ARG_"
 
 
@@ -196,8 +195,6 @@ class RunningProgram:
 
     def __init__(self, run_id):
         self.run_id = run_id
-        # The run's bound args, applied via `set_run_args` before the process
-        # starts, for exposing to it.
         self.args = {}
 
     def set_run_args(self, args):
