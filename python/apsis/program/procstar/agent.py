@@ -21,6 +21,7 @@ from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
 from apsis.program import base
 from apsis.program.base import (
+    APSIS_ARG_ENV_PREFIX,
     ProgramSuccess,
     ProgramFailure,
     ProgramError,
@@ -43,13 +44,16 @@ FD_DATA_TIMEOUT = 60
 if_not_none = lambda k, v: {} if v is None else {k: v}
 
 
-def _sudo_wrap(cfg, argv, sudo_user):
+def _sudo_wrap(cfg, argv, sudo_user, arg_env_names=()):
     if sudo_user is None:
         return argv
     else:
         sudo_argv = get_cfg(cfg, "sudo.argv", SUDO_ARGV_DEFAULT)
+        # sudo scrubs env; extend its --preserve-env allowlist with this run's args.
+        preserve = [f"--preserve-env={','.join(arg_env_names)}"] if arg_env_names else []
         return (
             [str(a) for a in sudo_argv]
+            + preserve
             + ["--non-interactive", "--user", str(sudo_user), "--"]
             + list(argv)
         )
@@ -460,6 +464,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
             env=procstar.spec.Proc.Env(
                 vars={
                     "APSIS_RUN_ID": self.run_id,
+                    **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.args.items()},
                 },
                 # Inherit the entire environment from procstar, since it probably
                 # includes important configuration.
@@ -753,7 +758,8 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
 
     @property
     def _spec_argv(self):
-        return _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user)
+        arg_env_names = [f"{APSIS_ARG_ENV_PREFIX}{k}" for k in self.args]
+        return _sudo_wrap(self.cfg, self.program.argv, self.program.sudo_user, arg_env_names)
 
     @property
     def _spec_systemd_properties(self):

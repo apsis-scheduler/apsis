@@ -148,6 +148,21 @@ def test_run_id_env():
         assert env_vars["APSIS_RUN_ID"] == run_id
 
 
+def test_run_args_env():
+    with ApsisService(job_dir=JOB_DIR) as svc, svc.agent():
+        run_id = svc.client.schedule("env_args", args={"database": "asd_hoard"})["run_id"]
+        res = svc.wait_run(run_id)
+        assert res["state"] == "success"
+        output = svc.client.get_output(run_id, "output").decode()
+        env_vars = {}
+        for line in output.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                env_vars[key] = value
+        assert env_vars["APSIS_ARG_database"] == "asd_hoard"
+        assert env_vars["APSIS_RUN_ID"] == run_id
+
+
 @pytest.mark.asyncio
 async def test_resources():
     with ApsisService(job_dir=JOB_DIR) as svc, svc.agent():
