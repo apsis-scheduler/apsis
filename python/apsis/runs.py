@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import Counter, namedtuple
 import itertools
 import jinja2
 import logging
@@ -633,6 +633,51 @@ class RunStore:
             with_args=with_args,
             min_timestamp=min_ts,
         )
+
+    def get_schedule_times(self, *, min_timestamp):
+        """
+        Counts runs by nominal schedule time.
+
+        Used to avoid recreating a run that already exists for a given nominal
+        schedule time.  See `Apsis.schedule`.
+
+        Covers in-memory runs (expected and active) as well as persisted runs,
+        since a scheduled expected run is not persisted until it starts.
+
+        Counts rather than merely noting presence, since a job may have several
+        schedules that produce the same schedule time and args, and each is a
+        run in its own right.
+
+        :param min_timestamp:
+          Ignore runs older than this.  Bounds the work; runs older than this
+          are not candidates for rescheduling anyway.
+        :return:
+          Mapping from `(job_id, canonical args JSON)` to a mapping from nominal
+          schedule time to the number of runs with that schedule time, in any
+          state.
+        """
+        from .sqlite import canonical_args_json
+
+        res = {}
+
+        def add(job_id, args_json, time):
+            if time is None:
+                # Nothing to key on.
+                return
+            times = res.setdefault((job_id, args_json), Counter())
+            times[time] += 1
+
+        # In-memory runs: expected (scheduled, not yet persisted) and active.
+        for run in itertools.chain(self.__expected_runs.values(), self.__active_runs.values()):
+            add(run.inst.job_id, canonical_args_json(run.inst.args), run.times.get("schedule"))
+
+        # Persisted runs, including finished ones.
+        for job_id, args_json, time in self.__run_db.query_schedule_times(
+            min_timestamp=min_timestamp
+        ):
+            add(job_id, args_json, time)
+
+        return res
 
     def get_stats(self):
         # Note: deliberately no DB count here.  Counting runs in the lookback window

@@ -16,6 +16,7 @@ from .host_group import config_host_groups
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
 from .lib.asyn import TaskGroup, Publisher, KeyPublisher
+from .lib.parse import parse_duration
 from .lib.py import more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
@@ -110,12 +111,32 @@ class Apsis:
         # Continue scheduling from the last time we handled scheduled jobs.
         # FIXME: Rename: schedule horizon?
         stop_time = db.clock_db.get_time()
+
+        # The clock is advanced before the runs it covers are persisted, so
+        # after a crash it can be ahead of the runs that actually reached the
+        # database, and those runs would never be scheduled again.  Start a
+        # little earlier than the clock to cover that skew, and rely on the
+        # schedule-time check in the scheduler to avoid creating a run that
+        # already exists.
+        #
+        # The skew is bounded by how long the scheduled loop went between
+        # advancing the clock and persisting the runs it had popped, so a modest
+        # margin is enough.  Keep it modest: the margin is also how far back a
+        # job added while Apsis was down is scheduled, and those runs have no
+        # existing counterpart to suppress them.
+        margin = parse_duration(cfg.get("schedule", {}).get("clock_margin", 1800))
+        assert margin >= 0
+        if margin > 0:
+            log.info(f"scheduling from {stop_time - margin}: clock {stop_time} - {margin} s")
+            stop_time -= margin
+
         self.scheduler = Scheduler(
             cfg,
             self.jobs,
             # All runs scheduled by the scheduler are expected.
             partial(self.schedule, expected=True),
             stop_time,
+            get_schedule_times=self.__get_schedule_times,
         )
 
         self.scheduled = ScheduledRuns(db.clock_db, self.scheduler.get_scheduler_time, self._wait)
@@ -212,6 +233,20 @@ class Apsis:
 
         # We're running now.
         self.running_flag.set()
+
+    def __get_schedule_times(self):
+        """
+        Returns nominal schedule times of runs that already exist.
+
+        Used by the scheduler to avoid creating a second run for a schedule
+        time that has already been handled.  See `RunStore.get_schedule_times`.
+        """
+        # Bound the query by the earliest schedule time the scheduler can
+        # revisit.  A run that has started has a timestamp at or after its
+        # schedule time, so any started run with a schedule time in the
+        # scheduling window also has a timestamp in it, and is found.  Runs that
+        # haven't started are in memory, which this bound doesn't apply to.
+        return self.run_store.get_schedule_times(min_timestamp=self.scheduler.get_scheduler_time())
 
     def _wait(self, run):
         """
