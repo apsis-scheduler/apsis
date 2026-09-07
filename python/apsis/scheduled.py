@@ -130,7 +130,6 @@ class ScheduledRuns:
                         # Take it out of the entries dict.
                         assert self.__scheduled.pop(entry.run) is entry
                         ready.add(entry.run)
-                self.__clock_db.set_time(time)
 
                 if len(ready) > 0:
                     log.debug(f"{len(ready)} runs ready")
@@ -140,6 +139,13 @@ class ScheduledRuns:
                         # yield back to the event loop to prevent hanging it when many runs are started at the same time
                         # e.g. at the top of the hour
                         await asyncio.sleep(0)
+
+                # Advance the clock only once the runs it accounts for have been
+                # started, and so persisted.  If we stop before that, the clock
+                # still precedes them and they are scheduled again on startup;
+                # the scheduler skips the ones that already exist.  Advancing it
+                # first would leave them neither stored nor scheduled again.
+                self.__clock_db.set_time(time)
 
                 next_time = time + self.LOOP_TIME
                 if len(self.__heap) > 0:
