@@ -1,4 +1,4 @@
-from ora import Time, Daytime, now, get_display_time_zone
+from ora import Time, Daytime, NonexistentDateDaytime, now, get_display_time_zone
 import rich.box
 import rich.console
 from rich.style import Style
@@ -316,3 +316,67 @@ def parse_at_time(string):
     # FIXME: Accept expressions like "1 hour".
 
     raise ValueError(f"cannot interpret as time: {string}")
+
+
+def parse_time_span(string):
+    """
+    Parses a TIMESPAN into a `(since, until)` pair of times, either of which
+    may be `None` (unbounded on that end).
+
+    The span is `START..END`; either endpoint may be omitted:
+
+    - ``START..END``: from START (inclusive) to END (exclusive)
+    - ``START..`` or ``START``: from START on
+    - ``..END``: before END
+
+    Each endpoint may be a full time, ``now``, ``+DURATION`` (from now), or a
+    daytime, which means today's occurrence in the display time zone.  Unlike
+    `parse_at_time`, a daytime that has already passed is not rolled forward
+    to tomorrow: the span filters existing runs, so it points to the past.
+
+    :raise ValueError:
+      An endpoint can't be parsed, or START is not before END.
+    """
+    if ".." in string:
+        start, end = string.split("..", 1)
+    else:
+        start, end = string, ""
+
+    # read the clock once so both ends see the same now and today
+    time_now = now()
+
+    def parse_bound(part):
+        part = part.strip()
+        if not part:
+            return None
+        if part == "now":
+            return time_now
+        if part.startswith("+"):
+            try:
+                return time_now + apsis.lib.parse.parse_duration(part[1:])
+            except OverflowError:
+                # e.g. +1e100 or +nan, which ora can't turn into a time
+                raise ValueError(f"duration out of range: {part}")
+        try:
+            return Time(part)
+        except ValueError:
+            pass
+        try:
+            daytime = Daytime(part)
+        except ValueError:
+            raise ValueError(f"cannot interpret as time: {part}")
+        z = get_display_time_zone()
+        date, _ = time_now @ z
+        try:
+            return (date, daytime) @ z
+        except NonexistentDateDaytime:
+            # daytime falls in a dst gap, like 02:30 on the spring-forward day
+            raise ValueError(f"daytime does not exist today in {z}: {part}")
+
+    since = parse_bound(start)
+    until = parse_bound(end)
+    if since is None and until is None:
+        raise ValueError(f"empty time span: {string!r}")
+    if since is not None and until is not None and not since < until:
+        raise ValueError(f"time span start must be before end: {string!r}")
+    return since, until
