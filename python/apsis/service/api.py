@@ -84,6 +84,35 @@ def _parse_cursor(args) -> str | None:
     return cursor
 
 
+def _parse_schedule_span_args(args) -> "tuple[ora.Time | None, ora.Time | None]":
+    """
+    Pops and validates the `schedule_since` and `schedule_until` query params
+    from `args`, which bound a run's nominal (schedule) time.
+
+    :return:
+      `schedule_since, schedule_until` as `ora.Time` or None.
+    :raise ValueError:
+      Either param is malformed or repeated, or the span is empty because
+      `schedule_since` is not before `schedule_until`.  The caller should
+      return a 400.
+    """
+
+    def parse(name):
+        value = _pop_arg(args, name)
+        if value is None:
+            return None
+        try:
+            return ora.Time(value)
+        except ValueError:
+            raise ValueError(f"invalid {name}: {value}")
+
+    since = parse("schedule_since")
+    until = parse("schedule_until")
+    if since is not None and until is not None and not since < until:
+        raise ValueError("schedule_since must be before schedule_until")
+    return since, until
+
+
 # -------------------------------------------------------------------------------
 
 
@@ -562,6 +591,7 @@ async def runs(request):
         state = _pop_arg(args, "state")
         since = _pop_arg(args, "since")
         cursor = _parse_cursor(args)
+        schedule_since, schedule_until = _parse_schedule_span_args(args)
     except ValueError as exc:
         return error(str(exc), 400)
     if job_id is not None:
@@ -589,6 +619,8 @@ async def runs(request):
         state=state,
         since=since,
         with_args=args,
+        schedule_since=schedule_since,
+        schedule_until=schedule_until,
         cursor=cursor,
         limit=limit,
     )
