@@ -281,7 +281,37 @@ class Client:
         """
         return self.__post("/api/v1/runs", run_id, "mark", state_name)
 
-    def get_runs(self, *, job_id=None, state=None, args={}, limit: int | None = None) -> dict:
+    # query params a run arg name can't shadow
+    _RUNS_QUERY_PARAMS = frozenset(
+        {
+            "job_id",
+            "run_id",
+            "state",
+            "since",
+            "summary",
+            "cursor",
+            "limit",
+            "schedule_since",
+            "schedule_until",
+        }
+    )
+
+    def get_runs(
+        self,
+        *,
+        job_id=None,
+        state=None,
+        args={},
+        limit: int | None = None,
+        schedule_since: "Time | str | None" = None,
+        schedule_until: "Time | str | None" = None,
+    ) -> dict:
+        """
+        :param schedule_since:
+          If not none, lower bound on nominal schedule time, inclusive.
+        :param schedule_until:
+          If not none, upper bound on nominal schedule time, exclusive.
+        """
         # limit is the total runs to return not the page size
         # walk the server pages and stop once we have that many
         return self.__get_paged_runs(
@@ -289,13 +319,12 @@ class Client:
             max_runs=limit,
             job_id=job_id,
             state=state,
+            schedule_since=None if schedule_since is None else str(Time(schedule_since)),
+            schedule_until=None if schedule_until is None else str(Time(schedule_until)),
             # Include args, but prefix with underscore any that collide with
             # fixed arg names.
             # FIXME: Oh so hacky.
-            **{
-                "_" + n if n in {"job_id", "run_id", "state", "since", "cursor", "limit"} else n: a
-                for n, a in args.items()
-            },
+            **{"_" + n if n in self._RUNS_QUERY_PARAMS else n: a for n, a in args.items()},
         )
 
     def get_run(self, run_id):
