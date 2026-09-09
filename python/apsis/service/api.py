@@ -97,6 +97,35 @@ def _parse_paging_args(args):
     return cursor, limit
 
 
+def _parse_schedule_span_args(args):
+    """
+    Pops and validates the `schedule_since` and `schedule_until` query params
+    from `args`, which bound a run's nominal (schedule) time.
+
+    :return:
+      `schedule_since, schedule_until` as `ora.Time` or None.
+    :raise ValueError:
+      Either param is malformed or repeated, or the span is empty because
+      `schedule_since` is not before `schedule_until`.  The caller should
+      return a 400.
+    """
+
+    def parse(name):
+        value = _pop_single(args, name)
+        if value is None:
+            return None
+        try:
+            return ora.Time(value)
+        except ValueError:
+            raise ValueError(f"invalid {name}: {value}")
+
+    since = parse("schedule_since")
+    until = parse("schedule_until")
+    if since is not None and until is not None and not since < until:
+        raise ValueError("schedule_since must be before schedule_until")
+    return since, until
+
+
 # -------------------------------------------------------------------------------
 
 
@@ -561,6 +590,7 @@ async def runs(request):
     (since,) = args.pop("since", (None,))
     try:
         cursor, limit = _parse_paging_args(args)
+        schedule_since, schedule_until = _parse_schedule_span_args(args)
     except ValueError as exc:
         return error(str(exc), 400)
 
@@ -580,7 +610,14 @@ async def runs(request):
 
     # prepare on the loop, then offload the fetch, decode, and jso build to a thread
     page_request = apsis.run_store.prepare_page(
-        run_ids=run_id, job_id=job_id, state=state, since=since, with_args=args, cursor=cursor
+        run_ids=run_id,
+        job_id=job_id,
+        state=state,
+        since=since,
+        with_args=args,
+        schedule_since=schedule_since,
+        schedule_until=schedule_until,
+        cursor=cursor,
     )
 
     def build():
