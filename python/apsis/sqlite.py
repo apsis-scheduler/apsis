@@ -43,6 +43,21 @@ def load_time(time):
     return ora.UNIX_EPOCH + time
 
 
+def dump_times_value(time):
+    """
+    Serializes a time the way values in the `runs.times` JSON column are stored
+    (see `RunDB.upsert`), so it can be compared against `json_extract` of that
+    column.
+
+    `str(ora.Time)` is UTC ISO 8601 with a variable-width fractional second
+    (trailing zeros dropped) and a `+00:00` suffix.  Lexical order is still
+    chronological: the fields before the fraction are fixed width, and where
+    one string ends its seconds with `+` and the other continues with `.`,
+    `+` sorts before `.` and before every digit.
+    """
+    return str(ora.Time(time))
+
+
 @contextlib.contextmanager
 def disposing(engine):
     """
@@ -364,6 +379,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         Build WHERE clause for run queries.
@@ -398,6 +415,18 @@ class RunDB:
                 where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
         if min_timestamp is not None:
             where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
+        # schedule time is an iso string in the times json, so compare it lexically
+        # to a bound written the same way. no schedule time is null and matches neither
+        if schedule_since is not None:
+            where.append(
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
+                >= dump_times_value(schedule_since)
+            )
+        if schedule_until is not None:
+            where.append(
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
+                < dump_times_value(schedule_until)
+            )
 
         return sa.and_(*where)
 
@@ -551,6 +580,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         :param run_ids:
@@ -564,6 +595,12 @@ class RunDB:
           Ignored if args is also specified.
         :param min_timestamp:
           If not none, limits to runs with timestamp not less than this.
+        :param schedule_since:
+          If not none, limits to runs with schedule (nominal) time not less
+          than this.  Runs with no schedule time are excluded.
+        :param schedule_until:
+          If not none, limits to runs with schedule (nominal) time strictly
+          less than this.  Runs with no schedule time are excluded.
         """
         expr = self.__build_where(
             run_ids=run_ids,
@@ -572,6 +609,8 @@ class RunDB:
             args=args,
             with_args=with_args,
             min_timestamp=min_timestamp,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         with Timer() as timer:
             runs = list(self.__query_runs(self.__engine, expr))
@@ -580,7 +619,7 @@ class RunDB:
             return " ".join(f"{k}={v}" for k, v in kwargs.items() if v is not None)
 
         log.debug(
-            f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
+            f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp, schedule_since=schedule_since, schedule_until=schedule_until)} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
@@ -594,6 +633,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
         max_rowid=None,
         limit,
     ):
@@ -614,6 +655,8 @@ class RunDB:
             args=args,
             with_args=with_args,
             min_timestamp=min_timestamp,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         if max_rowid is not None:
             expr = sa.and_(expr, TBL_RUNS.c.rowid < max_rowid)
