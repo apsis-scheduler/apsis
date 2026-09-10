@@ -117,7 +117,7 @@ class Scheduler:
                 time = now()
                 log.debug(f"scheduler loop: {time}")
 
-                if self.__max_age is not None and self.__max_age < time - self.stop:
+                if self.__max_age is not None and self.__max_age < time - self.__stop:
                     raise RuntimeError(f"last scheduled more than {self.__max_age} s ago")
 
                 await self.schedule(time + self.__horizon)
