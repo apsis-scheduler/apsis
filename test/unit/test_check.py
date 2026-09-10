@@ -148,7 +148,8 @@ def test_param_name_valid(name):
         "false",
         "none",
         "not",  # Jinja operator
-        "self",  # Jinja template reference
+        "self",  # bound by Jinja
+        "loop",
         "run_id",  # provided by Apsis to templates
         "job_id",
         "Date",
@@ -162,6 +163,5 @@ def test_param_name_invalid(name):
 
 
 def test_reserved_params_cover_bind_args():
-    # Anything `get_bind_args()` adds to the template context must be reserved,
-    # else a param would silently shadow it.
+    # Anything `get_bind_args()` adds to the template context must be reserved.
     assert {"run_id", "job_id", *BIND_ARGS} <= apsis.check.RESERVED_PARAMS

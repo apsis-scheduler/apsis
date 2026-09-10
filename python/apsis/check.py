@@ -9,32 +9,26 @@ from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
 
-# Param names that would shadow names Apsis itself makes available to template
-# expansion; see `runs.get_bind_args()`.
+# Names Apsis itself provides to templates; see `runs.get_bind_args()`.
 RESERVED_PARAMS = frozenset({"run_id", "job_id", *BIND_ARGS})
 
-# Names that can't be referenced as variables in a template: the Jinja literals,
-# the `not` operator, and the template reference `self`.  Other Python keywords
-# are fine; Jinja isn't Python.
-RESERVED_WORDS = frozenset({"True", "False", "None", "true", "false", "none", "not", "self"})
+# Names Jinja doesn't resolve as variables: its literals, the `not` operator,
+# `self`, and `loop`.  Other Python keywords are fine; Jinja isn't Python.
+RESERVED_WORDS = frozenset(
+    {"True", "False", "None", "true", "false", "none", "not", "self", "loop"}
+)
 
 
 def check_param_name(name):
     """
-    Checks that `name` is a valid job param name.
-
-    A param name must be a valid identifier and not a reserved word, so that it
-    can be referenced in template expansions and written as `NAME=VALUE`, and
-    must not shadow a name Apsis provides to templates.
+    Checks that `name` can be referenced in a template expansion and written as
+    `NAME=VALUE`.
 
     :return:
       Generator of errors.
     """
     if not name.isidentifier() or name in RESERVED_WORDS:
-        yield (
-            f"invalid param name {name!r}: must be an identifier (letters, digits, underscores; "
-            f"not starting with a digit) and not a reserved word"
-        )
+        yield f"invalid param name {name!r}: must be an identifier and not a reserved word"
     elif name in RESERVED_PARAMS:
         yield f"invalid param name {name!r}: reserved by Apsis"
 

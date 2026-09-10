@@ -50,16 +50,14 @@ or equivalently,
 
 If `params` is omitted, the job has no parameters.
 
-A parameter name must be a valid identifier: letters, digits, and underscores,
-not starting with a digit.  It may not be one of the names that Jinja templates
-treat specially: `true`, `false`, `none` (in either case), `not`, and `self`.
-This is what allows the
-parameter to be referenced in template expansions such as `{{ date }}` and
-written as `NAME=VALUE` on the command line.  A few names are reserved because
-Apsis provides them to templates itself: `run_id`, `job_id`, and the helpers
-`Date`, `Daytime`, `Time`, `TimeZone`, `to_local`, `from_local`, `format`, and
-`get_calendar`.  A job with an invalid parameter name fails the job checks, so
-it is rejected by `apsisctl check-jobs` and when loading the jobs directory.
+A parameter name must be an identifier (letters, digits, and underscores, not
+starting with a digit), so that it can be referenced in template expansions such
+as `{{ date }}` and written as `NAME=VALUE` on the command line.  Names that
+Jinja treats specially (`true`, `false`, `none` in either case, `not`, `self`,
+`loop`) and names Apsis provides to templates (`run_id`, `job_id`, `Date`,
+`Daytime`, `Time`, `TimeZone`, `to_local`, `from_local`, `format`,
+`get_calendar`) are not allowed.  An invalid parameter name is reported as a job
+error by `apsisctl check-jobs` and when loading the jobs directory.
 
 Parameters aren't required; a job without parameters can be run repeatedly, just
 like a cron job.
