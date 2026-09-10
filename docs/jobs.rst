@@ -53,6 +53,22 @@ If `params` is omitted, the job has no parameters.
 Parameters aren't required; a job without parameters can be run repeatedly, just
 like a cron job.
 
+A parameter name must be a letter or underscore followed by letters, digits, and
+underscores, since it is used as a template variable when :ref:`binding
+<binding>` a run, as part of an `APSIS_ARG_`-prefixed environment variable for
+the run's program, and as `NAME=VALUE` on the `apsis schedule` command line.
+
+A few names that fit that rule are still not allowed, because a `{{ ... }}`
+expansion wouldn't give the argument's value:
+
+- the jinja2 literals `true`, `false`, `none`, `True`, `False`, `None`, and the
+  operator `not`
+- `self` and `loop`, which jinja2 binds itself
+- the names Apsis provides to expansion, listed under :ref:`binding`, which a
+  parameter would shadow
+
+Only these exact spellings; `TRUE` and `Self`, for instance, are fine.
+
 
 Program
 -------
@@ -181,6 +197,9 @@ following additional Ora types and functions are available:
 - `get_calendar <https://ora.readthedocs.io/en/latest/calendars.html#finding-calendars>`_
 - `from_local <https://ora.readthedocs.io/en/latest/localization.html#local-to-time>`_
 - `to_local <https://ora.readthedocs.io/en/latest/localization.html#time-to-local>`_
+
+Python's `format` builtin is available too, as are the run's own `run_id` and
+`job_id`.
 
 These functions and types allow you to perform time computations on program and
 condition dates and times.  For example, this job has a dependency on another
