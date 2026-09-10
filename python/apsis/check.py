@@ -5,7 +5,7 @@ import ora
 
 from apsis.cond.dependency import Dependency
 from apsis.jobs import Jobs
-from apsis.runs import Instance, Run, is_template, validate_args, bind
+from apsis.runs import BIND_ARGS, Instance, Run, is_template, validate_args, bind
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
@@ -22,6 +22,11 @@ PARAM_NAME_DESCRIPTION = "a letter or underscore followed by letters, digits, an
 PARAM_NAME_NOT_EXPANDABLE = frozenset(
     {"False", "None", "True", "false", "loop", "none", "not", "self", "true"}
 )
+
+# Names Apsis provides to template expansion, which a param's arg would shadow; see
+# `runs.get_bind_args()`.  A param named `format` makes `{{ format(...) }}` elsewhere
+# in the job fail, and one named `run_id` silently displaces the run's ID.
+PARAM_NAME_PROVIDED = frozenset({"job_id", "run_id", *BIND_ARGS})
 
 
 def check_param_names(params):
@@ -42,6 +47,10 @@ def check_param_names(params):
     reserved = [p for p in params if p in PARAM_NAME_NOT_EXPANDABLE]
     if len(reserved) > 0:
         yield f"invalid param names ({show(reserved)}): reserved by template expansion"
+
+    provided = [p for p in params if p in PARAM_NAME_PROVIDED]
+    if len(provided) > 0:
+        yield f"invalid param names ({show(provided)}): provided to template expansion by Apsis"
 
 
 # FIXME: Use normal protocols for this, not random APIs that need mocks.

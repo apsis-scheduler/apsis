@@ -3,11 +3,11 @@ from typing import List
 import pytest
 
 import apsis.check
-from apsis.check import PARAM_NAME_NOT_EXPANDABLE, check_param_names
+from apsis.check import PARAM_NAME_NOT_EXPANDABLE, PARAM_NAME_PROVIDED, check_param_names
 from apsis.cond.dependency import Dependency
 import apsis.jobs
 from apsis.jobs import InMemoryJobs, Job
-from apsis.runs import template_expand
+from apsis.runs import Instance, Run, get_bind_args, template_expand
 
 # -------------------------------------------------------------------------------
 
@@ -176,6 +176,38 @@ def test_param_name_not_expandable(name, template):
     assert expanded != "VAL"
 
 
+def test_param_names_provided():
+    """
+    The provided names are exactly what binding makes available.
+    """
+    run = Run(Instance("job", {}))
+    assert PARAM_NAME_PROVIDED == set(get_bind_args(run))
+
+
+@pytest.mark.parametrize("name", sorted(PARAM_NAME_PROVIDED))
+def test_param_name_provided(name):
+    """
+    A param name that Apsis provides to template expansion is an error.
+    """
+    (error,) = check_param_names([name])
+    assert repr(name) in error
+    assert "provided" in error
+
+
+def test_param_name_provided_shadows():
+    """
+    A param that shadows a provided name breaks the job's other expansions.
+    """
+    run = Run(Instance("job", {"format": "2024-01-01", "run_id": "r1"}))
+    args = get_bind_args(run)
+    # The param wins over what Apsis provides.
+    assert template_expand("{{ format }}", args) == "2024-01-01"
+    assert template_expand("{{ run_id }}", args) == "r1"
+    # So `format` is no longer callable elsewhere in the job.
+    with pytest.raises(TypeError):
+        template_expand("{{ format(Date(2024, 1, 1), '%Y%m%d') }}", args)
+
+
 @pytest.mark.parametrize(
     "name", ["date", "with_underscore", "UPPER", "_leading", "a1", "TRUE", "SELF", "nothing"]
 )
@@ -191,13 +223,15 @@ def test_param_names_all_reported():
     """
     Every unusable param name is reported, with why, not just the first.
     """
-    errors = list(check_param_names(["date", "a=b", "not", "2big"]))
-    assert len(errors) == 2
-    invalid, reserved = errors
+    errors = list(check_param_names(["date", "a=b", "not", "2big", "format"]))
+    assert len(errors) == 3
+    invalid, reserved, provided = errors
     assert "'2big', 'a=b'" in invalid
     assert "letter or underscore" in invalid
     assert "'not'" in reserved
     assert "reserved" in reserved
+    assert "'format'" in provided
+    assert "provided" in provided
     assert not any("date" in e for e in errors)
 
 
