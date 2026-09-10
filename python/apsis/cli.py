@@ -2,6 +2,7 @@
 Main user CLI.
 """
 
+import argparse
 import asyncio
 import logging
 from ora import now, Time
@@ -281,7 +282,10 @@ def main():
             apsis.cmdline.print_run(run, con)
 
     def parse_arg(arg):
-        name, value = arg.split("=", 1)
+        # Split on the first "="; param names can't contain "=", but values can.
+        name, sep, value = arg.partition("=")
+        if not sep:
+            raise argparse.ArgumentTypeError(f"expected NAME=VAL: {arg!r}")
         return name, value
 
     cmd = parser.add_command("schedule", cmd_schedule, description="Schedules a new run.")

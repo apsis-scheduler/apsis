@@ -49,6 +49,26 @@ def test_jobs_exact_match(inst):
     assert ret == 0
 
 
+def test_schedule_cli_arg_syntax(inst):
+    """
+    The `apsis schedule` CLI splits each NAME=VAL on the first "=": the name
+    can't contain "=" but the value can, and an arg without "=" is rejected.
+    """
+    ret, _ = inst.run_apsis_cmd("schedule", "now", "print time", "color=gr=een", "exit=0", "a=b=c")
+    assert ret == 0
+
+    runs = inst.client.get_runs(job_id="print time")
+    (run,) = [r for r in runs.values() if "a" in r["args"]]
+    assert run["args"] == {"color": "gr=een", "exit": "0", "a": "b=c"}
+    # "a" isn't a param of the job.
+    assert run["state"] == "error"
+    log = inst.client.get_run_log(run["run_id"])
+    assert any("extra args (a)" in r["message"] for r in log)
+
+    ret, _ = inst.run_apsis_cmd("schedule", "now", "print time", "color", "exit=0")
+    assert ret != 0
+
+
 def test_stop_serve(inst):
     ret = inst.stop_serve()
     assert ret == 0

@@ -206,6 +206,22 @@ def test_query_args_with_spaces_in_key(tmp_path):
     assert [r.run_id for r in runs] == [r1.run_id]
 
 
+def test_query_args_with_equals_in_key_and_value(tmp_path):
+    """
+    Args with "=" in keys and values should match correctly.  Job params can't
+    contain "=" any more, but runs stored before that rule may.
+    """
+    run_db = _setup(tmp_path)
+    r1 = _make_run(run_db, "job/a", {"a=b": "c=d", "other": "val"})
+    _make_run(run_db, "job/a", {"a": "b=c=d", "other": "val"})
+
+    runs = run_db.query(args={"a=b": "c=d", "other": "val"})
+    assert [r.run_id for r in runs] == [r1.run_id]
+
+    runs = run_db.query(with_args={"a=b": "c=d"})
+    assert [r.run_id for r in runs] == [r1.run_id]
+
+
 def test_count_runs_all(tmp_path):
     """count_runs() returns total count without deserialization."""
     run_db = _setup(tmp_path)

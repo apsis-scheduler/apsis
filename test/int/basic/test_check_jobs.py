@@ -7,7 +7,7 @@ import yaml
 
 import apsis.jobs
 from apsis.check import check_job_dependencies_scheduled
-from apsis.exc import JobsDirErrors, SchemaError
+from apsis.exc import JobError, JobsDirErrors, SchemaError
 
 DAY_IN_SEC = 86400
 
@@ -35,6 +35,31 @@ async def test_duplicate_key_in_yaml(tmp_path):
     assert len(errors) == 1, f"Expected 1 error, got {len(errors)}"
     assert isinstance(errors[0], SchemaError)
     assert 'found duplicate key "command" with value' in str(errors[0]).lower()
+
+
+@pytest.mark.asyncio
+async def test_invalid_param_name(tmp_path):
+    """
+    Tests that a job with a param name that isn't an identifier is not loaded.
+    """
+    job = {
+        "params": ["date", "a=b"],
+        "program": {"type": "no-op"},
+    }
+    dump_yaml_file(job, tmp_path / "job.yaml")
+
+    with pytest.raises(JobsDirErrors) as exc_info:
+        await apsis.jobs.load_jobs_dir(tmp_path)
+
+    (err,) = exc_info.value.errors
+    assert isinstance(err, JobError)
+    assert err.job_id == "job"
+    assert "invalid param name 'a=b'" in str(err)
+
+    # Fix the param name.  Now it should be fine.
+    job["params"] = ["date", "a_b"]
+    dump_yaml_file(job, tmp_path / "job.yaml")
+    await apsis.jobs.load_jobs_dir(tmp_path)
 
 
 @pytest.mark.asyncio

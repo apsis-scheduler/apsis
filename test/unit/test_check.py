@@ -1,9 +1,12 @@
 from typing import List
 
+import pytest
+
 import apsis.check
 from apsis.cond.dependency import Dependency
 import apsis.jobs
 from apsis.jobs import InMemoryJobs, Job
+from apsis.runs import BIND_ARGS
 
 # -------------------------------------------------------------------------------
 
@@ -115,3 +118,50 @@ def test_dependency_missing_arg():
     errors = check_job(jobs, "job7")
     assert len(errors) > 0
     assert "extra" in errors[0]
+
+
+# -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["date", "strat", "a_b", "_x", "x1", "Date_", "run", "job", "TRUE", "global", "for", "and"],
+)
+def test_param_name_valid(name):
+    jobs = InMemoryJobs((Job("job0", params=[name]),))
+    assert check_job(jobs, "job0") == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "a=b",  # can't be written as NAME=VAL
+        "a b",
+        "a-b",
+        "a.b",
+        "1a",
+        "",
+        'a"b',
+        "True",  # Jinja literals
+        "None",
+        "true",
+        "false",
+        "none",
+        "not",  # Jinja operator
+        "self",  # Jinja template reference
+        "run_id",  # provided by Apsis to templates
+        "job_id",
+        "Date",
+        "format",
+    ],
+)
+def test_param_name_invalid(name):
+    jobs = InMemoryJobs((Job("job0", params=["date", name]),))
+    (error,) = check_job(jobs, "job0")
+    assert error.startswith(f"invalid param name {name!r}")
+
+
+def test_reserved_params_cover_bind_args():
+    # Anything `get_bind_args()` adds to the template context must be reserved,
+    # else a param would silently shadow it.
+    assert {"run_id", "job_id", *BIND_ARGS} <= apsis.check.RESERVED_PARAMS
