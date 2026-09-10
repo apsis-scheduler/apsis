@@ -305,3 +305,94 @@ def test_query_malformed_run_ids(tmp_path):
     # All garbage: empty result, no exception.
     runs = run_db.query(run_ids=["abc", "", "x1"])
     assert list(runs) == []
+
+
+# --- query_paged ---------------------------------------------------------------
+
+
+def _rowid(run_id):
+    return int(run_id[1:])
+
+
+def test_query_paged_scroll_orders_limits_and_excludes_cursor(tmp_path):
+    """
+    One bounded scroll covers ordering (rowid desc), the page limit, cursor
+    exclusivity (strictly below the last id), and completeness with no dupes or
+    cross-job leakage.
+    """
+    run_db = _setup(tmp_path)
+    # other-job noise before, between, and after the matches, so dropping the job
+    # filter after page one would leak noise below the first cursor
+    made = []
+    _make_run(run_db, "job/b", {})
+    for _ in range(5):
+        made.append(_make_run(run_db, "job/a", {}).run_id)
+        _make_run(run_db, "job/b", {})
+    expected = sorted(made, key=_rowid, reverse=True)
+
+    seen = []
+    lengths = []
+    cursor = None
+    for _ in range(len(made) + 2):  # bounded so a broken cursor fails, not hangs
+        page = run_db.query_paged(job_id="job/a", max_rowid=cursor, limit=2)
+        if not page:
+            break
+        ids = [r.run_id for r in page]
+        assert ids == sorted(ids, key=_rowid, reverse=True)  # ordered within the page
+        if cursor is not None:
+            assert all(_rowid(i) < cursor for i in ids)  # cursor excludes at and above
+        lengths.append(len(page))
+        seen.extend(ids)
+        cursor = _rowid(page[-1].run_id)
+    else:
+        raise AssertionError("scroll did not terminate")
+
+    assert lengths == [2, 2, 1]  # full, full, partial terminal page under limit 2
+    assert seen == expected  # descending, no dupes, no skips, no cross-job leakage
+
+
+def test_query_paged_with_args_and_state(tmp_path):
+    run_db = _setup(tmp_path)
+    r1 = _make_run(run_db, "job/a", {"date": "d1"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "d2"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "d1"}, state=State.failure)
+
+    page = run_db.query_paged(
+        job_id="job/a", with_args={"date": "d1"}, state=State.success, limit=10
+    )
+    assert [r.run_id for r in page] == [r1.run_id]
+
+
+def test_query_paged_min_timestamp(tmp_path):
+    run_db = _setup(tmp_path)
+    old = _make_run(run_db, "job/a", {})
+    old.timestamp = ora.now() - 10000
+    old.times = {old.state.name: old.timestamp}
+    run_db.upsert(old)
+    new = _make_run(run_db, "job/a", {})
+
+    page = run_db.query_paged(job_id="job/a", min_timestamp=ora.now() - 100, limit=10)
+    assert [r.run_id for r in page] == [new.run_id]
+
+
+def test_open_backfills_pagination_index(tmp_path):
+    """
+    Opening a database that predates the (job_id, rowid) pagination index
+    backfills it, so existing deployments get it without a manual migration.
+    """
+    import sqlite3
+
+    path = str(tmp_path / "apsis.db")
+    SqliteDB.create(path=path)
+
+    def has_index():
+        with sqlite3.connect(path) as conn:
+            return "idx_runs_job_rowid" in {r[1] for r in conn.execute("PRAGMA index_list('runs')")}
+
+    # simulate an older db by dropping the index create() added
+    with sqlite3.connect(path) as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_runs_job_rowid")
+    assert not has_index()
+
+    SqliteDB.open(path)  # backfills it
+    assert has_index()
