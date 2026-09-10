@@ -17,12 +17,6 @@ TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
 APSIS_ARG_ENV_PREFIX = "APSIS_ARG_"
 
-
-def normalize_args(args):
-    """Returns an args mapping as a `{str: str}` dict."""
-    return {str(k): str(v) for k, v in (args or {}).items()}
-
-
 # -------------------------------------------------------------------------------
 
 
@@ -196,12 +190,6 @@ class RunningProgram:
     def __init__(self, run_id):
         self.run_id = run_id
         self.args = {}
-
-    def set_run_args(self, args):
-        """
-        Records the run's bound args, for exposing to the process.
-        """
-        self.args = normalize_args(args)
 
     @property
     def updates(self):

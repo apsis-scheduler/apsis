@@ -247,7 +247,7 @@ class Apsis:
             run.run_id,
             self if isinstance(run.program, _InternalProgram) else self.cfg,
         )
-        running.set_run_args(run.inst.args)
+        running.args = run.inst.args
         self._running_programs[run.run_id] = running
         # Start a task to process updates from the program.
         run_task = _process_updates(self, run)

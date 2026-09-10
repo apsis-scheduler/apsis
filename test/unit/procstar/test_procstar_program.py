@@ -120,7 +120,7 @@ def test_systemd_properties():
 def _spec_env(bound, args=None, run_id="r123", cfg={}):
     """Runs `bound`, applies run args (as `_start` does), returns the proc spec env."""
     running = bound.run(run_id, cfg)
-    running.set_run_args(args or {})
+    running.args = args or {}
     return running._spec.to_jso()["env"]["vars"]
 
 
@@ -185,17 +185,27 @@ def test_start_applies_run_args():
 
     # What _start does: run the program, then apply the run's args.
     running = run.program.run("r1", {})
-    running.set_run_args(run.inst.args)
+    running.args = run.inst.args
     env = running._spec.to_jso()["env"]["vars"]
     assert env["APSIS_ARG_date"] == "2026-09-01"
     assert env["APSIS_ARG_database"] == "asd_hoard"
 
 
 def test_run_args_stringified():
-    """Non-string arg values are stringified for the environment."""
-    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+    """
+    Non-string arg values reach the environment as strings.  `Instance`
+    stringifies args on construction, so a run's args are always `{str: str}`.
+    """
+    program = ProcstarProgram(argv=["/usr/bin/echo", "hi"])
+    job = Job("job1", {"count", "ratio"}, program=program)
+    run = Run(Instance("job1", {"count": 5, "ratio": 1.5}))
+    assert run.inst.args == {"count": "5", "ratio": "1.5"}
 
-    env = _spec_env(bound, {"count": 5, "ratio": 1.5})
+    bind(run, job, InMemoryJobs([job]))
+    running = run.program.run("r1", {})
+    running.args = run.inst.args
+
+    env = running._spec.to_jso()["env"]["vars"]
     assert env["APSIS_ARG_count"] == "5"
     assert env["APSIS_ARG_ratio"] == "1.5"
 
@@ -204,7 +214,7 @@ def test_run_args_env_inherits():
     """Adding run args doesn't disable environment inheritance."""
     bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
     running = bound.run("r1", {})
-    running.set_run_args({"database": "asd_hoard"})
+    running.args = {"database": "asd_hoard"}
 
     assert running._spec.to_jso()["env"]["inherit"] is True
 
@@ -233,14 +243,6 @@ def test_run_args_env_after_restore_and_start():
     env = _spec_env(restored, args)
     assert env["APSIS_ARG_date"] == "2026-09-01"
     assert env["APSIS_ARG_database"] == "asd_hoard"
-
-
-def test_set_run_args_overwrites():
-    """set_run_args replaces any previously set args."""
-    running = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({}).run("r1", {})
-    running.set_run_args({"database": "asd_hoard"})
-    running.set_run_args({"date": "2026-09-01"})
-    assert running.args == {"date": "2026-09-01"}
 
 
 def test_run_args_run_id_not_clobbered():

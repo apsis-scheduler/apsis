@@ -32,7 +32,7 @@ def test_run_args_env_vars_ecs():
     args = {"date": "2026-09-01", "database": "asd_hoard"}
     bound = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
     running = RunningProcstarECSProgram("r1", bound, ECS_CFG)
-    running.set_run_args(args)
+    running.args = args
 
     env = running._spec.to_jso()["env"]["vars"]
     assert env["APSIS_RUN_ID"] == "r1"

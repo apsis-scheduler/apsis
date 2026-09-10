@@ -23,9 +23,7 @@ async def test_duration():
     assert elapsed > 0.7
 
 
-def test_set_run_args_base():
-    """set_run_args is provided by the base RunningProgram and records the args."""
+def test_run_args_base():
+    """The base RunningProgram provides `args`, empty until the run starts."""
     running = RunningProgram("r1")
     assert running.args == {}
-    running.set_run_args({"date": "2026-09-01", "database": "asd_hoard"})
-    assert running.args == {"date": "2026-09-01", "database": "asd_hoard"}
