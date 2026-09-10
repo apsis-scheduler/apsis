@@ -2,11 +2,17 @@
 Tests for RunStore with real SQLite database.
 """
 
+import asyncio
+import json
+import threading
+from types import SimpleNamespace
 
 import ora
 import random
 
 import pytest
+import sqlalchemy as sa
+from sanic.request import RequestParameters
 
 from apsis.runs import Instance, Run, RunStore
 from apsis.sqlite import SqliteDB
@@ -661,3 +667,69 @@ def test_prepare_page_snapshots_in_memory_runs(tmp_path):
     _transition(store, run, State.waiting)  # mutates run.times and run.state
     assert "waiting" not in snap.times
     assert snap.state == State.scheduled
+
+
+@pytest.mark.parametrize("mode", ["job_id", "run_id"])
+@pytest.mark.asyncio
+async def test_runs_handler_reads_off_loop_while_write_proceeds(tmp_path, mode):
+    """
+    The /runs handler fetches and decodes the page on a worker thread, not the
+    event loop, over a query only connection, so a scheduler write lands while
+    the read is held open.  Covers the job_id and explicit run_id paths.
+    """
+    from apsis.service import api
+
+    store = _make_store(tmp_path)
+    read_engine = store._RunStore__run_db._RunDB__read_engine
+    assert read_engine is not store._RunStore__run_db._RunDB__engine  # off-loop engine
+    wanted = [_persist_run(store, "job").run_id for _ in range(2)]
+
+    # hold the paged select open on its worker thread until the loop releases it,
+    # recording the reader thread and that it stayed parked until then
+    seen = {}
+    parked = threading.Event()
+    release = threading.Event()
+
+    def _park(conn, cursor, statement, params, context, executemany):
+        if "FROM runs" in statement and not parked.is_set():
+            seen["ident"] = threading.get_ident()
+            parked.set()
+            seen["released"] = release.wait(timeout=5)
+
+    sa.event.listen(read_engine, "after_cursor_execute", _park)
+    query = {"job_id": ["job"]} if mode == "job_id" else {"run_id": list(wanted)}
+    jobs = SimpleNamespace(get_job=lambda _: object())  # exact match, returns job_id as is
+    app = SimpleNamespace(apsis=SimpleNamespace(run_store=store, jobs=jobs))
+    request = SimpleNamespace(app=app, args=RequestParameters(query))
+    loop_ident = threading.get_ident()
+    task = asyncio.create_task(api.runs(request))
+    try:
+        # bounded wait so an early handler exit fails fast instead of hanging
+        deadline = asyncio.get_running_loop().time() + 5
+        while not parked.is_set() and not task.done():
+            if asyncio.get_running_loop().time() > deadline:
+                break
+            await asyncio.sleep(0.01)
+        assert parked.is_set(), "reader never reached the select"
+
+        # write a different job while the read is parked open, then release it
+        other = _persist_run(store, "other")
+        release.set()
+        resp = await task
+    finally:
+        release.set()
+        if not task.done():
+            task.cancel()
+        sa.event.remove(read_engine, "after_cursor_execute", _park)
+
+    assert seen["released"] is True  # the read stayed open until our write landed
+    assert seen["ident"] != loop_ident  # the fetch ran off the loop
+    assert resp.status == 200
+    jso = json.loads(resp.body)
+    assert set(jso["runs"]) == set(wanted)
+    assert jso["paging"]["next"] is None
+    assert other.run_id in {r.run_id for r in store.query(job_id="other")[1]}
+
+    with read_engine.connect() as conn:
+        (query_only,) = conn.execute(sa.text("PRAGMA query_only")).one()
+    assert query_only == 1
