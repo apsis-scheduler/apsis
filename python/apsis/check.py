@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+import re
 
 import ora
 
@@ -8,6 +9,39 @@ from apsis.runs import Instance, Run, is_template, validate_args, bind
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
+
+# A param name is a Jinja2 variable in a template expansion, part of an environment
+# variable name, and `NAME=VALUE` on the `apsis schedule` command line, so it has to
+# be an identifier.
+PARAM_NAME_REGEX = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+PARAM_NAME_DESCRIPTION = "a letter or underscore followed by letters, digits, and underscores"
+
+# Identifiers a template expansion doesn't read as the param's arg: Jinja2 constants
+# and an operator, plus `self` and `loop`, which its runtime binds.  `{{ None }}`
+# expands to "None" whatever the arg says.
+PARAM_NAME_NOT_EXPANDABLE = frozenset(
+    {"False", "None", "True", "false", "loop", "none", "not", "self", "true"}
+)
+
+
+def check_param_names(params):
+    """
+    Checks that `params` are all usable as param names.
+
+    :return:
+      Generator of errors.
+    """
+
+    def show(names):
+        return ", ".join(repr(n) for n in sorted(names))
+
+    invalid = [p for p in params if PARAM_NAME_REGEX.fullmatch(p) is None]
+    if len(invalid) > 0:
+        yield f"invalid param names ({show(invalid)}): must be {PARAM_NAME_DESCRIPTION}"
+
+    reserved = [p for p in params if p in PARAM_NAME_NOT_EXPANDABLE]
+    if len(reserved) > 0:
+        yield f"invalid param names ({show(reserved)}): reserved by template expansion"
 
 
 # FIXME: Use normal protocols for this, not random APIs that need mocks.
@@ -23,6 +57,8 @@ def check_job(jobs_dir, job):
     :return:
       Generator of errors.
     """
+    yield from check_param_names(job.params)
+
     # Try scheduling a run for each schedule of each job.  This tests that
     # template expansions work, that all names and params are bound, and that
     # actions and conditions refer to valid jobs with correct args.
