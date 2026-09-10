@@ -21,6 +21,7 @@ from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
 from apsis.program import base
 from apsis.program.base import (
+    APSIS_ARG_ENV_PREFIX,
     ProgramSuccess,
     ProgramFailure,
     ProgramError,
@@ -460,6 +461,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
             env=procstar.spec.Proc.Env(
                 vars={
                     "APSIS_RUN_ID": self.run_id,
+                    **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.args.items()},
                 },
                 # Inherit the entire environment from procstar, since it probably
                 # includes important configuration.

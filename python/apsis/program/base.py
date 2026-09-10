@@ -15,6 +15,8 @@ log = logging.getLogger(__name__)
 
 TIMEOUT_SIGNAL = Signals.SIGTERM.name
 
+APSIS_ARG_ENV_PREFIX = "APSIS_ARG_"
+
 # -------------------------------------------------------------------------------
 
 
@@ -187,6 +189,7 @@ class RunningProgram:
 
     def __init__(self, run_id):
         self.run_id = run_id
+        self.args = {}
 
     @property
     def updates(self):

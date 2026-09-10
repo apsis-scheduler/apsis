@@ -1,0 +1,4 @@
+params: [database]
+program:
+  type: procstar
+  argv: ["/usr/bin/env"]
