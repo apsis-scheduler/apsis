@@ -1,9 +1,11 @@
 from collections import namedtuple
+import copy
 import itertools
 import jinja2
 import logging
 import ora
 from ora import now, Time
+import re
 import shlex
 from typing import Iterator
 
@@ -347,6 +349,31 @@ def bind(run, job, jobs):
 # -------------------------------------------------------------------------------
 
 
+_RUN_ID_REGEX = re.compile(r"r([0-9]+)")
+
+
+def run_number(run_id):
+    """
+    Returns the integer N from a run_id of the form rN.
+
+    :raise ValueError:
+      `run_id` is not rN with N a non-negative integer.
+    """
+    match = _RUN_ID_REGEX.fullmatch(run_id) if isinstance(run_id, str) else None
+    if match is None:
+        raise ValueError(f"invalid run_id: {run_id!r}")
+    return int(match.group(1))
+
+
+def _snapshot(run):
+    """Returns a copy of `run` with its mutable dicts copied too."""
+    snap = copy.copy(run)
+    snap.times = dict(run.times)
+    snap.meta = dict(run.meta)
+    snap.run_state = copy.copy(run.run_state)
+    return snap
+
+
 class RunStore:
     """
     Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
@@ -517,9 +544,28 @@ class RunStore:
           If True (default), applies lookback window. If False, queries all runs.
           Set to False for condition checks that need to see all active runs.
         """
-        # combine expected (scheduled, in-memory) and active (in-memory
-        # mirror of running/waiting/etc) into one filtered iterator of
-        # in-memory runs.
+        in_memory_list, db_kwargs = self.__prepare_query(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            since=since,
+            args=args,
+            with_args=with_args,
+            limit_lookback=limit_lookback,
+        )
+        in_memory_ids = {r.run_id for r in in_memory_list}
+
+        db_runs = [r for r in self.__query_run_db(**db_kwargs) if r.run_id not in in_memory_ids]
+
+        return now(), in_memory_list + db_runs
+
+    def __prepare_query(self, *, run_ids, job_id, state, since, args, with_args, limit_lookback):
+        """
+        Filters the in-memory runs and normalizes the DB filters.
+
+        :return:
+          `in_memory_list, db_kwargs` for `RunDB.query` or `RunDB.query_paged`.
+        """
         in_memory = itertools.chain(self.__expected_runs.values(), self.__active_runs.values())
 
         if state is not None:
@@ -570,22 +616,80 @@ class RunStore:
         # materialize in-memory results so we can filter DB rows to avoid
         # duplicating active runs that are also persisted.
         in_memory_list = list(in_memory)
+        db_kwargs = dict(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_ts,
+        )
+        return in_memory_list, db_kwargs
+
+    # split so the api runs the in-memory part on the loop and offloads the fetch to a thread
+    _PageRequest = namedtuple("_PageRequest", ("in_memory_list", "db_kwargs", "max_rowid"))
+
+    def prepare_page(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        state=None,
+        since=None,
+        with_args=None,
+        cursor=None,
+    ):
+        """
+        Builds a page request for `fetch_page` from the in-memory runs.
+
+        Must run on the event loop, which owns the in-memory runs.
+
+        :param cursor:
+          A run_id; the page holds only runs below it.  None starts newest.
+        """
+        in_memory_list, db_kwargs = self.__prepare_query(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            since=since,
+            args=None,
+            with_args=with_args,
+            limit_lookback=True,
+        )
+        max_rowid = None if cursor is None else run_number(cursor)
+        if max_rowid is not None:
+            in_memory_list = [r for r in in_memory_list if run_number(r.run_id) < max_rowid]
+        # copy so the worker thread never sees a live run being mutated
+        in_memory_list = [_snapshot(r) for r in in_memory_list]
+        return self._PageRequest(in_memory_list, db_kwargs, max_rowid)
+
+    def fetch_page(self, request, limit):
+        """
+        Fetches and merges one page from the DB and the request's in-memory runs.
+
+        Safe to run on a worker thread.
+
+        :param limit:
+          Maximum number of runs on the page.
+        :return:
+          `runs, next_cursor` where `runs` holds at most `limit` runs newest
+          first and `next_cursor` is the run_id for the next page, or None on
+          the last page.
+        """
+        in_memory_list, db_kwargs, max_rowid = request
         in_memory_ids = {r.run_id for r in in_memory_list}
 
-        db_runs = [
+        # limit+1 detects a further page, and drop db rows already held in memory
+        db_page = [
             r
-            for r in self.__query_run_db(
-                run_ids=run_ids,
-                job_id=job_id,
-                state=state,
-                args=args,
-                with_args=with_args,
-                min_timestamp=min_ts,
-            )
+            for r in self.__run_db.query_paged(**db_kwargs, max_rowid=max_rowid, limit=limit + 1)
             if r.run_id not in in_memory_ids
         ]
 
-        return now(), in_memory_list + db_runs
+        merged = sorted(in_memory_list + db_page, key=lambda r: run_number(r.run_id), reverse=True)
+        page = merged[:limit]
+        next_cursor = page[-1].run_id if page and len(merged) > limit else None
+        return page, next_cursor
 
     def summaries(self) -> Iterator[str]:
         from .lib.api import run_to_summary_jso
