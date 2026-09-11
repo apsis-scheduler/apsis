@@ -7,7 +7,7 @@ import yaml
 
 import apsis.jobs
 from apsis.check import check_job_dependencies_scheduled
-from apsis.exc import JobsDirErrors, SchemaError
+from apsis.exc import JobError, JobsDirErrors, SchemaError
 
 DAY_IN_SEC = 86400
 
@@ -467,3 +467,33 @@ async def test_check_dependency_cycle(tmp_path):
     assert all("dependency cycle detected:" in msg for _, msg in cycle_errors)
     # The cycle should mention the job names with arrows.
     assert any("→" in msg for _, msg in cycle_errors)
+
+
+@pytest.mark.asyncio
+async def test_param_name_with_equals(tmp_path):
+    """
+    Tests that a job with a param name that is not an identifier is not loaded.
+    """
+    jobs_path = tmp_path
+    job_path = jobs_path / "job.yaml"
+
+    job = {
+        "params": ["date", "a=b"],
+        "program": {"type": "no-op"},
+    }
+    dump_yaml_file(job, job_path)
+
+    try:
+        await apsis.jobs.load_jobs_dir(jobs_path)
+    except JobsDirErrors as exc:
+        (err,) = exc.errors
+        assert isinstance(err, JobError)
+        assert err.job_id == "job"
+        assert "'a=b'" in str(err)
+    else:
+        assert False, "expected jobs dir error"
+
+    # Rename the param.  Now it should be fine.
+    job["params"] = ["date", "a_b"]
+    dump_yaml_file(job, job_path)
+    await apsis.jobs.load_jobs_dir(jobs_path)
