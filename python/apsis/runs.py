@@ -374,6 +374,20 @@ def _snapshot(run):
     return snap
 
 
+def _in_schedule_span(run, schedule_since, schedule_until):
+    """
+    Returns true iff `run`'s nominal (schedule) time is in
+    `[schedule_since, schedule_until)`, where either bound may be None.  A run
+    with no schedule time is never in a span.
+    """
+    time = run.times.get("schedule")
+    return (
+        time is not None
+        and (schedule_since is None or time >= schedule_since)
+        and (schedule_until is None or time < schedule_until)
+    )
+
+
 class RunStore:
     """
     Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
@@ -529,6 +543,8 @@ class RunStore:
         args=None,
         with_args=None,
         limit_lookback=True,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         :param state:
@@ -543,6 +559,12 @@ class RunStore:
         :param limit_lookback:
           If True (default), applies lookback window. If False, queries all runs.
           Set to False for condition checks that need to see all active runs.
+        :param schedule_since:
+          Return only runs with nominal (schedule) time >= this.  Runs with no
+          schedule time are excluded.
+        :param schedule_until:
+          Return only runs with nominal (schedule) time < this.  Runs with no
+          schedule time are excluded.
         """
         in_memory_list, db_kwargs = self.__prepare_query(
             run_ids=run_ids,
@@ -552,6 +574,8 @@ class RunStore:
             args=args,
             with_args=with_args,
             limit_lookback=limit_lookback,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         in_memory_ids = {r.run_id for r in in_memory_list}
 
@@ -559,7 +583,19 @@ class RunStore:
 
         return now(), in_memory_list + db_runs
 
-    def __prepare_query(self, *, run_ids, job_id, state, since, args, with_args, limit_lookback):
+    def __prepare_query(
+        self,
+        *,
+        run_ids,
+        job_id,
+        state,
+        since,
+        args,
+        with_args,
+        limit_lookback,
+        schedule_since,
+        schedule_until,
+    ):
         """
         Filters the in-memory runs and normalizes the DB filters.
 
@@ -575,6 +611,16 @@ class RunStore:
         if since is not None:
             since = ora.Time(since)
             in_memory = (r for r in in_memory if r.timestamp >= since)
+
+        # same span filter as the db so in-memory and persisted runs agree
+        if schedule_since is not None:
+            schedule_since = ora.Time(schedule_since)
+        if schedule_until is not None:
+            schedule_until = ora.Time(schedule_until)
+        if schedule_since is not None or schedule_until is not None:
+            in_memory = (
+                r for r in in_memory if _in_schedule_span(r, schedule_since, schedule_until)
+            )
 
         # args takes precedence over with_args
         if args is not None:
@@ -623,6 +669,8 @@ class RunStore:
             args=args,
             with_args=with_args,
             min_timestamp=min_ts,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         return in_memory_list, db_kwargs
 
@@ -637,6 +685,8 @@ class RunStore:
         state=None,
         since=None,
         with_args=None,
+        schedule_since=None,
+        schedule_until=None,
         cursor=None,
     ):
         """
@@ -655,6 +705,8 @@ class RunStore:
             args=None,
             with_args=with_args,
             limit_lookback=True,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         max_rowid = None if cursor is None else run_number(cursor)
         if max_rowid is not None:
