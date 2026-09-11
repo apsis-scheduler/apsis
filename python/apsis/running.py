@@ -46,28 +46,20 @@ async def _maybe_compress(outputs, *, compression="br", min_size=16384):
     return dict(zip(outputs.keys(), o))
 
 
-def _program_meta(meta):
+def _program_meta(meta, *, error_message=None):
     """
     Returns a run metadata update for program metadata `meta`.
 
     A run's program metadata is replaced by, rather than merged with, the
-    metadata of each program update, so a program that reports no metadata must
-    produce no update at all.  Otherwise it would erase what is already known
-    about the program, such as the host and pid of a process that Apsis has
-    lost track of.
+    metadata of each program update, so an update with no metadata or error
+    message must produce no update at all.  Otherwise it would erase what is
+    already known about the program, such as the host and pid of a process that
+    Apsis has lost track of.
     """
+    if error_message is not None:
+        meta = meta or {}
+        meta = {**meta, "errors": [*(meta.get("errors") or []), str(error_message)]}
     return {"program": meta} if meta else {}
-
-
-def _program_error_meta(run, error):
-    """Include the error message while preserving available program metadata."""
-    meta = error.meta or run.meta.get("program", {})
-    return {
-        "program": {
-            **meta,
-            "errors": [*(meta.get("errors") or []), str(error.message)],
-        },
-    }
 
 
 async def _process_updates(apsis, run):
@@ -108,7 +100,10 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
-                        meta=_program_error_meta(run, error),
+                        meta=_program_meta(
+                            error.meta or run.meta.get("program", {}),
+                            error_message=error.message,
+                        ),
                         times=error.times,
                     )
                     return
@@ -170,7 +165,10 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
-                        meta=_program_error_meta(run, error),
+                        meta=_program_meta(
+                            error.meta or run.meta.get("program", {}),
+                            error_message=error.message,
+                        ),
                         times=error.times,
                     )
 
