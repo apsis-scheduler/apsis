@@ -157,11 +157,11 @@ def dump_yaml(file, job):
 
 def list_yaml_files(dir_path):
     dir_path = Path(dir_path)
-    for dir, dirs, names in os.walk(dir_path):
+    for root, dirs, files in os.walk(dir_path):
         # Don't go into hidden dirs (e.g. `.git`)
         dirs[:] = [d for d in dirs if not d.startswith(".")]
-        dir = Path(dir)
-        paths = (dir / n for n in names if not n.startswith("."))
+        root = Path(root)
+        paths = (root / n for n in files if not n.startswith("."))
         paths = (p for p in paths if p.suffix == ".yaml")
         for path in paths:
             job_id = str(path.with_suffix("").relative_to(dir_path))
@@ -223,6 +223,9 @@ class JobsDir:
         return jobs
 
 
+JOB_LOAD_BATCH_SIZE = 16
+
+
 async def load_jobs_dir(path, yaml_loader=None):
     """
     Attempts to loads jobs from a jobs dir.
@@ -272,7 +275,7 @@ async def load_jobs_dir(path, yaml_loader=None):
             exc.job_id = job_id
             return job_id, None, exc
 
-    for chunk in itr.chunks(list_yaml_files(jobs_path), 16):
+    for chunk in itr.chunks(list_yaml_files(jobs_path), JOB_LOAD_BATCH_SIZE):
         for job_id, job, exc in await asyncio.gather(
             *(load_job(path, job_id) for path, job_id in chunk)
         ):
