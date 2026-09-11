@@ -23,7 +23,7 @@ dependencies = [
     "brotli",
     "httpx",
     "jinja2",
-    "ora <0.9.0",
+    "ora >=0.10.3",
     # wheels are only available on self-hosted Github pages pypi index, use:
     #   pip install --extra-index-url https://apsis-scheduler.github.io/procstar/simple .
     "procstar >=0.7",
