@@ -26,7 +26,8 @@ RUN_STATE = {"conn_id": "conn0", "proc_id": "proc0"}
 # Metadata a Procstar program reports once the process is running.
 PROGRAM_META = {
     "procstar_proc_id": "proc0",
-    "procstar_conn": {"conn_id": "conn0", "hostname": "host0"},
+    "procstar_conn": {"conn_id": "conn0"},
+    "procstar_agent": {"hostname": "host0"},
     "proc_stat": {"pid": 12345},
 }
 
@@ -152,29 +153,37 @@ async def test_result_without_metadata_keeps_program_metadata(result, state):
     await _process_updates(apsis, run)
 
     assert run.state == state
-    assert run.meta["program"] == PROGRAM_META
+    expected = (
+        {**PROGRAM_META, "errors": [result.message]} if state == State.error else PROGRAM_META
+    )
+    assert run.meta["program"] == expected
+    assert "errors" not in PROGRAM_META
 
 
+@pytest.mark.parametrize(
+    "startup_meta", [{}, {"aws_ecs": {"task_id": "task0", "cluster_name": "cluster0"}}]
+)
 @pytest.mark.asyncio
-async def test_error_keeps_startup_metadata():
+async def test_error_keeps_startup_metadata(startup_meta):
     """
     An error while starting doesn't erase metadata reported during startup.
 
     A program may report metadata about resources it acquired before the
     process is running, e.g. an AWS ECS task; erasing it leaks the resource.
     """
-    STARTUP_META = {"aws_ecs": {"task_id": "task0", "cluster_name": "cluster0"}}
+    error = ProgramError("start failed: proc0: no open connection in group")
     apsis, run = _make_run(
         [
-            ProgramUpdate(meta=STARTUP_META),
-            ProgramError("start failed: proc0: no open connection in group"),
+            ProgramUpdate(meta=startup_meta),
+            error,
         ]
     )
 
     await _process_updates(apsis, run)
 
     assert run.state == State.error
-    assert run.meta["program"] == STARTUP_META
+    assert run.meta["program"] == {**startup_meta, "errors": [error.message]}
+    assert "errors" not in startup_meta
 
 
 @pytest.mark.asyncio
@@ -201,7 +210,11 @@ async def test_result_metadata_replaces_program_metadata():
     """
     A program result with metadata of its own replaces the program metadata.
     """
-    ERROR_META = {**PROGRAM_META, "status": {"exit_code": None, "signal": "SIGKILL"}}
+    ERROR_META = {
+        **PROGRAM_META,
+        "status": {"exit_code": None, "signal": "SIGKILL"},
+        "errors": ["existing error"],
+    }
     apsis, run = _make_run(
         [
             ProgramRunning(RUN_STATE, meta=PROGRAM_META),
@@ -212,4 +225,5 @@ async def test_result_metadata_replaces_program_metadata():
     await _process_updates(apsis, run)
 
     assert run.state == State.error
-    assert run.meta["program"] == ERROR_META
+    assert run.meta["program"] == {**ERROR_META, "errors": ["existing error", "procstar: oh no"]}
+    assert ERROR_META["errors"] == ["existing error"]
