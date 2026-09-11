@@ -59,6 +59,17 @@ def _program_meta(meta):
     return {"program": meta} if meta else {}
 
 
+def _program_error_meta(run, error):
+    """Include the error message while preserving available program metadata."""
+    meta = error.meta or run.meta.get("program", {})
+    return {
+        "program": {
+            **meta,
+            "errors": [*(meta.get("errors") or []), str(error.message)],
+        },
+    }
+
+
 async def _process_updates(apsis, run):
     """
     Processes program `updates` for `run` until the program is finished.
@@ -97,7 +108,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
-                        meta=_program_meta(error.meta),
+                        meta=_program_error_meta(run, error),
                         times=error.times,
                     )
                     return
@@ -159,7 +170,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
-                        meta=_program_meta(error.meta),
+                        meta=_program_error_meta(run, error),
                         times=error.times,
                     )
 
