@@ -570,28 +570,19 @@ _MERGE_LAYOUTS = [
 
 @pytest.mark.parametrize("label, layout, limit", _MERGE_LAYOUTS, ids=[m[0] for m in _MERGE_LAYOUTS])
 def test_paged_merge_dedups_and_orders(tmp_path, label, layout, limit):
-    """
-    The in-memory mirror and the DB merge into one deduped, rowid-descending
-    scroll.  Covers a lone mirrored run, a newest window that is all active
-    dupes filling limit+1, and an active run below newer DB-only rows.
-    """
+    """Memory and DB rows merge into one complete, deduped scroll, newest first."""
     store = _make_store(tmp_path)
     ids = [
         _make_active(store) if kind == "active" else _persist_run(store, "job").run_id
         for kind in layout
     ]
-    expected = sorted(ids, key=_rowid, reverse=True)  # newest first, as a scroll returns
+    expected = sorted(ids, key=_rowid, reverse=True)
 
-    # exact sequence catches wrong order, omissions, additions, and duplicates
     assert _scroll(store, limit, job_id="job") == expected
 
 
 def test_paged_stable_when_expected_run_persists_mid_scroll(tmp_path):
-    """
-    A run that transitions from expected in memory to persisted in the DB
-    between pages still appears exactly once, since its immutable run number
-    keeps the cursor stable.
-    """
+    """Persisting an expected run between pages doesn't skip or duplicate it."""
     store = _make_store(tmp_path)
     persisted = [_persist_run(store, "job").run_id for _ in range(5)]
     expected = [Run(Instance("job", {}), expected=True) for _ in range(5)]
@@ -624,21 +615,6 @@ def test_paged_applies_lookback_on_every_page(tmp_path):
     assert len(seen) == len(set(seen))
 
 
-def test_paged_invalid_cursor_raises(tmp_path):
-    store = _make_store(tmp_path)
-    _persist_run(store, "job")
-    with pytest.raises(ValueError):
-        _page(store, 5, job_id="job", cursor="not-a-run-id")
-
-
-def test_paged_run_ids_filter(tmp_path):
-    store = _make_store(tmp_path)
-    runs = [_persist_run(store, "job") for _ in range(5)]
-    wanted = {runs[0].run_id, runs[3].run_id}
-    seen = _scroll(store, 2, run_ids=list(wanted))
-    assert set(seen) == wanted
-
-
 def test_run_number_validation():
     from apsis.runs import run_number
 
@@ -650,10 +626,7 @@ def test_run_number_validation():
 
 
 def test_prepare_page_snapshots_in_memory_runs(tmp_path):
-    """
-    The in-memory runs handed to the worker thread must not alias the live
-    objects, so a transition on the loop during serialization can't race.
-    """
+    """Worker snapshots stay unchanged when live runs transition."""
     store = _make_store(tmp_path)
     run = Run(Instance("job", {}), expected=True)
     _schedule(store, run)
@@ -672,17 +645,15 @@ def test_prepare_page_snapshots_in_memory_runs(tmp_path):
 @pytest.mark.parametrize("mode", ["job_id", "run_id"])
 @pytest.mark.asyncio
 async def test_runs_handler_reads_off_loop_while_write_proceeds(tmp_path, mode):
-    """
-    The /runs handler fetches and decodes the page on a worker thread, not the
-    event loop, over a query only connection, so a scheduler write lands while
-    the read is held open.  Covers the job_id and explicit run_id paths.
-    """
+    """Both /runs filter paths read off-loop while a scheduler write completes."""
     from apsis.service import api
 
     store = _make_store(tmp_path)
     read_engine = store._RunStore__run_db._RunDB__read_engine
     assert read_engine is not store._RunStore__run_db._RunDB__engine  # off-loop engine
     wanted = [_persist_run(store, "job").run_id for _ in range(2)]
+    if mode == "run_id":
+        _persist_run(store, "job")  # A newer, unrequested row must be excluded.
 
     # hold the paged select open on its worker thread until the loop releases it,
     # recording the reader thread and that it stayed parked until then

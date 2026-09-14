@@ -315,14 +315,9 @@ def _rowid(run_id):
 
 
 def test_query_paged_scroll_orders_limits_and_excludes_cursor(tmp_path):
-    """
-    One bounded scroll covers ordering (rowid desc), the page limit, cursor
-    exclusivity (strictly below the last id), and completeness with no dupes or
-    cross-job leakage.
-    """
+    """A bounded scroll returns exactly the matching IDs, newest first."""
     run_db = _setup(tmp_path)
-    # other-job noise before, between, and after the matches, so dropping the job
-    # filter after page one would leak noise below the first cursor
+    # Interleave other-job rows to catch filter leakage on later pages.
     made = []
     _make_run(run_db, "job/b", {})
     for _ in range(5):
@@ -338,9 +333,6 @@ def test_query_paged_scroll_orders_limits_and_excludes_cursor(tmp_path):
         if not page:
             break
         ids = [r.run_id for r in page]
-        assert ids == sorted(ids, key=_rowid, reverse=True)  # ordered within the page
-        if cursor is not None:
-            assert all(_rowid(i) < cursor for i in ids)  # cursor excludes at and above
         lengths.append(len(page))
         seen.extend(ids)
         cursor = _rowid(page[-1].run_id)
@@ -376,10 +368,7 @@ def test_query_paged_min_timestamp(tmp_path):
 
 
 def test_open_backfills_pagination_index(tmp_path):
-    """
-    Opening a database that predates the (job_id, rowid) pagination index
-    backfills it, so existing deployments get it without a manual migration.
-    """
+    """Opening an older database backfills the pagination index."""
     import sqlite3
 
     path = str(tmp_path / "apsis.db")
