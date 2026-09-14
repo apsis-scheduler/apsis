@@ -272,7 +272,7 @@ def test_get_malformed_run_id(tmp_path):
     """
     RunDB.get() must raise LookupError for malformed IDs, not AssertionError
     or ValueError.  Even under python -O the wrong-run bug ("x123" resolving
-    to rowid 123) must not occur, because _parse_run_id checks the prefix
+    to rowid 123) must not occur, because run_number validates the shape
     explicitly rather than via assert.
     """
     import pytest

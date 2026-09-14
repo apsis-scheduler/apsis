@@ -50,7 +50,7 @@ MAX_PAGE_SIZE = 1_000
 MAX_CURSOR = 2**63 - 1
 
 
-def _pop_single(args, name):
+def _pop_arg(args, name):
     """
     Pops query param `name` from `args`, allowing at most one value.
 
@@ -78,8 +78,8 @@ def _parse_paging_args(args):
       `cursor` or `limit` is malformed or repeated.  The caller should return
       a 400.
     """
-    cursor = _pop_single(args, "cursor")
-    limit = _pop_single(args, "limit")
+    cursor = _pop_arg(args, "cursor")
+    limit = _pop_arg(args, "limit")
     if limit is None:
         limit = DEFAULT_PAGE_SIZE
     else:
@@ -551,18 +551,17 @@ async def runs(request):
 
     # Get runs from the selected interval.
     args = request.args
-    (summary,) = args.pop("summary", ("False",))
-    summary = to_bool(summary)
-    run_id = args.pop("run_id", None)
-    (job_id,) = args.pop("job_id", (None,))
-    if job_id is not None:
-        job_id = match_job_id(apsis.jobs, job_id)
-    (state,) = args.pop("state", (None,))
-    (since,) = args.pop("since", (None,))
     try:
+        summary = to_bool(_pop_arg(args, "summary") or "False")
+        run_id = args.pop("run_id", None)
+        job_id = _pop_arg(args, "job_id")
+        state = _pop_arg(args, "state")
+        since = _pop_arg(args, "since")
         cursor, limit = _parse_paging_args(args)
     except ValueError as exc:
         return error(str(exc), 400)
+    if job_id is not None:
+        job_id = match_job_id(apsis.jobs, job_id)
 
     # Remainders are args to match, though strip off leading underscores, which
     # were added to avoid collision with fixed args.
