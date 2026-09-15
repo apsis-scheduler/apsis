@@ -328,11 +328,8 @@ class RunDB:
     # For runs in the database (either inserted into or loaded from), we stash
     # the sqlite rowid in the Run._rowid attribute.
 
-    def __init__(self, engine, *, read_engine=None):
+    def __init__(self, engine):
         self.__engine = engine
-        # engine for paginated reads that may run on a worker thread, defaults to the
-        # main engine for on-loop use
-        self.__read_engine = read_engine if read_engine is not None else engine
         self.__connection = engine.raw_connection()
         # FIXME: Do we need to clean this up?
 
@@ -577,11 +574,12 @@ class RunDB:
         min_timestamp=None,
         max_rowid=None,
         limit,
-    ):
+    ) -> list[Run]:
         """
         Returns one page of at most `limit` runs matching the filters, ordered
-        by rowid descending.  Runs on the read engine, so it is safe off the
-        event loop.
+        by rowid descending.  The `(job_id, rowid)` index makes this an index
+        seek, so keep `limit` small enough that the decode stays within the
+        event loop's latency budget.
 
         :param max_rowid:
           If not None, limits to runs with rowid below it (the cursor).
@@ -600,7 +598,7 @@ class RunDB:
             expr = sa.and_(expr, TBL_RUNS.c.rowid < max_rowid)
         query = TBL_RUNS_SELECT.where(expr).order_by(TBL_RUNS.c.rowid.desc()).limit(limit)
         with Timer() as timer:
-            with self.__read_engine.connect() as conn:
+            with self.__engine.connect() as conn:
                 runs = list(self.__decode_rows(conn.execute(query)))
         log.debug(
             f"query_paged job_id={job_id} max_rowid={max_rowid} limit={limit} "
@@ -902,39 +900,13 @@ class SqliteDB:
           SQLAlchemy engine for the SQLite database.
         """
         self.__engine = engine
-        self.__read_engine = self.__make_read_engine(engine)
         self.clock_db = ClockDB(engine)
         self.next_run_id_db = RunIDDB(engine)
         self.job_db = JobDB(engine)
-        self.run_db = RunDB(engine, read_engine=self.__read_engine)
+        self.run_db = RunDB(engine)
         self.run_summary_db = RunSummaryDB(engine)
         self.run_log_db = RunLogDB(engine)
         self.output_db = OutputDB(engine)
-
-    @staticmethod
-    def __make_read_engine(engine):
-        """
-        Returns a NullPool engine for reads from worker threads, or the main
-        engine for in-memory databases.
-        """
-        path = engine.url.database
-        if not path or path == ":memory:":
-            return engine
-
-        read_engine = sa.create_engine(
-            f"sqlite:///{path}",
-            poolclass=sa.pool.NullPool,
-            connect_args={"check_same_thread": False},
-        )
-
-        @sa.event.listens_for(read_engine, "connect")
-        def _set_read_pragmas(dbapi_conn, _):
-            cur = dbapi_conn.cursor()
-            cur.execute("PRAGMA query_only = ON")  # reads only
-            cur.execute("PRAGMA mmap_size = 2147483648")
-            cur.close()
-
-        return read_engine
 
     @classmethod
     def __get_engine(cls, path, *, timeout=None):
@@ -972,8 +944,6 @@ class SqliteDB:
 
     def close(self):
         self.__engine.dispose()
-        if self.__read_engine is not self.__engine:
-            self.__read_engine.dispose()
         del self.__engine
 
     @classmethod
@@ -1006,9 +976,6 @@ class SqliteDB:
                 raise FileNotFoundError(path)
 
         engine = cls.__get_engine(path, timeout=timeout)
-        # backfill indexes added after the initial schema, create if not exists is a no-op
-        # when already present
-        engine.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_rowid ON runs (job_id, rowid)")
         # FIXME: Check that tables exist.
         return cls(engine)
 

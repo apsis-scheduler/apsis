@@ -2,17 +2,10 @@
 Tests for RunStore with real SQLite database.
 """
 
-import asyncio
-import json
-import threading
-from types import SimpleNamespace
-
 import ora
 import random
 
 import pytest
-import sqlalchemy as sa
-from sanic.request import RequestParameters
 
 from apsis.runs import Instance, Run, RunStore
 from apsis.sqlite import SqliteDB
@@ -540,8 +533,8 @@ def _make_active(store, job_id="job"):
 
 
 def _page(store, limit, **kwargs):
-    """One page, as the API does it: prepare on the loop, then fetch."""
-    return store.fetch_page(store.prepare_page(**kwargs), limit)
+    """One page, as the API does it: a single on-loop query_page call."""
+    return store.query_page(limit=limit, **kwargs)
 
 
 def _scroll(store, limit, start_cursor=None, **kwargs):
@@ -615,6 +608,20 @@ def test_paged_applies_lookback_on_every_page(tmp_path):
     assert len(seen) == len(set(seen))
 
 
+def test_paged_bounds_many_in_memory_runs(tmp_path):
+    # many in-memory runs and a small page, the limit+1 bound must not drop or
+    # dup a run so the scroll still returns every run newest first
+    store = _make_store(tmp_path)
+    ids = []
+    for _ in range(10):
+        run = Run(Instance("job", {}), expected=True)
+        _schedule(store, run)
+        ids.append(run.run_id)
+    expected = sorted(ids, key=_rowid, reverse=True)
+
+    assert _scroll(store, 3, job_id="job") == expected
+
+
 def test_run_number_validation():
     from apsis.runs import run_number
 
@@ -623,84 +630,3 @@ def test_run_number_validation():
     for bad in ("r-5", "rabc", "r", "", "x1", "1", None, 5, "r1.0", "r 1"):
         with pytest.raises(ValueError):
             run_number(bad)
-
-
-def test_prepare_page_snapshots_in_memory_runs(tmp_path):
-    """Worker snapshots stay unchanged when live runs transition."""
-    store = _make_store(tmp_path)
-    run = Run(Instance("job", {}), expected=True)
-    _schedule(store, run)
-
-    request = store.prepare_page(job_id="job")
-    (snap,) = request.in_memory_list
-    assert snap.run_id == run.run_id
-    assert snap is not run
-    assert snap.times is not run.times and snap.meta is not run.meta
-
-    _transition(store, run, State.waiting)  # mutates run.times and run.state
-    assert "waiting" not in snap.times
-    assert snap.state == State.scheduled
-
-
-@pytest.mark.parametrize("mode", ["job_id", "run_id"])
-@pytest.mark.asyncio
-async def test_runs_handler_reads_off_loop_while_write_proceeds(tmp_path, mode):
-    """Both /runs filter paths read off-loop while a scheduler write completes."""
-    from apsis.service import api
-
-    store = _make_store(tmp_path)
-    read_engine = store._RunStore__run_db._RunDB__read_engine
-    assert read_engine is not store._RunStore__run_db._RunDB__engine  # off-loop engine
-    wanted = [_persist_run(store, "job").run_id for _ in range(2)]
-    if mode == "run_id":
-        _persist_run(store, "job")  # A newer, unrequested row must be excluded.
-
-    # hold the paged select open on its worker thread until the loop releases it,
-    # recording the reader thread and that it stayed parked until then
-    seen = {}
-    parked = threading.Event()
-    release = threading.Event()
-
-    def _park(conn, cursor, statement, params, context, executemany):
-        if "FROM runs" in statement and not parked.is_set():
-            seen["ident"] = threading.get_ident()
-            parked.set()
-            seen["released"] = release.wait(timeout=5)
-
-    sa.event.listen(read_engine, "after_cursor_execute", _park)
-    query = {"job_id": ["job"]} if mode == "job_id" else {"run_id": list(wanted)}
-    jobs = SimpleNamespace(get_job=lambda _: object())  # exact match, returns job_id as is
-    app = SimpleNamespace(apsis=SimpleNamespace(run_store=store, jobs=jobs))
-    request = SimpleNamespace(app=app, args=RequestParameters(query))
-    loop_ident = threading.get_ident()
-    task = asyncio.create_task(api.runs(request))
-    try:
-        # bounded wait so an early handler exit fails fast instead of hanging
-        deadline = asyncio.get_running_loop().time() + 5
-        while not parked.is_set() and not task.done():
-            if asyncio.get_running_loop().time() > deadline:
-                break
-            await asyncio.sleep(0.01)
-        assert parked.is_set(), "reader never reached the select"
-
-        # write a different job while the read is parked open, then release it
-        other = _persist_run(store, "other")
-        release.set()
-        resp = await task
-    finally:
-        release.set()
-        if not task.done():
-            task.cancel()
-        sa.event.remove(read_engine, "after_cursor_execute", _park)
-
-    assert seen["released"] is True  # the read stayed open until our write landed
-    assert seen["ident"] != loop_ident  # the fetch ran off the loop
-    assert resp.status == 200
-    jso = json.loads(resp.body)
-    assert set(jso["runs"]) == set(wanted)
-    assert jso["paging"]["next"] is None
-    assert other.run_id in {r.run_id for r in store.query(job_id="other")[1]}
-
-    with read_engine.connect() as conn:
-        (query_only,) = conn.execute(sa.text("PRAGMA query_only")).one()
-    assert query_only == 1

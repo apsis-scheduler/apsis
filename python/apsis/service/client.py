@@ -117,10 +117,17 @@ class Client:
     def __get(self, *path, **query):
         return self.__request("GET", *path, **query)
 
-    def __get_paged_runs(self, *path, **query):
+    def __get_paged_runs(self, *path, max_runs: int | None = None, **query) -> dict:
         """
         Follows the `paging.next` cursor across pages, returning the merged
-        {run_id: run} dict.
+        {run_id: run} dict, newest first.
+
+        The server chooses the page size and this walks however many pages are
+        needed.  `max_runs` caps the total collected.
+
+        :param max_runs:
+          If given, stop once `max_runs` runs are collected and return only the
+          newest `max_runs`.  Otherwise walk every page (the full history).
         """
         runs = {}
         cursor = None
@@ -128,9 +135,14 @@ class Client:
             # cursor is None on the first request, which __url drops
             resp = self.__get(*path, cursor=cursor, **query)
             runs.update(resp["runs"])
-            cursor = resp.get("paging", {}).get("next")
-            if cursor is None:
+            if max_runs is not None and len(runs) >= max_runs:
+                return dict(list(runs.items())[:max_runs])
+            next_cursor = resp.get("paging", {}).get("next")
+            if next_cursor is None:
                 return runs
+            if next_cursor == cursor:
+                raise RuntimeError(f"paging cursor did not advance: {next_cursor}")
+            cursor = next_cursor
 
     def __post(self, *path, data=None, **query):
         return self.__request("POST", *path, data=data, **query)
@@ -190,8 +202,9 @@ class Client:
     def get_job(self, job_id):
         return self.__get("/api/v1/jobs", job_id)
 
-    def get_job_runs(self, job_id):
-        return self.__get("/api/v1/jobs", job_id, "runs")["runs"]
+    def get_job_runs(self, job_id) -> dict:
+        # walks the paging.next cursor, same as get_runs
+        return self.__get_paged_runs("/api/v1/jobs", job_id, "runs")
 
     def get_jobs(self, *, label=None):
         return self.__get("/api/v1/jobs", label=label)
@@ -267,9 +280,12 @@ class Client:
         """
         return self.__post("/api/v1/runs", run_id, "mark", state_name)
 
-    def get_runs(self, *, job_id=None, state=None, args={}):
+    def get_runs(self, *, job_id=None, state=None, args={}, limit: int | None = None) -> dict:
+        # limit is the total runs to return not the page size
+        # walk the server pages and stop once we have that many
         return self.__get_paged_runs(
             "/api/v1/runs",
+            max_runs=limit,
             job_id=job_id,
             state=state,
             # Include args, but prefix with underscore any that collide with

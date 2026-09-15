@@ -218,7 +218,6 @@ def main():
     # --- command: runs -----------------------------------------------
 
     def cmd_runs(client, arg):
-        # FIXME: add pagination
         if args.job is None:
             print("error: filter --job is required", file=sys.stderr)
             raise SystemExit(1)
@@ -226,6 +225,7 @@ def main():
         runs = client.get_runs(
             job_id=args.job,
             state=args.state,
+            limit=args.limit,
             # FIXME: times
         )
 
@@ -261,6 +261,14 @@ def main():
         metavar="TIMESPAN",
         default=None,
         help="show only runs in TIMESPAN",
+    )
+    cmd.add_argument(
+        "--limit",
+        "-l",
+        metavar="N",
+        type=int,
+        default=None,
+        help="show only the newest N runs (default: all)",
     )
 
     grp = cmd.add_mutually_exclusive_group()

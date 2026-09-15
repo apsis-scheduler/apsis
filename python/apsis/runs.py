@@ -1,5 +1,4 @@
 from collections import namedtuple
-import copy
 import itertools
 import jinja2
 import logging
@@ -7,7 +6,7 @@ import ora
 from ora import now, Time
 import re
 import shlex
-from typing import Iterator
+from typing import Iterable, Iterator
 
 import ujson
 
@@ -352,7 +351,7 @@ def bind(run, job, jobs):
 _RUN_ID_REGEX = re.compile(r"r([0-9]+)")
 
 
-def run_number(run_id):
+def run_number(run_id: str) -> int:
     """
     Returns the integer N from a run_id of the form rN.
 
@@ -363,15 +362,6 @@ def run_number(run_id):
     if match is None:
         raise ValueError(f"invalid run_id: {run_id!r}")
     return int(match.group(1))
-
-
-def _snapshot(run):
-    """Returns a copy of `run` with its mutable dicts copied too."""
-    snap = copy.copy(run)
-    snap.times = dict(run.times)
-    snap.meta = dict(run.meta)
-    snap.run_state = copy.copy(run.run_state)
-    return snap
 
 
 class RunStore:
@@ -626,26 +616,30 @@ class RunStore:
         )
         return in_memory_list, db_kwargs
 
-    # split so the api runs the in-memory part on the loop and offloads the fetch to a thread
-    _PageRequest = namedtuple("_PageRequest", ("in_memory_list", "db_kwargs", "max_rowid"))
-
-    def prepare_page(
+    def query_page(
         self,
         *,
-        run_ids=None,
-        job_id=None,
-        state=None,
-        since=None,
-        with_args=None,
-        cursor=None,
-    ):
+        run_ids: Iterable[str] | str | None = None,
+        job_id: str | None = None,
+        state: "State | Iterable[State] | None" = None,
+        since: "ora.Time | str | None" = None,
+        with_args: dict[str, str] | None = None,
+        cursor: str | None = None,
+        limit: int,
+    ) -> tuple[list["Run"], str | None]:
         """
-        Builds a page request for `fetch_page` from the in-memory runs.
+        Returns one page of at most `limit` runs matching the filters, newest
+        first, merging the in-memory mirror with the DB and deduping.
 
-        Must run on the event loop, which owns the in-memory runs.
+        Runs on the event loop; keep `limit` small enough that the DB read plus
+        decode stays within the loop's latency budget.
 
         :param cursor:
           A run_id; the page holds only runs below it.  None starts newest.
+        :return:
+          `runs, next_cursor` where `runs` holds at most `limit` runs newest
+          first and `next_cursor` is the run_id for the next page, or None on
+          the last page.
         """
         in_memory_list, db_kwargs = self.__prepare_query(
             run_ids=run_ids,
@@ -659,24 +653,10 @@ class RunStore:
         max_rowid = None if cursor is None else run_number(cursor)
         if max_rowid is not None:
             in_memory_list = [r for r in in_memory_list if run_number(r.run_id) < max_rowid]
-        # copy so the worker thread never sees a live run being mutated
-        in_memory_list = [_snapshot(r) for r in in_memory_list]
-        return self._PageRequest(in_memory_list, db_kwargs, max_rowid)
-
-    def fetch_page(self, request, limit):
-        """
-        Fetches and merges one page from the DB and the request's in-memory runs.
-
-        Safe to run on a worker thread.
-
-        :param limit:
-          Maximum number of runs on the page.
-        :return:
-          `runs, next_cursor` where `runs` holds at most `limit` runs newest
-          first and `next_cursor` is the run_id for the next page, or None on
-          the last page.
-        """
-        in_memory_list, db_kwargs, max_rowid = request
+        # keep only the newest limit+1 in-memory runs below the cursor
+        # if there are that many they fill the page so db rows can't take a slot
+        in_memory_list.sort(key=lambda r: run_number(r.run_id), reverse=True)
+        in_memory_list = in_memory_list[: limit + 1]
         in_memory_ids = {r.run_id for r in in_memory_list}
 
         # limit+1 detects a further page, and drop db rows already held in memory

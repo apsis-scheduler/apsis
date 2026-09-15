@@ -42,15 +42,14 @@ WS_CHUNK = 4096
 # Send bigger chunks when the json is pre-serialized
 WS_RAW_CHUNK = 2**16
 
-# default page size, and a max so one page cannot stall the loop
-DEFAULT_PAGE_SIZE = 500
-MAX_PAGE_SIZE = 1_000
+# runs per page, fixed so one decode on the loop stays small
+PAGE_SIZE = 200
 
 # largest cursor sqlite can bind as a signed 64 bit int
 MAX_CURSOR = 2**63 - 1
 
 
-def _pop_arg(args, name):
+def _pop_arg(args, name: str) -> str | None:
     """
     Pops query param `name` from `args`, allowing at most one value.
 
@@ -60,41 +59,29 @@ def _pop_arg(args, name):
       `name` was given more than once.
     """
     values = args.pop(name, None)
-    if not values:
+    if values is None:
         return None
-    if len(values) > 1:
+    if len(values) != 1:
         raise ValueError(f"{name} may be given at most once")
     return values[0]
 
 
-def _parse_paging_args(args):
+def _parse_cursor(args) -> str | None:
     """
-    Pops and validates the `cursor` and `limit` query params from `args`.
+    Pops and validates the `cursor` query param from `args`.
 
     :return:
-      `cursor, limit` where `limit` defaults to DEFAULT_PAGE_SIZE and is
-      clamped to MAX_PAGE_SIZE, and `cursor` is a validated run_id or None.
+      A validated run_id, or None.
     :raise ValueError:
-      `cursor` or `limit` is malformed or repeated.  The caller should return
+      `cursor` is malformed, too large, or repeated.  The caller should return
       a 400.
     """
     cursor = _pop_arg(args, "cursor")
-    limit = _pop_arg(args, "limit")
-    if limit is None:
-        limit = DEFAULT_PAGE_SIZE
-    else:
-        try:
-            limit = int(limit)
-        except ValueError:
-            raise ValueError(f"invalid limit: {limit}")
-        if limit < 1:
-            raise ValueError("limit must be positive")
-        limit = min(limit, MAX_PAGE_SIZE)
     if cursor is not None:
         # cursor must be rN and fit a signed 64 bit sqlite integer, raises on bad
         if run_number(cursor) > MAX_CURSOR:
             raise ValueError(f"cursor too large: {cursor}")
-    return cursor, limit
+    return cursor
 
 
 # -------------------------------------------------------------------------------
@@ -220,13 +207,18 @@ async def job(request, job_id):
 
 @API.route("/jobs/<job_id:path>/runs")
 async def job_runs(request, job_id):
-    # left unpaginated for now, its route is ambiguous with /jobs/<job_id:path> under
-    # sanic-routing and resolves nondeterministically
-    # deferred to a follow-up that also disambiguates the route, no current callers
-    job_id = match_job_id(request.app.apsis.jobs, unquote(job_id))
-    when, runs = request.app.apsis.run_store.query(job_id=job_id)
-    jso = runs_to_jso(request.app, when, runs)
-    return response_json(jso)
+    # one page plus a paging.next cursor, same shape as GET /runs
+    apsis = request.app.apsis
+    try:
+        cursor = _parse_cursor(request.args)
+    except ValueError as exc:
+        return error(str(exc), 400)
+    job_id = match_job_id(apsis.jobs, unquote(job_id))
+    when = ora.now()
+    runs, next_cursor = apsis.run_store.query_page(job_id=job_id, cursor=cursor, limit=PAGE_SIZE)
+    result = runs_to_jso(request.app, when, runs)
+    result["paging"] = {"next": next_cursor}
+    return response_json(result)
 
 
 @API.route("/jobs")
@@ -557,7 +549,7 @@ async def runs(request):
         job_id = _pop_arg(args, "job_id")
         state = _pop_arg(args, "state")
         since = _pop_arg(args, "since")
-        cursor, limit = _parse_paging_args(args)
+        cursor = _parse_cursor(args)
     except ValueError as exc:
         return error(str(exc), 400)
     if job_id is not None:
@@ -572,21 +564,23 @@ async def runs(request):
 
     when = ora.now()
     state = None if state is None else to_state(state)
+    limit = PAGE_SIZE
     if run_id is not None:
         # run_id lists explicit ids so one page holds them all
         cursor = None
         limit = len(run_id)
 
-    # prepare on the loop, then offload the fetch, decode, and jso build to a thread
-    page_request = apsis.run_store.prepare_page(
-        run_ids=run_id, job_id=job_id, state=state, since=since, with_args=args, cursor=cursor
+    # one page on the loop, page size is fixed so the decode stays small
+    runs, next_cursor = apsis.run_store.query_page(
+        run_ids=run_id,
+        job_id=job_id,
+        state=state,
+        since=since,
+        with_args=args,
+        cursor=cursor,
+        limit=limit,
     )
-
-    def build():
-        runs, next_cursor = apsis.run_store.fetch_page(page_request, limit)
-        return runs_to_jso(request.app, when, runs, summary=summary), next_cursor
-
-    result, next_cursor = await asyncio.to_thread(build)
+    result = runs_to_jso(request.app, when, runs, summary=summary)
     # paging goes here not in the shared runs_to_jso
     result["paging"] = {"next": next_cursor}
 

@@ -367,21 +367,47 @@ def test_query_paged_min_timestamp(tmp_path):
     assert [r.run_id for r in page] == [new.run_id]
 
 
-def test_open_backfills_pagination_index(tmp_path):
-    """Opening an older database backfills the pagination index."""
+def _has_pagination_index(path):
     import sqlite3
+
+    with sqlite3.connect(path) as conn:
+        return "idx_runs_job_rowid" in {r[1] for r in conn.execute("PRAGMA index_list('runs')")}
+
+
+def test_create_has_pagination_index(tmp_path):
+    """A freshly created database gets the keyset pagination index from the schema."""
+    path = str(tmp_path / "apsis.db")
+    SqliteDB.create(path=path)
+    assert _has_pagination_index(path)
+
+
+def test_migration_backfills_pagination_index(tmp_path):
+    """
+    The migrate-db script adds the index to an older database that lacks it;
+    opening the database does NOT (index creation is an explicit migration).
+    """
+    import importlib.util
+    import sqlite3
+    from pathlib import Path
 
     path = str(tmp_path / "apsis.db")
     SqliteDB.create(path=path)
 
-    def has_index():
-        with sqlite3.connect(path) as conn:
-            return "idx_runs_job_rowid" in {r[1] for r in conn.execute("PRAGMA index_list('runs')")}
-
-    # simulate an older db by dropping the index create() added
+    # simulate a database created before the index existed
     with sqlite3.connect(path) as conn:
         conn.execute("DROP INDEX IF EXISTS idx_runs_job_rowid")
-    assert not has_index()
+    assert not _has_pagination_index(path)
 
-    SqliteDB.open(path)  # backfills it
-    assert has_index()
+    # load scripts/migrate-db.py (hyphenated, so not importable as a module)
+    script = Path(__file__).parents[2] / "scripts" / "migrate-db.py"
+    spec = importlib.util.spec_from_file_location("migrate_db", script)
+    migrate_db = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migrate_db)
+
+    db = SqliteDB.open(path)
+    try:
+        assert not _has_pagination_index(path)  # open() must not backfill
+        migrate_db.migrate_2_4_5(db)
+    finally:
+        db.close()
+    assert _has_pagination_index(path)
