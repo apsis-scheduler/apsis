@@ -11,7 +11,6 @@ process.
 from contextlib import closing
 import json
 from pathlib import Path
-import time
 import urllib.request
 
 from instance import ApsisService
@@ -35,7 +34,6 @@ def test_job_and_job_runs():
         inst.wait_for_serve()
 
         run_id = inst.client.schedule(JOB_ID, {}, "now")["run_id"]
-        time.sleep(0.2)
 
         # The job itself.
         job = get_json(inst, f"/api/v1/jobs/{JOB_ID}")

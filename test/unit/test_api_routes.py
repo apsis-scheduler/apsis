@@ -11,6 +11,7 @@ in every process.
 import os
 import subprocess
 import sys
+import uuid
 
 from sanic import Sanic
 
@@ -31,7 +32,8 @@ def resolve():
     """
     Returns {path: (handler name, job_id param)} for `PATHS`.
     """
-    app = Sanic("test_api_routes")
+    # sanic rejects a second app with the same name in one process
+    app = Sanic(f"test_api_routes_{uuid.uuid4().hex}")
     app.blueprint(api.API, url_prefix="/api/v1")
     app.router.finalize()
     res = {}

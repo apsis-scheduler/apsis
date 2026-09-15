@@ -158,7 +158,9 @@ def match_job_id(jobs, job_id):
 # blueprint's routes in a set, the two were registered in arbitrary order and
 # `GET /jobs/X/runs` resolved to either handler depending on the process.  A
 # single route with an explicit dispatch on the suffix makes the choice
-# independent of registration order.
+# independent of registration order.  The dispatch looks at the raw path, so a
+# percent-encoded `%2Fruns` is still part of a job ID; a job whose ID itself ends
+# in `/runs` can be queried via `/runs?job_id=` instead.
 JOB_RUNS_SUFFIX = "/runs"
 
 
