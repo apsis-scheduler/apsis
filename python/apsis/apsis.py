@@ -159,8 +159,9 @@ class Apsis:
             _, starting_runs = self.run_store.query(state=State.starting, limit_lookback=False)
             for run in starting_runs:
                 self.run_store.attach(run)
-                self.run_log.record(run, "restored starting: might have started")
-                self._transition(run, State.error)
+                msg = "restored starting: might have started"
+                self.run_log.record(run, msg)
+                self._transition(run, State.error, message=msg)
 
             # Reconnect to running runs.
             _, running_runs = self.run_store.query(state=State.running, limit_lookback=False)
@@ -170,8 +171,9 @@ class Apsis:
                 try:
                     self.__reconnect(run)
                 except Exception:
-                    self.run_log.exc(run, "restored running: reconnect failed")
-                    self._transition(run, State.error)
+                    msg = "restored running: reconnect failed"
+                    self.run_log.exc(run, msg)
+                    self._transition(run, State.error, message=msg)
 
             # If a run is stopping in the DB, we can't know if it stopped or
             # not, so mark it as error.  Otherwise it stays visible to
@@ -180,8 +182,9 @@ class Apsis:
             _, stopping_runs = self.run_store.query(state=State.stopping, limit_lookback=False)
             for run in stopping_runs:
                 self.run_store.attach(run)
-                self.run_log.record(run, "restored stopping: might have stopped")
-                self._transition(run, State.error)
+                msg = "restored stopping: might have stopped"
+                self.run_log.record(run, msg)
+                self._transition(run, State.error, message=msg)
 
             log.info("restoring done")
 
@@ -323,6 +326,7 @@ class Apsis:
             return
 
         exc_type, exc, _ = sys.exc_info()
+        reason = message
         if exc_type is not None:
             # Attach the exception traceback as run output.
             if issubclass(exc_type, RuntimeError):
@@ -333,8 +337,11 @@ class Apsis:
             # FIXME: For now, use the name "output" as this is the only one
             # the UIs render.  In the future, change to "traceback".
             self._update_output_data(run, {"output": output}, persist=True)
+            # fall back to the exception when no context was given
+            if reason is None:
+                reason = str(exc) or exc_type.__name__
 
-        self._transition(run, State.error, force=True, times={"error": now()})
+        self._transition(run, State.error, message=reason, force=True, times={"error": now()})
 
     # FIXME: persist is a hack.
     def _update_metadata(self, run, meta):
@@ -376,16 +383,26 @@ class Apsis:
             for output_id, output in outputs.items():
                 self.output_update_publisher.publish(run_id, output)
 
-    def _transition(self, run, state, *, meta={}, **kw_args):
+    def _transition(self, run, state, *, meta={}, message=None, **kw_args):
         """
         Transitions `run` to `state`, updating it with `kw_args`.
 
         :param meta:
           Metadata updates.  Sets or replaces run metadata keys from this
           mapping.
+        :param message:
+          Human-readable reason for the transition, recorded as
+          meta["state_message"] so snapshots and actions can show it.  A
+          later transition with no message clears it.
         """
         time = now()
         run_id = run.run_id
+
+        # stash the reason so snapshots and actions can show it
+        if message is not None:
+            meta = {**meta, "state_message": str(message)}
+        elif "state_message" in run.meta:
+            meta = {**meta, "state_message": None}
 
         # A run is no longer expected once it is no longer scheduled.
         if run.expected and state not in {State.new, State.scheduled}:
@@ -553,7 +570,7 @@ class Apsis:
         elif state == run.state:
             raise RunError(f"run {run.run_id} already in state {state.name}")
         else:
-            self._transition(run, state, force=True)
+            self._transition(run, state, force=True, message=f"marked as {state.name}")
             self.run_log.info(run, f"marked as {state.name}")
 
     def get_run_log(self, run_id):
@@ -767,7 +784,7 @@ async def _wait_loop(apsis, run, timeout):
         except asyncio.TimeoutError:
             msg = f"waiting for {cond}: timeout after {timeout} s"
             apsis.run_log.info(run, msg)
-            apsis._transition(run, State.error)
+            apsis._transition(run, State.error, message=msg)
             return
 
         except Exception:
@@ -785,8 +802,9 @@ async def _wait_loop(apsis, run, timeout):
 
             case cond.Transition(state):
                 # Force a transition.
-                apsis.run_log.info(run, result.reason or f"{state}: {cond}")
-                apsis._transition(run, state)
+                reason = result.reason or f"{state}: {cond}"
+                apsis.run_log.info(run, reason)
+                apsis._transition(run, state, message=reason)
                 # Don't wait for further conds.
                 return
 

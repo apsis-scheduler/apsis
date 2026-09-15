@@ -227,3 +227,37 @@ async def test_result_metadata_replaces_program_metadata():
     assert run.state == State.error
     assert run.meta["program"] == {**ERROR_META, "errors": ["existing error", "procstar: oh no"]}
     assert ERROR_META["errors"] == ["existing error"]
+    # program errors use program.errors not state_message
+    assert run.meta.get("state_message") is None
+
+
+@pytest.mark.asyncio
+async def test_internal_error_sets_state_message():
+    """
+    An unexpected exception while processing updates records a reason.
+    """
+    # bogus update hits the generic exception branch
+    apsis, run = _make_run([object()])
+
+    await _process_updates(apsis, run)
+
+    assert run.state == State.error
+    assert run.meta["state_message"].startswith("internal error:")
+
+
+def test_transition_state_message_set_and_cleared():
+    """
+    `_transition` records the reason, and a later transition clears it.
+    """
+    run = Run(Instance("job", {}))
+    run.run_id = "r0"
+    apsis = _FakeApsis(run, [])
+    apsis._transition(run, State.scheduled, times={"schedule": ora.now()})
+    apsis._transition(run, State.starting)
+
+    apsis._transition(run, State.error, message="dependency timed out", force=True)
+    assert run.meta["state_message"] == "dependency timed out"
+
+    # later transition with no message clears it
+    apsis._transition(run, State.success, force=True)
+    assert run.meta["state_message"] is None
