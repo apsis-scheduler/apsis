@@ -232,6 +232,24 @@ async def test_result_metadata_replaces_program_metadata():
 
 
 @pytest.mark.asyncio
+async def test_failure_sets_state_message():
+    """
+    A program failure records its message as the reason.
+    """
+    apsis, run = _make_run(
+        [
+            ProgramRunning(RUN_STATE, meta=PROGRAM_META),
+            ProgramFailure("exit code 1"),
+        ]
+    )
+
+    await _process_updates(apsis, run)
+
+    assert run.state == State.failure
+    assert run.meta["state_message"] == "exit code 1"
+
+
+@pytest.mark.asyncio
 async def test_internal_error_sets_state_message():
     """
     An unexpected exception while processing updates records a reason.

@@ -155,6 +155,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.failure,
+                        message=failure.message,
                         meta=_program_meta(failure.meta),
                         times=failure.times,
                     )
