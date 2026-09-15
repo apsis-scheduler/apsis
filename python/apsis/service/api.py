@@ -152,8 +152,21 @@ def match_job_id(jobs, job_id):
     return match(job_ids, job_id)
 
 
+# Job IDs may contain slashes, so `job_id` is a `path` param and it captures
+# a trailing `/runs` too.  `/jobs/<job_id:path>` and `/jobs/<job_id:path>/runs`
+# are therefore ambiguous under sanic-routing, and since sanic 21.6 keeps a
+# blueprint's routes in a set, the two were registered in arbitrary order and
+# `GET /jobs/X/runs` resolved to either handler depending on the process.  A
+# single route with an explicit dispatch on the suffix makes the choice
+# independent of registration order.
+JOB_RUNS_SUFFIX = "/runs"
+
+
 @API.route("/jobs/<job_id:path>")
 async def job(request, job_id):
+    if job_id.endswith(JOB_RUNS_SUFFIX):
+        return await job_runs(request, job_id[: -len(JOB_RUNS_SUFFIX)])
+
     jobs = request.app.apsis.jobs
     try:
         job_id = match_job_id(jobs, unquote(job_id))
@@ -163,8 +176,10 @@ async def job(request, job_id):
     return response_json(job_to_jso(job, jobs=jobs))
 
 
-@API.route("/jobs/<job_id:path>/runs")
 async def job_runs(request, job_id):
+    """
+    Serves `GET /jobs/<job_id>/runs`; dispatched from `job()`, not routed.
+    """
     job_id = match_job_id(request.app.apsis.jobs, unquote(job_id))
     when, runs = request.app.apsis.run_store.query(job_id=job_id)
     jso = runs_to_jso(request.app, when, runs)
