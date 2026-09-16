@@ -152,20 +152,17 @@ def match_job_id(jobs, job_id):
     return match(job_ids, job_id)
 
 
-# Job IDs may contain slashes, so `job_id` is a `path` param and it captures
-# a trailing `/runs` too.  `/jobs/<job_id:path>` and `/jobs/<job_id:path>/runs`
-# are therefore ambiguous under sanic-routing, and since sanic 21.6 keeps a
-# blueprint's routes in a set, the two were registered in arbitrary order and
-# `GET /jobs/X/runs` resolved to either handler depending on the process.  A
-# single route with an explicit dispatch on the suffix makes the choice
-# independent of registration order.  The dispatch looks at the raw path, so a
-# percent-encoded `%2Fruns` is still part of a job ID; a job whose ID itself ends
-# in `/runs` can be queried via `/runs?job_id=` instead.
 JOB_RUNS_SUFFIX = "/runs"
 
 
 @API.route("/jobs/<job_id:path>")
 async def job(request, job_id):
+    # A separate /jobs/<job_id:path>/runs route overlaps this path route.
+    # Sanic 21.6 registers blueprint routes from a set in arbitrary order.
+    # Dispatch explicitly so handler selection is independent of that order.
+    # Check the raw suffix before unquoting: /jobs/X%2Fruns fetches the job
+    # X/runs, while /jobs/X%2Fruns/runs fetches that job's runs.  Keep automatic
+    # route unquoting disabled so these requests remain distinguishable.
     if job_id.endswith(JOB_RUNS_SUFFIX):
         return await job_runs(request, job_id[: -len(JOB_RUNS_SUFFIX)])
 
