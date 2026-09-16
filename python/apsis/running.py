@@ -100,6 +100,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
+                        message=error.message,
                         meta=_program_meta(
                             error.meta or run.meta.get("program", {}),
                             error_message=error.message,
@@ -166,6 +167,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
+                        message=error.message,
                         meta=_program_meta(
                             error.meta or run.meta.get("program", {}),
                             error_message=error.message,

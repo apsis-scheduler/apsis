@@ -227,8 +227,8 @@ async def test_result_metadata_replaces_program_metadata():
     assert run.state == State.error
     assert run.meta["program"] == {**ERROR_META, "errors": ["existing error", "procstar: oh no"]}
     assert ERROR_META["errors"] == ["existing error"]
-    # program errors use program.errors not state_message
-    assert run.meta.get("state_message") is None
+    # program errors set both program.errors and state_message so every failure has a reason
+    assert run.meta["state_message"] == "procstar: oh no"
 
 
 @pytest.mark.asyncio
