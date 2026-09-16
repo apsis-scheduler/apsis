@@ -161,7 +161,7 @@ class Apsis:
                 self.run_store.attach(run)
                 msg = "restored starting: might have started"
                 self.run_log.record(run, msg)
-                self._transition(run, State.error, message=msg)
+                self._transition(run, State.error, reason=msg)
 
             # Reconnect to running runs.
             _, running_runs = self.run_store.query(state=State.running, limit_lookback=False)
@@ -173,7 +173,7 @@ class Apsis:
                 except Exception:
                     msg = "restored running: reconnect failed"
                     self.run_log.exc(run, msg)
-                    self._transition(run, State.error, message=msg)
+                    self._transition(run, State.error, reason=msg)
 
             # If a run is stopping in the DB, we can't know if it stopped or
             # not, so mark it as error.  Otherwise it stays visible to
@@ -184,7 +184,7 @@ class Apsis:
                 self.run_store.attach(run)
                 msg = "restored stopping: might have stopped"
                 self.run_log.record(run, msg)
-                self._transition(run, State.error, message=msg)
+                self._transition(run, State.error, reason=msg)
 
             log.info("restoring done")
 
@@ -341,7 +341,7 @@ class Apsis:
             if reason is None:
                 reason = str(exc) or exc_type.__name__
 
-        self._transition(run, State.error, message=reason, force=True, times={"error": now()})
+        self._transition(run, State.error, reason=reason, force=True, times={"error": now()})
 
     # FIXME: persist is a hack.
     def _update_metadata(self, run, meta):
@@ -383,26 +383,26 @@ class Apsis:
             for output_id, output in outputs.items():
                 self.output_update_publisher.publish(run_id, output)
 
-    def _transition(self, run, state, *, meta={}, message=None, **kw_args):
+    def _transition(self, run, state, *, meta={}, reason=None, **kw_args):
         """
         Transitions `run` to `state`, updating it with `kw_args`.
 
         :param meta:
           Metadata updates.  Sets or replaces run metadata keys from this
           mapping.
-        :param message:
+        :param reason:
           Human-readable reason for the transition, recorded as
-          meta["state_message"] so snapshots and actions can show it.  A
-          later transition with no message clears it.
+          meta["state_reason"] so snapshots and actions can show it.  A
+          later transition with no reason clears it.
         """
         time = now()
         run_id = run.run_id
 
         # stash the reason so snapshots and actions can show it
-        if message is not None:
-            meta = {**meta, "state_message": str(message)}
-        elif "state_message" in run.meta:
-            meta = {**meta, "state_message": None}
+        if reason is not None:
+            meta = {**meta, "state_reason": str(reason)}
+        elif "state_reason" in run.meta:
+            meta = {**meta, "state_reason": None}
 
         # A run is no longer expected once it is no longer scheduled.
         if run.expected and state not in {State.new, State.scheduled}:
@@ -570,7 +570,7 @@ class Apsis:
         elif state == run.state:
             raise RunError(f"run {run.run_id} already in state {state.name}")
         else:
-            self._transition(run, state, force=True, message=f"marked as {state.name}")
+            self._transition(run, state, force=True, reason=f"marked as {state.name}")
             self.run_log.info(run, f"marked as {state.name}")
 
     def get_run_log(self, run_id):
@@ -784,7 +784,7 @@ async def _wait_loop(apsis, run, timeout):
         except asyncio.TimeoutError:
             msg = f"waiting for {cond}: timeout after {timeout} s"
             apsis.run_log.info(run, msg)
-            apsis._transition(run, State.error, message=msg)
+            apsis._transition(run, State.error, reason=msg)
             return
 
         except Exception:
@@ -804,7 +804,7 @@ async def _wait_loop(apsis, run, timeout):
                 # Force a transition.
                 reason = result.reason or f"{state}: {cond}"
                 apsis.run_log.info(run, reason)
-                apsis._transition(run, state, message=reason)
+                apsis._transition(run, state, reason=reason)
                 # Don't wait for further conds.
                 return
 

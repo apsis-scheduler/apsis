@@ -153,18 +153,11 @@ async def test_result_without_metadata_keeps_program_metadata(result, state):
     await _process_updates(apsis, run)
 
     assert run.state == state
-    expected = (
-        {**PROGRAM_META, "errors": [result.message]} if state == State.error else PROGRAM_META
-    )
-    assert run.meta["program"] == expected
-    assert "errors" not in PROGRAM_META
+    assert run.meta["program"] == PROGRAM_META
 
 
-@pytest.mark.parametrize(
-    "startup_meta", [{}, {"aws_ecs": {"task_id": "task0", "cluster_name": "cluster0"}}]
-)
 @pytest.mark.asyncio
-async def test_error_keeps_startup_metadata(startup_meta):
+async def test_error_keeps_startup_metadata():
     """
     An error while starting doesn't erase metadata reported during startup.
 
@@ -172,9 +165,10 @@ async def test_error_keeps_startup_metadata(startup_meta):
     process is running, e.g. an AWS ECS task; erasing it leaks the resource.
     """
     error = ProgramError("start failed: proc0: no open connection in group")
+    STARTUP_META = {"aws_ecs": {"task_id": "task0", "cluster_name": "cluster0"}}
     apsis, run = _make_run(
         [
-            ProgramUpdate(meta=startup_meta),
+            ProgramUpdate(meta=STARTUP_META),
             error,
         ]
     )
@@ -182,8 +176,9 @@ async def test_error_keeps_startup_metadata(startup_meta):
     await _process_updates(apsis, run)
 
     assert run.state == State.error
-    assert run.meta["program"] == {**startup_meta, "errors": [error.message]}
-    assert "errors" not in startup_meta
+    assert run.meta["program"] == STARTUP_META
+    # the reason is carried in state_reason, not appended to program metadata
+    assert run.meta["state_reason"] == error.message
 
 
 @pytest.mark.asyncio
@@ -210,11 +205,7 @@ async def test_result_metadata_replaces_program_metadata():
     """
     A program result with metadata of its own replaces the program metadata.
     """
-    ERROR_META = {
-        **PROGRAM_META,
-        "status": {"exit_code": None, "signal": "SIGKILL"},
-        "errors": ["existing error"],
-    }
+    ERROR_META = {**PROGRAM_META, "status": {"exit_code": None, "signal": "SIGKILL"}}
     apsis, run = _make_run(
         [
             ProgramRunning(RUN_STATE, meta=PROGRAM_META),
@@ -225,14 +216,13 @@ async def test_result_metadata_replaces_program_metadata():
     await _process_updates(apsis, run)
 
     assert run.state == State.error
-    assert run.meta["program"] == {**ERROR_META, "errors": ["existing error", "procstar: oh no"]}
-    assert ERROR_META["errors"] == ["existing error"]
-    # program errors set both program.errors and state_message so every failure has a reason
-    assert run.meta["state_message"] == "procstar: oh no"
+    assert run.meta["program"] == ERROR_META
+    # the reason is carried in state_reason, not appended to program.errors
+    assert run.meta["state_reason"] == "procstar: oh no"
 
 
 @pytest.mark.asyncio
-async def test_failure_sets_state_message():
+async def test_failure_sets_state_reason():
     """
     A program failure records its message as the reason.
     """
@@ -246,11 +236,11 @@ async def test_failure_sets_state_message():
     await _process_updates(apsis, run)
 
     assert run.state == State.failure
-    assert run.meta["state_message"] == "exit code 1"
+    assert run.meta["state_reason"] == "exit code 1"
 
 
 @pytest.mark.asyncio
-async def test_internal_error_sets_state_message():
+async def test_internal_error_sets_state_reason():
     """
     An unexpected exception while processing updates records a reason.
     """
@@ -260,10 +250,10 @@ async def test_internal_error_sets_state_message():
     await _process_updates(apsis, run)
 
     assert run.state == State.error
-    assert run.meta["state_message"].startswith("internal error:")
+    assert run.meta["state_reason"].startswith("internal error:")
 
 
-def test_transition_state_message_set_and_cleared():
+def test_transition_state_reason_set_and_cleared():
     """
     `_transition` records the reason, and a later transition clears it.
     """
@@ -273,9 +263,9 @@ def test_transition_state_message_set_and_cleared():
     apsis._transition(run, State.scheduled, times={"schedule": ora.now()})
     apsis._transition(run, State.starting)
 
-    apsis._transition(run, State.error, message="dependency timed out", force=True)
-    assert run.meta["state_message"] == "dependency timed out"
+    apsis._transition(run, State.error, reason="dependency timed out", force=True)
+    assert run.meta["state_reason"] == "dependency timed out"
 
-    # later transition with no message clears it
+    # later transition with no reason clears it
     apsis._transition(run, State.success, force=True)
-    assert run.meta["state_message"] is None
+    assert run.meta["state_reason"] is None
