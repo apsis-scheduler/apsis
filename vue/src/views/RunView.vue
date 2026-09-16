@@ -76,6 +76,9 @@ div
 
     Frame(title="Metadata" closed)
       div.objects
+        template(v-if="meta && meta.state_message")
+          div.key state_message
+          div.value {{ meta.state_message }}
         template(v-for="(value, key) in meta && meta.program || {}")
           div.key {{ key }}
           div.objects(v-if="typeof value === 'object' && !Array.isArray(value)")
