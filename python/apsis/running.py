@@ -46,7 +46,7 @@ async def _maybe_compress(outputs, *, compression="br", min_size=16384):
     return dict(zip(outputs.keys(), o))
 
 
-def _program_meta(meta):
+def _program_meta(meta: dict | None) -> dict:
     """
     Returns a run metadata update for program metadata `meta`.
 
