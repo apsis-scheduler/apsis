@@ -170,7 +170,16 @@ class _DupCheckSafeLoader(yaml.CSafeLoader):
     Constructors and resolvers are wired up in `_build_yaml_loader`.
     """
 
-    def construct_mapping(self, node, deep=False):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._flattened_mappings = set()
+
+    def flatten_mapping(self, node):
+        # Merges recurse through here; aliases may revisit already expanded nodes.
+        if node in self._flattened_mappings:
+            return
+        self._flattened_mappings.add(node)
+
         # Detect duplicates among the explicit keys before expanding `<<`
         # merges, so an explicit key that overrides a merged one isn't itself
         # flagged as a duplicate.
@@ -182,7 +191,7 @@ class _DupCheckSafeLoader(yaml.CSafeLoader):
                     raise DuplicateKeyError('found duplicate merge key "<<"')
                 seen_merge = True
                 continue
-            key = self.construct_object(key_node, deep=deep)
+            key = self.construct_object(key_node)
             if not isinstance(key, Hashable):
                 raise yaml.constructor.ConstructorError(
                     "while constructing a mapping",
@@ -195,6 +204,9 @@ class _DupCheckSafeLoader(yaml.CSafeLoader):
                     f'found duplicate key "{key}" with value "{value_node.value}"'
                 )
             seen.add(key)
+        super().flatten_mapping(node)
+
+    def construct_mapping(self, node, deep=False):
         self.flatten_mapping(node)
         return {
             self.construct_object(k, deep=deep): self.construct_object(v, deep=deep)

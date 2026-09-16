@@ -262,6 +262,16 @@ def test_dup_check_loader_rejects_duplicate_merge_keys():
         yaml.load(doc, Loader=DupCheckSafeLoader)
 
 
+def test_dup_check_loader_rejects_duplicate_in_merge():
+    with pytest.raises(DuplicateKeyError):
+        yaml.load("a: {<<: {x: 1, x: 2}}\n", Loader=DupCheckSafeLoader)
+
+
+def test_dup_check_loader_reuses_nested_merge():
+    doc = "a: {<<: &b {<<: {x: 1}, x: 2}}\nb: *b\n"
+    assert yaml.load(doc, Loader=DupCheckSafeLoader) == {"a": {"x": 2}, "b": {"x": 2}}
+
+
 @pytest.mark.parametrize(
     "doc",
     [
