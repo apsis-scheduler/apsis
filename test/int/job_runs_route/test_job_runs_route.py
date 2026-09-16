@@ -15,7 +15,14 @@ from instance import ApsisService
 
 JOB_DIR = Path(__file__).parent / "jobs"
 JOB_ID = "nested/dir/job"
-JOB_IDS = (JOB_ID, f"{JOB_ID}/runs", "runs", "literal%2Fruns", "nested/runs/step")
+JOB_IDS = (
+    JOB_ID,
+    f"{JOB_ID}/runs",
+    "runs",
+    "literal%2Fruns",
+    "nested/runs/step",
+    "special/percent% question? hash# plus+",
+)
 
 # -------------------------------------------------------------------------------
 
@@ -80,3 +87,26 @@ def test_job_runs(service, run_ids, path, job_id):
     run_id = run_ids[job_id]
     assert set(res["runs"]) == {run_id}
     assert res["runs"][run_id]["job_id"] == job_id
+
+
+@pytest.mark.parametrize("job_id", JOB_IDS)
+def test_client_job_and_runs(service, run_ids, job_id):
+    job = service.client.get_job(job_id)
+    assert job["job_id"] == job_id
+    assert job["program"]["type"] == "no-op"
+    assert "runs" not in job
+
+    runs = service.client.get_job_runs(job_id)
+    run_id = run_ids[job_id]
+    assert set(runs) == {run_id}
+    assert runs[run_id]["job_id"] == job_id
+
+
+@pytest.mark.parametrize("job_id", JOB_IDS)
+def test_cli_job(service, monkeypatch, job_id):
+    # The CLI takes its hostname from the environment; always use this service.
+    monkeypatch.setenv("APSIS_HOST", f"localhost:{service.port}")
+    job = service.run_apsis_json("job", job_id)
+    assert job["job_id"] == job_id
+    assert job["program"]["type"] == "no-op"
+    assert "runs" not in job
