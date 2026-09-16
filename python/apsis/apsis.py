@@ -383,7 +383,9 @@ class Apsis:
             for output_id, output in outputs.items():
                 self.output_update_publisher.publish(run_id, output)
 
-    def _transition(self, run: Run, state: State, *, meta: dict = {}, reason: str | None = None, **kw_args):
+    def _transition(
+        self, run: Run, state: State, *, meta: dict = {}, reason: str | None = None, **kw_args
+    ):
         """
         Transitions `run` to `state`, updating it with `kw_args`.
 
