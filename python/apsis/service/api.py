@@ -30,7 +30,7 @@ from apsis.lib.timing import Timer
 from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
-from ..jobs import jso_to_job
+from ..jobs import JOB_RUNS_SUFFIX, jso_to_job
 from ..runs import Instance, RunError
 
 log = logging.getLogger(__name__)
@@ -150,9 +150,6 @@ def match_job_id(jobs, job_id):
     # FIXME: Cache job ids (or word split job ids) to make this efficient.
     job_ids = [j.job_id for j in jobs.get_jobs(ad_hoc=False)]
     return match(job_ids, job_id)
-
-
-JOB_RUNS_SUFFIX = "/runs"
 
 
 @API.route("/jobs/<job_id:path>")

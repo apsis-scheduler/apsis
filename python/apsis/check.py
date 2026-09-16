@@ -4,7 +4,7 @@ import re
 import ora
 
 from apsis.cond.dependency import Dependency
-from apsis.jobs import Jobs
+from apsis.jobs import JOB_RUNS_SUFFIX, Jobs
 from apsis.runs import BIND_ARGS, Instance, Run, is_template, validate_args, bind
 from apsis.scheduler import get_insts_to_schedule
 
@@ -59,13 +59,18 @@ class MockJobDb:
         raise LookupError(job_id)
 
 
-def check_job(jobs_dir, job):
+def check_job(jobs_dir, job, *, check_job_names=False):
     """
     Performs consistency checks on `job` in `jobs_dir`.
 
+    :param check_job_names:
+      Also reject job IDs ending in the run-history API suffix.
     :return:
       Generator of errors.
     """
+    if check_job_names and job.job_id.endswith(JOB_RUNS_SUFFIX):
+        yield f"job ID must not end in {JOB_RUNS_SUFFIX!r} (reserved for run history URLs)"
+
     yield from check_param_names(job.params)
 
     # Try scheduling a run for each schedule of each job.  This tests that

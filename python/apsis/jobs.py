@@ -21,6 +21,9 @@ from .schedule import schedule_to_jso, schedule_from_jso
 
 log = logging.getLogger(__name__)
 
+# Literal API path suffix for a job's run history.
+JOB_RUNS_SUFFIX = "/runs"
+
 # -------------------------------------------------------------------------------
 
 
@@ -226,13 +229,16 @@ class JobsDir:
 JOB_LOAD_BATCH_SIZE = 16
 
 
-async def load_jobs_dir(path, yaml_loader=None):
+async def load_jobs_dir(path, yaml_loader=None, *, check_job_names=False):
     """
     Attempts to loads jobs from a jobs dir.
 
     :param yaml_loader:
       An optional PyYAML loader class (e.g. ``yaml.CSafeLoader``) to use
       instead of the default ruamel YAML loader.
+    :param check_job_names:
+      Also enforce job naming restrictions.  Disabled by default so existing
+      jobs remain loadable at service startup and reload.
     :return:
       The successfully loaded `JobsDir`.
     :raise NotADirectoryError:
@@ -288,7 +294,7 @@ async def load_jobs_dir(path, yaml_loader=None):
 
     for job in jobs_dir.get_jobs():
         log.info(f"checking: {job.job_id}")
-        for err in check_job(jobs_dir, job):
+        for err in check_job(jobs_dir, job, check_job_names=check_job_names):
             errors.append(JobError(job.job_id, str(err)))
         # be nice to the event loop
         await asyncio.sleep(0)

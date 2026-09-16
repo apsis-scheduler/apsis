@@ -72,7 +72,7 @@ def main():
         jobs_dir = None
 
         try:
-            jobs_dir = asyncio.run(apsis.jobs.load_jobs_dir(args.path))
+            jobs_dir = asyncio.run(apsis.jobs.load_jobs_dir(args.path, check_job_names=True))
         except NotADirectoryError as exc:
             parser.error(exc)
         except JobsDirErrors as exc:
