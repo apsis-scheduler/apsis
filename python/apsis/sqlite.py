@@ -378,10 +378,7 @@ class RunDB:
                 where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
         if min_timestamp is not None:
             where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
-        # schedule time is an iso string in the times json so compare it lexically
-        # to a bound serialized the same way upsert writes it, ora utc strings sort
-        # chronologically so a plain string compare is right. no schedule time is
-        # null and matches neither bound
+        # filter on schedule time from the times json, compared as iso strings
         if schedule_since is not None:
             where.append(
                 sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")

@@ -260,7 +260,7 @@ def main():
     )
 
     def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
-        # show the parser's own message instead of argparse's generic one
+        # show the parser's own error message instead of argparse's generic one
         try:
             return apsis.cmdline.parse_time_span(string)
         except ValueError as exc:
@@ -273,10 +273,9 @@ def main():
         type=parse_time_span,
         default=(None, None),
         help=(
-            "show only runs whose schedule time is in TIMESPAN, given as START..END "
-            "(START inclusive, END exclusive; either may be omitted, e.g. START.. or ..END); "
-            "each is a time, 'now', +DURATION from now, or a daytime meaning today; "
-            "runs last updated before the server's lookback window are not shown"
+            "show only runs whose schedule time is in TIMESPAN, given as START..END. "
+            "START is inclusive, END is exclusive, and either may be omitted as in START.. or ..END. "
+            "each end is a time, 'now', +DURATION from now, or a daytime meaning today"
         ),
     )
     cmd.add_argument(

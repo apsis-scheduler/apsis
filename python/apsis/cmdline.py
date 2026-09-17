@@ -333,7 +333,6 @@ def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
     """
     start, _, end = string.partition("..")
 
-    # read the clock once so both ends see the same now and today
     time_now = now()
 
     def parse_bound(part: str) -> Time | None:
@@ -361,7 +360,6 @@ def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
         try:
             return (date, daytime) @ z
         except NonexistentDateDaytime:
-            # daytime falls in a dst gap, like 02:30 on the spring-forward day
             raise ValueError(f"daytime does not exist today in {z}: {part}")
 
     since = parse_bound(start)

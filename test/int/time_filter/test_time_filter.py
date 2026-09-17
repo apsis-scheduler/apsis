@@ -144,7 +144,7 @@ def test_schedule_span_invalid_rejected(inst):
 
 
 def test_cli_runs_times_end_to_end(inst):
-    """the real apsis runs -t filters through the client; no --times is unchanged"""
+    """the real apsis runs -t filters through the client, plain runs with no --times is unchanged"""
     by_time = {t: _schedule(inst, t, i) for i, t in enumerate(DAYS)}
     since, until = DAYS[2], DAYS[5]
 
