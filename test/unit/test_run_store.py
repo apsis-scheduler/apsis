@@ -726,7 +726,7 @@ def test_run_store_schedule_span_paged_mixed_storage(tmp_path):
 
 
 def test_run_store_schedule_span_respects_lookback(tmp_path):
-    """the span does not bypass the last-update lookback; limit_lookback=False opts out"""
+    """the span does not bypass the last-update lookback, limit_lookback=False opts out"""
     store = _make_store(tmp_path, min_timestamp=ora.now() - 100)
     old = _persist_at(store, T2, args={"n": "old"}, timestamp=ora.now() - 10000)
     new = _persist_at(store, T2, args={"n": "new"})
