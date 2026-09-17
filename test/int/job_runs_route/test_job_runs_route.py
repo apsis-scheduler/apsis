@@ -1,14 +1,17 @@
 """
 `GET /jobs/<job_id>` and `GET /jobs/<job_id>/runs` over raw HTTP.
 
-Both X and X/runs exist, with distinct runs, so fuzzy matching cannot disguise
-dispatch to the wrong job.  Encoded suffixes must remain job ID data.
+Each job has exactly one run, so a response is checked for the right job's
+identity, not just its shape.  A percent-encoded `%2Fruns` is job ID data, not
+the run history suffix; since `check_job` rejects job IDs ending in `/runs`, such
+a request is a lookup of a job that cannot exist, and fails as one.
 """
 
 from contextlib import closing
 import json
 from pathlib import Path
 import pytest
+import urllib.error
 import urllib.request
 
 from instance import ApsisService
@@ -17,7 +20,6 @@ JOB_DIR = Path(__file__).parent / "jobs"
 JOB_ID = "nested/dir/job"
 JOB_IDS = (
     JOB_ID,
-    f"{JOB_ID}/runs",
     "runs",
     "literal%2Fruns",
     "nested/runs/step",
@@ -53,9 +55,6 @@ def run_ids(service):
     [
         (JOB_ID, JOB_ID),
         ("nested%2Fdir%2Fjob", JOB_ID),
-        (f"{JOB_ID}%2Fruns", f"{JOB_ID}/runs"),
-        (f"{JOB_ID}%2fruns", f"{JOB_ID}/runs"),
-        (f"{JOB_ID}/%72uns", f"{JOB_ID}/runs"),
         ("runs", "runs"),
         ("literal%252Fruns", "literal%2Fruns"),
         ("nested/runs/step", "nested/runs/step"),
@@ -74,9 +73,6 @@ def test_job(service, path, job_id):
         (f"{JOB_ID}/runs", JOB_ID),
         (f"{JOB_ID}/runs?unused=1", JOB_ID),
         ("nested%2Fdir%2Fjob/runs", JOB_ID),
-        (f"{JOB_ID}/runs/runs", f"{JOB_ID}/runs"),
-        (f"{JOB_ID}%2Fruns/runs", f"{JOB_ID}/runs"),
-        (f"{JOB_ID}%2fruns/runs", f"{JOB_ID}/runs"),
         ("runs/runs", "runs"),
         ("literal%252Fruns/runs", "literal%2Fruns"),
         ("nested/runs/step/runs", "nested/runs/step"),
@@ -87,6 +83,22 @@ def test_job_runs(service, run_ids, path, job_id):
     run_id = run_ids[job_id]
     assert set(res["runs"]) == {run_id}
     assert res["runs"][run_id]["job_id"] == job_id
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"{JOB_ID}%2Fruns",
+        f"{JOB_ID}%2fruns",
+        f"{JOB_ID}/%72uns",
+    ],
+)
+def test_encoded_suffix_is_job_id(service, path):
+    # A job lookup that fails (404), not a request for JOB_ID's runs (200).
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        get_json(service, f"/api/v1/jobs/{path}")
+    assert exc_info.value.code == 404
+    assert json.loads(exc_info.value.read())["error"] == f"no job_id {path}"
 
 
 @pytest.mark.parametrize("job_id", JOB_IDS)

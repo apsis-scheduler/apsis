@@ -3,6 +3,7 @@ import sys
 
 import pytest
 
+from apsis.exc import JobsDirErrors
 from apsis.jobs import load_jobs_dir
 
 
@@ -65,9 +66,12 @@ def test_check_jobs_reports_name_and_other_validation_errors(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_loading_preserves_existing_runs_suffix_job(tmp_path):
-    # The loader is shared by service startup and reload.  Naming policy is
-    # enforced by the explicit check-jobs command, not while loading jobs.
-    write_jobs(tmp_path, "group/runs")
-    jobs = await load_jobs_dir(tmp_path)
-    assert jobs.get_job("group/runs").job_id == "group/runs"
+async def test_loading_rejects_runs_suffix_job(tmp_path):
+    # The loader is shared by check-jobs, service startup, and reload, so the
+    # naming rule applies to all of them.
+    write_jobs(tmp_path, "group/runs", "group/ok")
+    with pytest.raises(JobsDirErrors) as exc_info:
+        await load_jobs_dir(tmp_path)
+    (err,) = exc_info.value.errors
+    assert err.job_id == "group/runs"
+    assert "must not end in '/runs'" in str(err)
