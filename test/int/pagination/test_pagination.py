@@ -3,7 +3,7 @@ Integration tests for pagination of the runs endpoints (iac#2129).
 
 The page size is fixed at api.PAGE_SIZE, so a handful of runs fit in one page.
 Multi-page cursor walking is covered by the unit tests (test_run_store,
-test_run_db_query, test_client_paging).
+test_run_db_query, test_client_runs).
 """
 
 from contextlib import closing

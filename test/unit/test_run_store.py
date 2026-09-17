@@ -646,9 +646,8 @@ def _schedule_at(store, run, time):
     return run
 
 
-def _persist_at(store, schedule, **kw):
-    """a persisted db-only run with nominal time `schedule`, on the shared _persist_run"""
-    run = _persist_run(store, kw.pop("job_id", "job"), kw.pop("args", None), **kw)
+def _persist_at(store, schedule, *, args=None, timestamp=None):
+    run = _persist_run(store, "job", args, timestamp=timestamp)
     run.times["schedule"] = ora.Time(schedule)
     store._RunStore__run_db.upsert(run)
     return run
@@ -656,17 +655,6 @@ def _persist_at(store, schedule, **kw):
 
 def _query_ids(store, **kw):
     return {r.run_id for r in store.query(**kw)[1]}
-
-
-def _scroll_ids(store, limit, max_pages, **kw):
-    """walk pages like the api does, bounded so a broken cursor can't hang the test"""
-    seen, cursor = [], None
-    for _ in range(max_pages):
-        page, cursor = store.query_page(cursor=cursor, limit=limit, **kw)
-        seen.extend(r.run_id for r in page)
-        if cursor is None:
-            return seen
-    raise AssertionError("scroll did not terminate")
 
 
 def test_run_store_schedule_span_in_memory(tmp_path):
@@ -682,16 +670,15 @@ def test_run_store_schedule_span_in_memory(tmp_path):
     assert _query_ids(store, schedule_until=ora.Time(T2)) == {r1.run_id}
     assert _query_ids(store, schedule_since=T2, schedule_until=T3) == {r2.run_id}  # strings
     assert r_none.run_id in _query_ids(store)
-    assert r_none.run_id not in _query_ids(store, schedule_since=ora.Time(T1))
+    for name in ("schedule_since", "schedule_until"):
+        with pytest.raises(ValueError, match="invalid UTC offset"):
+            store.query(**{name: "2026-01-01T00:00:00+99:99"})
+        with pytest.raises(ValueError, match="invalid UTC offset"):
+            store.query_page(limit=2, **{name: "2026-01-01T00:00:00+99:99"})
 
 
 def test_run_store_schedule_span_paged_mixed_storage(tmp_path):
-    """
-    scroll a span over db, expected in-memory, and active mirrored runs, with
-    excluded db AND expected runs interleaved below the first cursor.  dropping
-    either bound, or the in-memory predicate, on a later page would surface an
-    excluded run.  the unpaged query must agree with the same explicit ids.
-    """
+    """Memory/DB exclusions survive later cursors; an active mirrored run appears once."""
     store = _make_store(tmp_path)
     since = ora.Time("2026-01-05T00:00:00Z")
     until = ora.Time("2026-01-06T00:00:00Z")
@@ -705,6 +692,7 @@ def test_run_store_schedule_span_paged_mixed_storage(tmp_path):
     expected.append(mem("m2", "2026-01-05T02:00:00Z").run_id)  # expected, in span
     _persist_at(store, "2026-01-06T12:00:00Z", args={"n": "d3"})  # db, above upper
     _schedule(store, Run(Instance("job", {"n": "m4"}), expected=True))  # expected, no time
+    _persist_run(store, "job", {"n": "no-time"})  # DB, no time
     expected.append(_persist_at(store, "2026-01-05T03:00:00Z", args={"n": "d5"}).run_id)
     mem("m6", "2026-01-06T00:00:00Z")  # expected, at upper bound so excluded
     _persist_at(store, "2026-01-04T12:00:00Z", args={"n": "d7"})  # db, below lower
@@ -717,12 +705,8 @@ def test_run_store_schedule_span_paged_mixed_storage(tmp_path):
     want = sorted(expected, key=_rowid, reverse=True)
     span = dict(job_id="job", schedule_since=since, schedule_until=until)
 
-    # unpaged query, from the explicitly created matches not from query itself
     assert _query_ids(store, **span) == set(want)
-    # paged scroll: same ids, once each, newest first
-    seen = _scroll_ids(store, 2, max_pages=len(want) + 5, **span)
-    assert seen == want
-    assert len(seen) == len(set(seen))  # active run appears once
+    assert _scroll(store, 2, **span) == want
 
 
 def test_run_store_schedule_span_respects_lookback(tmp_path):

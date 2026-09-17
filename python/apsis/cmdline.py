@@ -348,7 +348,7 @@ def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
                 # like +1e100 or +nan which ora can't turn into a time
                 raise ValueError(f"duration out of range: {part}")
         try:
-            return Time(part)
+            return apsis.lib.parse.parse_time(part)
         except ValueError:
             pass
         try:

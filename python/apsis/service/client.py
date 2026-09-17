@@ -15,6 +15,7 @@ import websockets.client
 import apsis.service
 from apsis.runs import run_number
 from apsis.lib.json import nkey
+from apsis.lib.parse import parse_time
 
 # -------------------------------------------------------------------------------
 
@@ -319,8 +320,8 @@ class Client:
             max_runs=limit,
             job_id=job_id,
             state=state,
-            schedule_since=None if schedule_since is None else str(Time(schedule_since)),
-            schedule_until=None if schedule_until is None else str(Time(schedule_until)),
+            schedule_since=None if schedule_since is None else str(parse_time(schedule_since)),
+            schedule_until=None if schedule_until is None else str(parse_time(schedule_until)),
             # Include args, but prefix with underscore any that collide with
             # fixed arg names.
             # FIXME: Oh so hacky.

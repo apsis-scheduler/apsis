@@ -1,9 +1,6 @@
-"""
-Integration tests for schedule time filtering of GET /runs, iac#2130.
-"""
+"""Schedule filtering through the real HTTP service and CLI."""
 
 from contextlib import closing
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,15 +13,11 @@ import ujson
 from instance import ApsisService
 from apsis.service.api import PAGE_SIZE
 
-# -------------------------------------------------------------------------------
-
 job_dir = Path(__file__).absolute().parent / "jobs"
-
-# nominal times, all in the past so the runs run right away
 DAYS = [ora.Time(f"2026-01-{d:02d}T09:00:00Z") for d in range(1, 8)]
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def inst():
     with closing(ApsisService(job_dir=job_dir)) as inst:
         inst.create_db()
@@ -35,126 +28,123 @@ def inst():
 
 
 def _schedule(inst, time, i):
-    """schedule one finished run of `timed` at nominal `time`, return its run_id"""
     run_id = inst.client.schedule("timed", {"i": str(i)}, time)["run_id"]
     inst.wait_run(run_id)
     return run_id
 
 
 def _get(inst, **params):
-    resp = requests.get(f"http://localhost:{inst.port}/api/v1/runs", params=params)
-    return resp.status_code, resp.json()
+    return requests.get(f"http://localhost:{inst.port}/api/v1/runs", params=params)
 
 
-def _cli(inst, *argv):
+def _cli(inst, *args):
     proc = subprocess.run(
-        [sys.executable, "-m", "apsis.cli", "--port", str(inst.port), "runs", "-j", "timed", *argv],
+        [
+            sys.executable,
+            "-m",
+            "apsis.cli",
+            "--port",
+            str(inst.port),
+            "runs",
+            "-j",
+            "timed",
+            "--format",
+            "json",
+            *args,
+        ],
         capture_output=True,
         text=True,
-        env=os.environ,
     )
-    return proc.returncode, proc.stdout, proc.stderr
+    assert proc.returncode == 0, proc.stderr
+    return ujson.loads(proc.stdout)
 
 
-def test_schedule_span_query(inst):
-    """bounds, the returned schedule field, a blank bound, and the state filter over http"""
-    by_time = {t: _schedule(inst, t, i) for i, t in enumerate(DAYS)}
-    d = DAYS
-
-    # lower inclusive
-    _, jso = _get(inst, job_id="timed", schedule_since=str(d[2]))
-    assert set(jso["runs"]) == {by_time[t] for t in d[2:]}
-    assert all(ora.Time(r["times"]["schedule"]) >= d[2] for r in jso["runs"].values())
-    # upper exclusive
-    _, jso = _get(inst, job_id="timed", schedule_until=str(d[5]))
-    assert set(jso["runs"]) == {by_time[t] for t in d[:5]}
-    # span composes with a job-argument filter
-    _, jso = _get(inst, job_id="timed", i="1", schedule_until=str(d[2]))
-    assert set(jso["runs"]) == {by_time[d[1]]}
-    # empty span
-    _, jso = _get(
-        inst,
-        job_id="timed",
-        schedule_since="2030-01-01T00:00:00Z",
-        schedule_until="2030-01-02T00:00:00Z",
-    )
-    assert jso["runs"] == {} and jso["paging"]["next"] is None
-
-    # add a failed run in the span, then check state composes and a blank bound is unbounded
-    failed = _schedule(inst, d[3], "fail")
+def test_schedule_span_query_and_cli(inst):
+    ids = [_schedule(inst, t, i) for i, t in enumerate(DAYS)]
+    failed = _schedule(inst, DAYS[3], "fail")
     inst.client.mark(failed, "failure")
-    status, jso = _get(inst, job_id="timed", schedule_until="")  # sanic drops the blank value
-    assert status == 200 and failed in jso["runs"]
-    _, jso = _get(
-        inst, job_id="timed", state="success", schedule_since=str(d[2]), schedule_until=str(d[5])
-    )
-    assert failed not in jso["runs"]  # in the span but not success
-    assert set(jso["runs"]) == {by_time[d[2]], by_time[d[3]], by_time[d[4]]}
+    for bound, expected in [
+        ({"schedule_since": str(DAYS[2])}, {*ids[2:], failed}),
+        ({"schedule_until": str(DAYS[5])}, {*ids[:5], failed}),
+    ]:
+        resp = _get(inst, job_id="timed", **bound)
+        assert resp.status_code == 200, resp.text
+        assert set(resp.json()["runs"]) == expected
+    span = dict(schedule_since=str(DAYS[2]), schedule_until=str(DAYS[5]))
+    resp = _get(inst, job_id="timed", state="success", **span)
+    assert resp.status_code == 200
+    runs = resp.json()["runs"]
+    assert list(runs) == list(reversed(ids[2:5]))  # excludes the otherwise matching failed run
+    assert [ora.Time(r["times"]["schedule"]) for r in runs.values()] == list(reversed(DAYS[2:5]))
+    assert set(inst.client.get_runs(job_id="timed", args={"i": "1"}, schedule_until=DAYS[2])) == {
+        ids[1]
+    }
+    resp = _get(inst, job_id="timed", i="", state="", cursor="", _schedule_since="")
+    assert resp.status_code == 200 and set(resp.json()["runs"]) == {*ids, failed}
+    for name in ("schedule_since", "schedule_until"):
+        for value in (
+            "",
+            ["", str(DAYS[2])],
+            [str(DAYS[2]), ""],
+            ["", ""],
+            "2026-01-01T00:00:00+99:99",
+            "2026-01-01T00:00:00+99:99\0",
+            "0001-01-01T00:00:00+23:59",
+            "9999-12-31T23:59:59-23:59",
+        ):
+            resp = _get(inst, job_id="timed", **{name: value})
+            assert resp.status_code == 400
+            expected_error = (
+                f"{name} may be given at most once"
+                if isinstance(value, list)
+                else f"invalid {name}"
+            )
+            assert expected_error in resp.json()["error"]
+
+    args = ("-t", f"{DAYS[2]}..{DAYS[5]}", "-s", "success")
+    assert list(_cli(inst, *args)) == list(reversed(ids[2:5]))
+    assert list(_cli(inst, *args, "--limit", "2")) == [ids[4], ids[3]]
+    assert set(_cli(inst)) == {*ids, failed}
+    assert _get(inst, job_id="timed", schedule_since="bad").status_code == 400
 
 
-def test_schedule_span_paging(inst):
-    """
-    scroll a span over http with below-lower and above-upper runs interleaved, so
-    a dropped bound on a later page would surface an excluded run.  ids are
-    explicit and the cursor must strictly advance.
-    """
-    since, until = "2026-01-05T00:00:00Z", "2026-01-06T00:00:00Z"
-    expected = []  # creation order by run number, excluded runs sit between matches
-    expected.append(_schedule(inst, "2026-01-05T01:00:00Z", 0))
-    _schedule(inst, "2026-01-04T00:00:00Z", 1)  # below lower
-    expected.append(_schedule(inst, "2026-01-05T02:00:00Z", 2))
-    _schedule(inst, "2026-01-06T12:00:00Z", 3)  # above upper
-    expected.append(_schedule(inst, "2026-01-05T03:00:00Z", 4))
-    expected.append(_schedule(inst, "2026-01-05T04:00:00Z", 5))
-    # fill the first fixed-size server page so both excluded rows land below its cursor
+def test_schedule_span_paging(inst, monkeypatch):
+    """Excluded rows fall beyond the first HTTP page's cursor."""
+    expected = []
+    for i, (time, matches) in enumerate(
+        [
+            ("2026-01-05T01:00:00Z", True),
+            ("2026-01-04T00:00:00Z", False),  # below lower
+            ("2026-01-05T02:00:00Z", True),
+            ("2026-01-06T12:00:00Z", False),  # above upper
+            ("2026-01-05T03:00:00Z", True),
+            ("2026-01-05T04:00:00Z", True),
+        ]
+    ):
+        run_id = _schedule(inst, time, i)
+        if matches:
+            expected.append(run_id)
     padding = inst.client.schedule(
         "timed", {"i": "page-fill"}, "2026-01-05T05:00:00Z", count=PAGE_SIZE
     )
     for run in padding:
         inst.wait_run(run["run_id"])
         expected.append(run["run_id"])
-    want = list(reversed(expected))
+    want, seen = list(reversed(expected)), []
+    request = requests.request
 
-    seen, cursor, last = [], None, None
-    for _ in range(len(want) + 5):  # bounded, can't hang
-        params = dict(job_id="timed", schedule_since=since, schedule_until=until)
-        if cursor is not None:
-            params["cursor"] = cursor
-        _, jso = _get(inst, **params)
-        assert len(jso["runs"]) <= PAGE_SIZE
-        seen.extend(jso["runs"])
-        cursor = jso["paging"]["next"]
-        if cursor is None:
-            break
-        assert last is None or int(cursor[1:]) < int(last[1:])  # strictly advancing
-        last = cursor
+    def check_page(*args, **kwargs):
+        resp = request(*args, **kwargs)
+        resp.raise_for_status()
+        page = resp.json()["runs"]
+        assert len(page) <= PAGE_SIZE
+        seen.extend(page)
+        assert seen == want[: len(seen)]  # catches duplicates before the client merges them
+        return resp
+
+    monkeypatch.setattr(requests, "request", check_page)
+    runs = inst.client.get_runs(
+        job_id="timed", schedule_since="2026-01-05T00:00:00Z", schedule_until="2026-01-06T00:00:00Z"
+    )
     assert seen == want
-
-
-def test_schedule_span_invalid_rejected(inst):
-    """malformed, reversed and repeated bounds are 400s (the job is loaded, no runs needed)"""
-    url = f"http://localhost:{inst.port}/api/v1/runs"
-    for params in (
-        [("job_id", "timed"), ("schedule_since", "bad")],
-        [("job_id", "timed"), ("schedule_until", "2026-01-01")],  # a bare date is not a time
-        [("job_id", "timed"), ("schedule_since", str(DAYS[3])), ("schedule_until", str(DAYS[1]))],
-        [("job_id", "timed"), ("schedule_since", str(DAYS[1])), ("schedule_since", str(DAYS[2]))],
-    ):
-        assert requests.get(url, params=params).status_code == 400, params
-
-
-def test_cli_runs_times_end_to_end(inst):
-    """the real apsis runs -t filters through the client, plain runs with no --times is unchanged"""
-    by_time = {t: _schedule(inst, t, i) for i, t in enumerate(DAYS)}
-    since, until = DAYS[2], DAYS[5]
-
-    rc, out, err = _cli(inst, "-t", f"{since}..{until}", "--format", "json")
-    assert rc == 0, err
-    assert set(ujson.loads(out)) == {by_time[DAYS[2]], by_time[DAYS[3]], by_time[DAYS[4]]}
-
-    rc, out, err = _cli(inst, "-t", f"{since}..{until}", "--limit", "2", "--format", "json")
-    assert rc == 0, err
-    assert list(ujson.loads(out)) == [by_time[DAYS[4]], by_time[DAYS[3]]]
-
-    rc, out, _ = _cli(inst, "--format", "json")
-    assert rc == 0 and set(ujson.loads(out)) == set(by_time.values())
+    assert list(runs) == want

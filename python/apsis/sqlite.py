@@ -8,7 +8,7 @@ import logging
 import ora
 from pathlib import Path
 import sqlalchemy as sa
-from typing import Iterable, Optional
+from typing import Iterable
 import ujson
 from typing import Iterator
 
@@ -16,6 +16,7 @@ from .actions.base import Action
 from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr, py
+from .lib.parse import parse_time
 from .lib.timing import Timer
 from .runs import Instance, Run, run_number
 from .states import State
@@ -382,11 +383,12 @@ class RunDB:
         if schedule_since is not None:
             where.append(
                 sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
-                >= str(ora.Time(schedule_since))
+                >= str(parse_time(schedule_since))
             )
         if schedule_until is not None:
             where.append(
-                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule") < str(ora.Time(schedule_until))
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
+                < str(parse_time(schedule_until))
             )
 
         return sa.and_(*where)
