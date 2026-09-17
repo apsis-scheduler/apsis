@@ -46,7 +46,7 @@ async def _maybe_compress(outputs, *, compression="br", min_size=16384):
     return dict(zip(outputs.keys(), o))
 
 
-def _program_meta(meta):
+def _program_meta(meta: dict | None) -> dict:
     """
     Returns a run metadata update for program metadata `meta`.
 
@@ -97,6 +97,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
+                        reason=error.message,
                         meta=_program_meta(error.meta),
                         times=error.times,
                     )
@@ -149,6 +150,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.failure,
+                        reason=failure.message,
                         meta=_program_meta(failure.meta),
                         times=failure.times,
                     )
@@ -159,6 +161,7 @@ async def _process_updates(apsis, run):
                     apsis._transition(
                         run,
                         State.error,
+                        reason=error.message,
                         meta=_program_meta(error.meta),
                         times=error.times,
                     )
@@ -186,13 +189,13 @@ async def _process_updates(apsis, run):
         # restart and we can connect to it later.
         pass
 
-    except Exception:
+    except Exception as exc:
         # Program raised some other exception.
         apsis.run_log.exc(run, "error: internal")
         tb = traceback.format_exc().encode()
         output = Output(OutputMetadata("traceback", length=len(tb)), tb)
         apsis._update_output_data(run, {"outputs": output}, True)
-        apsis._transition(run, State.error, force=True)
+        apsis._transition(run, State.error, reason=f"internal error: {exc}", force=True)
 
     finally:
         apsis._running_programs.pop(run.run_id, None)

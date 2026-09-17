@@ -76,10 +76,11 @@ def test_reconnect_failed_keeps_metadata():
         # The run errors, since Apsis can't reconnect to it.
         res = svc.wait_run(run_id, timeout=30)
         assert res["state"] == "error"
-        assert any("reconnect failed" in r["message"] for r in svc.client.get_run_log(run_id))
 
-        # Its metadata is intact.
+        # Its program metadata is intact, so the lost process can still be found.
         assert svc.client.get_run(run_id)["meta"]["program"] == meta
+        # The reconnect failure reason is carried in state_reason.
+        assert "reconnect failed" in svc.client.get_run(run_id)["meta"]["state_reason"]
 
 
 def test_reconnect_many(num=256):
