@@ -59,16 +59,16 @@ class MockJobDb:
         raise LookupError(job_id)
 
 
-def check_job(jobs_dir, job, *, check_job_names=False):
+def check_job(jobs_dir, job):
     """
     Performs consistency checks on `job` in `jobs_dir`.
 
-    :param check_job_names:
-      Also reject job IDs ending in the run-history API suffix.
     :return:
       Generator of errors.
     """
-    if check_job_names and job.job_id.endswith(JOB_RUNS_SUFFIX):
+    # `GET /jobs/<job_id>/runs` is the run history URL, so a job ID ending in
+    # that suffix would be indistinguishable from it; see `api.job()`.
+    if job.job_id.endswith(JOB_RUNS_SUFFIX):
         yield f"job ID must not end in {JOB_RUNS_SUFFIX!r} (reserved for run history URLs)"
 
     yield from check_param_names(job.params)

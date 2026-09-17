@@ -358,16 +358,13 @@ class JobsDir:
 JOB_LOAD_BATCH_SIZE = 16
 
 
-async def load_jobs_dir(path, yaml_loader=DupCheckSafeLoader, *, check_job_names=False):
+async def load_jobs_dir(path, yaml_loader=DupCheckSafeLoader):
     """
     Attempts to loads jobs from a jobs dir.
 
     :param yaml_loader:
       The PyYAML loader class used to parse each job file.  Defaults to
       `DupCheckSafeLoader` (libyaml-backed, fast, rejects duplicate keys).
-    :param check_job_names:
-      Also enforce job naming restrictions.  Disabled by default so existing
-      jobs remain loadable at service startup and reload.
     :return:
       The successfully loaded `JobsDir`.
     :raise NotADirectoryError:
@@ -419,7 +416,7 @@ async def load_jobs_dir(path, yaml_loader=DupCheckSafeLoader, *, check_job_names
 
     for job in jobs_dir.get_jobs():
         log.info(f"checking: {job.job_id}")
-        for err in check_job(jobs_dir, job, check_job_names=check_job_names):
+        for err in check_job(jobs_dir, job):
             errors.append(JobError(job.job_id, str(err)))
         # be nice to the event loop
         await asyncio.sleep(0)
