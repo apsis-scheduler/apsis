@@ -84,7 +84,7 @@ def _parse_cursor(args) -> str | None:
     return cursor
 
 
-def _parse_schedule_span_args(args) -> "tuple[ora.Time | None, ora.Time | None]":
+def _parse_schedule_span_args(args) -> tuple[ora.Time | None, ora.Time | None]:
     """
     Pops and validates the `schedule_since` and `schedule_until` query params
     from `args`, which bound a run's nominal (schedule) time.
