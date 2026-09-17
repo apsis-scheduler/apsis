@@ -177,7 +177,6 @@ async def test_error_keeps_startup_metadata():
 
     assert run.state == State.error
     assert run.meta["program"] == STARTUP_META
-    # the reason is carried in state_reason, not appended to program metadata
     assert run.meta["state_reason"] == error.message
 
 
@@ -217,7 +216,6 @@ async def test_result_metadata_replaces_program_metadata():
 
     assert run.state == State.error
     assert run.meta["program"] == ERROR_META
-    # the reason is carried in state_reason, not appended to program.errors
     assert run.meta["state_reason"] == "procstar: oh no"
 
 
