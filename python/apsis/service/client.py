@@ -200,11 +200,11 @@ class Client:
         return self.__get("/api/v1/runs", run_id, "log")["run_log"]
 
     def get_job(self, job_id):
-        return self.__get("/api/v1/jobs", job_id)
+        return self.__get("/api/v1/jobs", quote(job_id, safe=""))
 
     def get_job_runs(self, job_id) -> dict:
         # walks the paging.next cursor, same as get_runs
-        return self.__get_paged_runs("/api/v1/jobs", job_id, "runs")
+        return self.__get_paged_runs("/api/v1/jobs", quote(job_id, safe=""), "runs")
 
     def get_jobs(self, *, label=None):
         return self.__get("/api/v1/jobs", label=label)
