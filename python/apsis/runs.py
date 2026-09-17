@@ -364,7 +364,7 @@ def run_number(run_id: str) -> int:
     return int(match.group(1))
 
 
-def _in_schedule_span(run: "Run", schedule_since, schedule_until) -> bool:
+def _in_schedule_span(run: Run, schedule_since, schedule_until) -> bool:
     """
     Returns true iff `run`'s nominal (schedule) time is in
     `[schedule_since, schedule_until)`, where either bound may be None.  A run

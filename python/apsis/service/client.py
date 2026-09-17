@@ -303,8 +303,8 @@ class Client:
         state=None,
         args={},
         limit: int | None = None,
-        schedule_since: "Time | str | None" = None,
-        schedule_until: "Time | str | None" = None,
+        schedule_since: Time | str | None = None,
+        schedule_until: Time | str | None = None,
     ) -> dict:
         """
         :param schedule_since:
