@@ -31,7 +31,7 @@ from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
 from ..jobs import JOB_RUNS_SUFFIX, jso_to_job
-from ..runs import Instance, RunError
+from ..runs import Instance, RunError, run_number
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,48 @@ WS_DRAIN_TIME = 0.5
 WS_CHUNK = 4096
 # Send bigger chunks when the json is pre-serialized
 WS_RAW_CHUNK = 2**16
+
+# runs per page, fixed so one decode on the loop stays small
+PAGE_SIZE = 200
+
+# largest cursor sqlite can bind as a signed 64 bit int
+MAX_CURSOR = 2**63 - 1
+
+
+def _pop_arg(args, name: str) -> str | None:
+    """
+    Pops query param `name` from `args`, allowing at most one value.
+
+    :return:
+      The single value, or None if absent.
+    :raise ValueError:
+      `name` was given more than once.
+    """
+    values = args.pop(name, None)
+    if values is None:
+        return None
+    if len(values) != 1:
+        raise ValueError(f"{name} may be given at most once")
+    return values[0]
+
+
+def _parse_cursor(args) -> str | None:
+    """
+    Pops and validates the `cursor` query param from `args`.
+
+    :return:
+      A validated run_id, or None.
+    :raise ValueError:
+      `cursor` is malformed, too large, or repeated.  The caller should return
+      a 400.
+    """
+    cursor = _pop_arg(args, "cursor")
+    if cursor is not None:
+        # cursor must be rN and fit a signed 64 bit sqlite integer, raises on bad
+        if run_number(cursor) > MAX_CURSOR:
+            raise ValueError(f"cursor too large: {cursor}")
+    return cursor
+
 
 # -------------------------------------------------------------------------------
 
@@ -175,11 +217,20 @@ async def job(request, job_id):
 async def job_runs(request, job_id):
     """
     Serves `GET /jobs/<job_id>/runs`; dispatched from `job()`, not routed.
+
+    One page plus a paging.next cursor, same shape as GET /runs.
     """
-    job_id = match_job_id(request.app.apsis.jobs, unquote(job_id))
-    when, runs = request.app.apsis.run_store.query(job_id=job_id)
-    jso = runs_to_jso(request.app, when, runs)
-    return response_json(jso)
+    apsis = request.app.apsis
+    try:
+        cursor = _parse_cursor(request.args)
+    except ValueError as exc:
+        return error(str(exc), 400)
+    job_id = match_job_id(apsis.jobs, unquote(job_id))
+    when = ora.now()
+    runs, next_cursor = apsis.run_store.query_page(job_id=job_id, cursor=cursor, limit=PAGE_SIZE)
+    result = runs_to_jso(request.app, when, runs)
+    result["paging"] = {"next": next_cursor}
+    return response_json(result)
 
 
 @API.route("/jobs")
@@ -504,14 +555,17 @@ async def runs(request):
 
     # Get runs from the selected interval.
     args = request.args
-    (summary,) = args.pop("summary", ("False",))
-    summary = to_bool(summary)
-    run_id = args.pop("run_id", None)
-    (job_id,) = args.pop("job_id", (None,))
+    try:
+        summary = to_bool(_pop_arg(args, "summary") or "False")
+        run_id = args.pop("run_id", None)
+        job_id = _pop_arg(args, "job_id")
+        state = _pop_arg(args, "state")
+        since = _pop_arg(args, "since")
+        cursor = _parse_cursor(args)
+    except ValueError as exc:
+        return error(str(exc), 400)
     if job_id is not None:
         job_id = match_job_id(apsis.jobs, job_id)
-    (state,) = args.pop("state", (None,))
-    (since,) = args.pop("since", (None,))
 
     # Remainders are args to match, though strip off leading underscores, which
     # were added to avoid collision with fixed args.
@@ -520,37 +574,27 @@ async def runs(request):
     if all(x is None for x in (run_id, job_id)):
         return error("either run_id or job_id filter is required", 400)
 
-    # FIXME: really bad hack to protect event loop. Gotta add pagination!
-    MAX_QUERY_RUNS = 10_000
-    if run_id is None:
-        count = apsis.run_store.count_runs(
-            job_id=job_id,
-            state=None if state is None else to_state(state),
-            with_args=args,
-        )
-        if count > MAX_QUERY_RUNS:
-            return error(
-                f"query would return {count} runs (limit {MAX_QUERY_RUNS}); "
-                f"add args or state filter to narrow",
-                400,
-            )
+    when = ora.now()
+    state = None if state is None else to_state(state)
+    limit = PAGE_SIZE
+    if run_id is not None:
+        # run_id lists explicit ids so one page holds them all
+        cursor = None
+        limit = len(run_id)
 
-    when, runs = apsis.run_store.query(
+    # one page on the loop, page size is fixed so the decode stays small
+    runs, next_cursor = apsis.run_store.query_page(
         run_ids=run_id,
         job_id=job_id,
-        state=None if state is None else to_state(state),
+        state=state,
         since=since,
         with_args=args,
+        cursor=cursor,
+        limit=limit,
     )
-
-    # offload JSON serialization to thread pool to avoid blocking event loop
-    # runs is a generator, so materialize it first in the async context
-    runs_list = list(runs)
-
-    def serialize_runs():
-        return runs_to_jso(request.app, when, runs_list, summary=summary)
-
-    result = await asyncio.to_thread(serialize_runs)
+    result = runs_to_jso(request.app, when, runs, summary=summary)
+    # paging goes here not in the shared runs_to_jso
+    result["paging"] = {"next": next_cursor}
 
     return response_json(result)
 

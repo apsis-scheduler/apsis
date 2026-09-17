@@ -17,7 +17,7 @@ from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr, py
 from .lib.timing import Timer
-from .runs import Instance, Run
+from .runs import Instance, Run, run_number
 from .states import State
 from .program import Program, Output, OutputMetadata
 
@@ -56,25 +56,6 @@ def disposing(engine):
 
 def _make_run_id(rowid):
     return f"r{rowid}"
-
-
-def _parse_run_id(run_id):
-    """
-    Parses a run_id ("r123") into its integer rowid.
-
-    :raise ValueError:
-      `run_id` doesn't have the expected shape.  Callers with user-controlled
-      input should catch this and treat the run_id as unknown; on main such
-      inputs returned no-match at the query layer.  (Note: `assert` is not
-      used here because it vanishes under `python -O`, which would let e.g.
-      "x123" resolve to rowid 123 — a different run.)
-    """
-    if not isinstance(run_id, str) or len(run_id) < 2 or run_id[0] != "r":
-        raise ValueError(f"invalid run_id: {run_id!r}")
-    try:
-        return int(run_id[1:])
-    except ValueError:
-        raise ValueError(f"invalid run_id: {run_id!r}") from None
 
 
 # SQLite implicitly includes a 'rowid' column in each table, which SA doesn't
@@ -317,6 +298,11 @@ TBL_RUNS = sa.Table(
 # the raw JSON string is a direct index lookup.
 sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 
+# index for keyset paging so a job's newest runs below a cursor are an index seek
+# not a scan and sort
+# rowid is the immutable run number so it is a stable cursor
+sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
+
 TBL_RUNS_SELECT = sa.select(
     [
         TBL_RUNS.columns[n]
@@ -369,7 +355,7 @@ class RunDB:
             rowids = []
             for run_id in run_ids:
                 try:
-                    rowids.append(_parse_run_id(run_id))
+                    rowids.append(run_number(run_id))
                 except ValueError:
                     pass
             where.append(TBL_RUNS.c.rowid.in_(rowids))
@@ -394,9 +380,7 @@ class RunDB:
         return sa.and_(*where)
 
     @staticmethod
-    def __query_runs(conn, expr):
-        query = TBL_RUNS_SELECT.where(expr)
-        cursor = conn.execute(query)
+    def __decode_rows(cursor):
         for (
             rowid,
             run_id,
@@ -436,9 +420,13 @@ class RunDB:
             run._rowid = rowid
             yield run
 
+    @staticmethod
+    def __query_runs(conn, expr):
+        return RunDB.__decode_rows(conn.execute(TBL_RUNS_SELECT.where(expr)))
+
     def upsert(self, run):
         assert not run.expected
-        rowid = _parse_run_id(run.run_id)
+        rowid = run_number(run.run_id)
 
         program = None if run.program is None else ujson.dumps(run.program.to_jso())
         conds = None if run.conds is None else ujson.dumps([c.to_jso() for c in run.conds])
@@ -521,7 +509,7 @@ class RunDB:
 
     def get(self, run_id):
         try:
-            rowid = _parse_run_id(run_id)
+            rowid = run_number(run_id)
         except ValueError:
             # match main: unknown/malformed IDs are just LookupError, not 500.
             raise LookupError(f"no run: {run_id}")
@@ -571,6 +559,49 @@ class RunDB:
 
         log.debug(
             f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
+            f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
+        )
+        return runs
+
+    def query_paged(
+        self,
+        *,
+        run_ids=None,
+        job_id=None,
+        state: Iterable[State] | State | None = None,
+        args=None,
+        with_args=None,
+        min_timestamp=None,
+        max_rowid=None,
+        limit,
+    ) -> list[Run]:
+        """
+        Returns one page of at most `limit` runs matching the filters, ordered
+        by rowid descending.  The `(job_id, rowid)` index makes this an index
+        seek, so keep `limit` small enough that the decode stays within the
+        event loop's latency budget.
+
+        :param max_rowid:
+          If not None, limits to runs with rowid below it (the cursor).
+        :param limit:
+          Maximum number of runs to return.
+        """
+        expr = self.__build_where(
+            run_ids=run_ids,
+            job_id=job_id,
+            state=state,
+            args=args,
+            with_args=with_args,
+            min_timestamp=min_timestamp,
+        )
+        if max_rowid is not None:
+            expr = sa.and_(expr, TBL_RUNS.c.rowid < max_rowid)
+        query = TBL_RUNS_SELECT.where(expr).order_by(TBL_RUNS.c.rowid.desc()).limit(limit)
+        with Timer() as timer:
+            with self.__engine.connect() as conn:
+                runs = list(self.__decode_rows(conn.execute(query)))
+        log.debug(
+            f"query_paged job_id={job_id} max_rowid={max_rowid} limit={limit} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
@@ -1003,7 +1034,7 @@ class SqliteDB:
             )
 
         # Make sure rowids and run_ids correspond.
-        assert all(rowid == _parse_run_id(run_id) for run_id, rowid in res)
+        assert all(rowid == run_number(run_id) for run_id, rowid in res)
         run_ids = [r for r, _ in res]
 
         log.info(f"obtained {len(run_ids)} runs to archive in {timer.elapsed:.3f} s")
@@ -1040,7 +1071,7 @@ class SqliteDB:
         :param run_ids:
           Sequence of run IDs to archive.
         """
-        rowids = [_parse_run_id(i) for i in run_ids]
+        rowids = [run_number(i) for i in run_ids]
 
         # Open the archive file, creating if necessary.
         archive_engine = self.__get_engine(path)

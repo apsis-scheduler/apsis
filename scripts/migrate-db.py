@@ -174,6 +174,16 @@ def migrate_2_4_0(db: SqliteDB):
     conn.commit()
 
 
+def migrate_2_4_5(db: SqliteDB) -> None:
+    """
+    Add the (job_id, rowid) index backing keyset pagination of GET /runs.
+    """
+    conn = db.conn
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_job_rowid ON runs (job_id, rowid)")
+    log.info("created idx_runs_job_rowid")
+    conn.commit()
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("path", metavar="PATH", type=Path, help="migrate db file PATH")
@@ -183,6 +193,7 @@ def main():
         migrate_0_33_7(db)
         migrate_2_3_0(db)
         migrate_2_4_0(db)
+        migrate_2_4_5(db)
 
         db.conn.commit()
 
