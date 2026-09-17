@@ -22,6 +22,9 @@ from .schedule import schedule_to_jso, schedule_from_jso
 
 log = logging.getLogger(__name__)
 
+# Literal API path suffix for a job's run history.
+JOB_RUNS_SUFFIX = "/runs"
+
 # -------------------------------------------------------------------------------
 
 

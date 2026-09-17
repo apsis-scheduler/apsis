@@ -1,0 +1,7 @@
+program:
+  type: no-op
+schedule:
+  type: daily
+  tz: UTC
+  daytime: 00:00:00
+  enabled: false

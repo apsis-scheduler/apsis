@@ -30,7 +30,7 @@ from apsis.lib.timing import Timer
 from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
-from ..jobs import jso_to_job
+from ..jobs import JOB_RUNS_SUFFIX, jso_to_job
 from ..runs import Instance, RunError
 
 log = logging.getLogger(__name__)
@@ -154,6 +154,15 @@ def match_job_id(jobs, job_id):
 
 @API.route("/jobs/<job_id:path>")
 async def job(request, job_id):
+    # A separate /jobs/<job_id:path>/runs route overlaps this path route.
+    # Sanic 21.6 registers blueprint routes from a set in arbitrary order.
+    # Dispatch explicitly so handler selection is independent of that order.
+    # Check the raw suffix before unquoting: /jobs/X%2Fruns fetches the job
+    # X/runs, while /jobs/X%2Fruns/runs fetches that job's runs.  Keep automatic
+    # route unquoting disabled so these requests remain distinguishable.
+    if job_id.endswith(JOB_RUNS_SUFFIX):
+        return await job_runs(request, job_id[: -len(JOB_RUNS_SUFFIX)])
+
     jobs = request.app.apsis.jobs
     try:
         job_id = match_job_id(jobs, unquote(job_id))
@@ -163,8 +172,10 @@ async def job(request, job_id):
     return response_json(job_to_jso(job, jobs=jobs))
 
 
-@API.route("/jobs/<job_id:path>/runs")
 async def job_runs(request, job_id):
+    """
+    Serves `GET /jobs/<job_id>/runs`; dispatched from `job()`, not routed.
+    """
     job_id = match_job_id(request.app.apsis.jobs, unquote(job_id))
     when, runs = request.app.apsis.run_store.query(job_id=job_id)
     jso = runs_to_jso(request.app, when, runs)
