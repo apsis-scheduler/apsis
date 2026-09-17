@@ -26,7 +26,8 @@ RUN_STATE = {"conn_id": "conn0", "proc_id": "proc0"}
 # Metadata a Procstar program reports once the process is running.
 PROGRAM_META = {
     "procstar_proc_id": "proc0",
-    "procstar_conn": {"conn_id": "conn0", "hostname": "host0"},
+    "procstar_conn": {"conn_id": "conn0"},
+    "procstar_agent": {"hostname": "host0"},
     "proc_stat": {"pid": 12345},
 }
 
@@ -163,11 +164,12 @@ async def test_error_keeps_startup_metadata():
     A program may report metadata about resources it acquired before the
     process is running, e.g. an AWS ECS task; erasing it leaks the resource.
     """
+    error = ProgramError("start failed: proc0: no open connection in group")
     STARTUP_META = {"aws_ecs": {"task_id": "task0", "cluster_name": "cluster0"}}
     apsis, run = _make_run(
         [
             ProgramUpdate(meta=STARTUP_META),
-            ProgramError("start failed: proc0: no open connection in group"),
+            error,
         ]
     )
 
@@ -175,6 +177,7 @@ async def test_error_keeps_startup_metadata():
 
     assert run.state == State.error
     assert run.meta["program"] == STARTUP_META
+    assert run.meta["state_reason"] == error.message
 
 
 @pytest.mark.asyncio
@@ -213,3 +216,54 @@ async def test_result_metadata_replaces_program_metadata():
 
     assert run.state == State.error
     assert run.meta["program"] == ERROR_META
+    assert run.meta["state_reason"] == "procstar: oh no"
+
+
+@pytest.mark.asyncio
+async def test_failure_sets_state_reason():
+    """
+    A program failure records its message as the reason.
+    """
+    apsis, run = _make_run(
+        [
+            ProgramRunning(RUN_STATE, meta=PROGRAM_META),
+            ProgramFailure("exit code 1"),
+        ]
+    )
+
+    await _process_updates(apsis, run)
+
+    assert run.state == State.failure
+    assert run.meta["state_reason"] == "exit code 1"
+
+
+@pytest.mark.asyncio
+async def test_internal_error_sets_state_reason():
+    """
+    An unexpected exception while processing updates records a reason.
+    """
+    # bogus update hits the generic exception branch
+    apsis, run = _make_run([object()])
+
+    await _process_updates(apsis, run)
+
+    assert run.state == State.error
+    assert run.meta["state_reason"].startswith("internal error:")
+
+
+def test_transition_state_reason_set_and_cleared():
+    """
+    `_transition` records the reason, and a later transition clears it.
+    """
+    run = Run(Instance("job", {}))
+    run.run_id = "r0"
+    apsis = _FakeApsis(run, [])
+    apsis._transition(run, State.scheduled, times={"schedule": ora.now()})
+    apsis._transition(run, State.starting)
+
+    apsis._transition(run, State.error, reason="dependency timed out", force=True)
+    assert run.meta["state_reason"] == "dependency timed out"
+
+    # later transition with no reason clears it
+    apsis._transition(run, State.success, force=True)
+    assert run.meta["state_reason"] is None
