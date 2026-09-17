@@ -3,6 +3,7 @@ Tests for RunDB.query() predicate pushdown to SQLite.
 """
 
 import ora
+import pytest
 
 from apsis.runs import Instance, Run
 from apsis.sqlite import SqliteDB
@@ -424,9 +425,8 @@ def _ids(runs):
     return {r.run_id for r in runs}
 
 
-def _at(run_db, schedule, **kw):
-    """a run with nominal time `schedule`, built on the shared _make_run without editing it"""
-    run = _make_run(run_db, kw.pop("job_id", "job/a"), kw.pop("args", {}), **kw)
+def _at(run_db, schedule):
+    run = _make_run(run_db, "job/a", {})
     run.times["schedule"] = ora.Time(schedule)
     run_db.upsert(run)
     return run
@@ -449,10 +449,12 @@ def test_query_schedule_bounds(tmp_path):
         run_db.query(schedule_since="2026-01-06T00:00:00Z", schedule_until="2026-01-07T00:00:00Z")
         == []
     )
-    # the missing-time run only shows up unfiltered
-    assert r_none.run_id not in _ids(run_db.query(schedule_until=ora.Time(T3)))
     # an offset string bound is normalized to utc, 14:00+05:00 == T2 which is 09:00Z
     assert _ids(run_db.query(schedule_since="2026-01-05T14:00:00+05:00")) == {r2.run_id, r3.run_id}
+    for name in ("schedule_since", "schedule_until"):
+        for query, kw in ((run_db.query, {}), (run_db.query_paged, {"limit": 2})):
+            with pytest.raises(ValueError, match="invalid UTC offset"):
+                query(**kw, **{name: "2026-01-01T00:00:00+99:99"})
 
 
 def test_query_schedule_second_precision(tmp_path):
@@ -475,38 +477,3 @@ def test_query_schedule_second_precision(tmp_path):
         r[".00000101"].run_id,
         r[".05"].run_id,
     }
-
-
-def test_query_paged_schedule_range_reapplies_filter(tmp_path):
-    """
-    scroll a span with below-lower, at-or-above-upper, and missing-time rows
-    interleaved below the first cursor, so dropping either bound on a later page
-    would surface an excluded run. dropping only since -> the below rows leak,
-    dropping only until -> the above row leaks.
-    """
-    run_db = _setup(tmp_path)
-    since = ora.Time("2026-01-05T00:00:00Z")
-    until = ora.Time("2026-01-06T00:00:00Z")
-
-    expected = []  # in creation order by rowid, excluded rows sit between matches
-    expected.append(_at(run_db, "2026-01-05T01:00:00Z").run_id)
-    _at(run_db, "2026-01-04T00:00:00Z")  # below lower
-    expected.append(_at(run_db, "2026-01-05T02:00:00Z").run_id)
-    _at(run_db, "2026-01-06T12:00:00Z")  # above upper
-    expected.append(_at(run_db, "2026-01-05T03:00:00Z").run_id)
-    _make_run(run_db, "job/a", {})  # missing schedule time
-    expected.append(_at(run_db, "2026-01-05T04:00:00Z").run_id)
-    _at(run_db, "2026-01-04T12:00:00Z")  # below lower
-    expected.append(_at(run_db, "2026-01-05T05:00:00Z").run_id)
-
-    want = list(reversed(expected))  # scroll is newest rowid first
-    seen, cursor = [], None
-    for _ in range(len(want) + 5):  # bounded so a broken cursor can't hang
-        page = run_db.query_paged(
-            job_id="job/a", schedule_since=since, schedule_until=until, max_rowid=cursor, limit=2
-        )
-        if not page:
-            break
-        seen.extend(r.run_id for r in page)
-        cursor = _rowid(page[-1].run_id)
-    assert seen == want

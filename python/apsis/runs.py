@@ -14,6 +14,7 @@ from .states import State, TRANSITIONS, ACTIVE_STATES, to_state
 from .lib.asyn import Publisher
 from .lib.calendar import get_calendar
 from .lib.memo import memoize
+from .lib.parse import parse_time
 from .lib.py import format_ctor, iterize
 
 log = logging.getLogger(__name__)
@@ -603,9 +604,9 @@ class RunStore:
 
         # same span filter as the db so in-memory and persisted runs agree
         if schedule_since is not None:
-            schedule_since = ora.Time(schedule_since)
+            schedule_since = parse_time(schedule_since)
         if schedule_until is not None:
-            schedule_until = ora.Time(schedule_until)
+            schedule_until = parse_time(schedule_until)
         if schedule_since is not None or schedule_until is not None:
             in_memory = (
                 r for r in in_memory if _in_schedule_span(r, schedule_since, schedule_until)
