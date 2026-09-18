@@ -22,6 +22,9 @@ config file.
     runs:
       lookback: null            # seconds
 
+    adhoc:
+      enabled: false
+
     schedule:
       since: null               # now, or YYYY-MM-DDTHH:MM:SSZ
       max_age: null             # seconds
@@ -71,6 +74,23 @@ Runs
 `runs.lookback` specifies the maximum run age, in seconds.  Runs older than this
 are not held in memory and are not visible in user interfaces.  They are
 retained in the database file, however.
+
+
+Ad hoc jobs
+-----------
+
+``adhoc.enabled`` controls whether Apsis accepts and starts ad hoc jobs.  It
+defaults to ``false`` and must be a YAML boolean.  Set it to ``true`` to use
+``apsis adhoc`` or submit job definitions through the API, for example in a
+local development environment.
+
+When disabled, API requests containing a job definition return HTTP 403 before
+the job is loaded or saved.  Scheduling or rerunning a stored ad hoc job creates
+a run in the error state, and queued ad hoc runs transition to error when they
+reach their start time or are manually started.  Already running jobs can
+finish, and registered jobs are unaffected.
+
+Restart Apsis after changing this setting.
 
 
 Schedule
