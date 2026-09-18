@@ -35,8 +35,10 @@ def test_disabled_submissions(tmp_path: Path, adhoc: dict[str, bool]) -> None:
 
 def test_disabled_cli() -> None:
     with ApsisService(cfg={"adhoc": {"enabled": False}}) as svc:
-        returncode, _ = svc.run_apsis_cmd("adhoc", "/bin/true")
-        assert returncode != 0
+        returncode, output = svc.run_apsis_cmd("adhoc", "now", "/bin/true")
+        assert returncode == 1
+        assert b"ad hoc jobs are disabled" in output
+        assert b"403" in output
         with sqlite3.connect(svc.db_path) as db:
             assert db.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
 
@@ -63,8 +65,8 @@ def test_stored_adhoc() -> None:
         assert svc.client.get_run(run["run_id"])["state"] == "success"
 
 
-@pytest.mark.parametrize("manual", [False, True])
-def test_queued_adhoc(manual: bool) -> None:
+@pytest.mark.parametrize("manual, legacy", [(False, False), (True, False), (False, True)])
+def test_queued_adhoc(manual: bool, legacy: bool) -> None:
     with ApsisService() as svc:
         run = svc.client.schedule_adhoc(
             ora.now() + (3600 if manual else 5), {"program": {"type": "no-op"}}
@@ -72,10 +74,17 @@ def test_queued_adhoc(manual: bool) -> None:
         assert run["state"] == "scheduled"
         svc.cfg["adhoc"]["enabled"] = False
         svc.write_cfg()
-        svc.restart()
+        svc.stop_serve()
+        if legacy:
+            with sqlite3.connect(svc.db_path) as db:
+                db.execute("UPDATE runs SET meta = json_remove(meta, '$.job.ad_hoc')")
+        svc.start_serve()
+        svc.wait_for_serve()
         if manual:
             svc.client.start(run["run_id"])
-        assert svc.wait_run(run["run_id"], timeout=10)["state"] == "error"
+        result = svc.wait_run(run["run_id"], timeout=10)
+        assert result["state"] == "error"
+        assert result["meta"]["state_reason"] == "ad hoc jobs are disabled"
         assert any(
             "ad hoc jobs are disabled" in entry["message"]
             for entry in svc.client.get_run_log(run["run_id"])
@@ -99,3 +108,27 @@ def test_waiting_adhoc_and_running_reconnect() -> None:
         svc.restart()
         assert svc.wait_run(running["run_id"], timeout=10)["state"] == "success"
         assert svc.wait_run(waiting["run_id"], timeout=10)["state"] == "error"
+
+
+@pytest.mark.parametrize("mode", ["automatic", "manual", "legacy"])
+def test_removed_registered_job(tmp_path: Path, mode: str) -> None:
+    path = tmp_path / "registered.yaml"
+    path.write_text("program:\n  type: no-op\n")
+    with ApsisService(job_dir=tmp_path, cfg={"adhoc": {"enabled": False}}) as svc:
+        run = svc.client.schedule("registered", {}, ora.now() + (3600 if mode == "manual" else 5))
+        path.unlink()
+        svc.client.reload_jobs()
+        if mode == "legacy":
+            svc.stop_serve()
+            with sqlite3.connect(svc.db_path) as db:
+                db.execute("UPDATE runs SET meta = json_remove(meta, '$.job.ad_hoc')")
+            svc.start_serve()
+            svc.wait_for_serve()
+        if mode == "manual":
+            svc.client.start(run["run_id"])
+        assert svc.wait_run(run["run_id"], timeout=10)["state"] == "success"
+
+        path.write_text("program:\n  type: no-op\n")
+        svc.client.reload_jobs()
+        next_run = svc.client.schedule("registered", {}, ora.now() + 1)
+        assert svc.wait_run(next_run["run_id"], timeout=5)["state"] == "success"

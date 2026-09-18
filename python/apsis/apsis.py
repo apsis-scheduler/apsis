@@ -243,9 +243,15 @@ class Apsis:
         """
         assert run.run_id not in self._running_programs
         if not self.cfg.get("adhoc", {}).get("enabled", False):
-            if self.jobs.get_job(run.inst.job_id).ad_hoc:
+            ad_hoc = run.meta.get("job", {}).get("ad_hoc")
+            if ad_hoc is None:
+                try:
+                    ad_hoc = self.jobs.get_job(run.inst.job_id).ad_hoc
+                except LookupError:
+                    ad_hoc = False
+            if ad_hoc:
                 self.run_log.record(run, "ad hoc jobs are disabled")
-                self._transition(run, State.error)
+                self._transition(run, State.error, reason="ad hoc jobs are disabled")
                 return
         # Start the run by running its program.
         self.run_log.record(run, "starting")
@@ -502,6 +508,7 @@ class Apsis:
                 times["stop"] = stop_time
             # Attach job labels to the run.
             run.meta["job"] = {
+                "ad_hoc": job.ad_hoc,
                 "labels": job.meta.get("labels", []),
             }
         except Exception as exc:
