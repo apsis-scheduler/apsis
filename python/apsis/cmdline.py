@@ -319,17 +319,11 @@ def parse_at_time(string):
 
 
 def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
-    """
-    Parses a TIMESPAN `START..END` into a `(since, until)` pair of times, either
-    of which may be None for an open end. A bare value with no `..` is the start.
-    Lower bound is inclusive, upper is exclusive.
+    """Parse a time span, with daytimes meaning today in the display zone.
 
-    Each end may be a time, `now`, `+DURATION` from now, or a daytime meaning
-    today in the display zone. Unlike `parse_at_time` a past daytime is not
-    rolled to tomorrow, since the span filters runs that already happened.
-
-    :raise ValueError:
-      An endpoint can't be parsed, or START is not before END.
+    :param string: START..END with optional endpoints, or a bare START.
+    :return: Inclusive start and exclusive end, with None for omitted bounds.
+    :raise ValueError: The span is invalid, empty, or reversed.
     """
     start, _, end = string.partition("..")
 
@@ -366,6 +360,6 @@ def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
     until = parse_bound(end)
     if since is None and until is None:
         raise ValueError(f"empty time span: {string!r}")
-    if since is not None and until is not None and not since < until:
+    if since is not None and until is not None and since >= until:
         raise ValueError(f"time span start must be before end: {string!r}")
     return since, until
