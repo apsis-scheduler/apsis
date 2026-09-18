@@ -259,8 +259,7 @@ def main():
         help="show only runs in STATE",
     )
 
-    def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
-        # show the parser's own error message instead of argparse's generic one
+    def parse_times_arg(string):
         try:
             return apsis.cmdline.parse_time_span(string)
         except ValueError as exc:
@@ -270,7 +269,7 @@ def main():
         "--times",
         "-t",
         metavar="TIMESPAN",
-        type=parse_time_span,
+        type=parse_times_arg,
         default=(None, None),
         help=(
             "show only runs whose schedule time is in TIMESPAN, given as START..END. "

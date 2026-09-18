@@ -7,7 +7,12 @@ from .py import or_none
 
 
 def parse_time(value: Time | str) -> Time:
-    """Parse a valid time, rejecting embedded NULs and out-of-range UTC offsets."""
+    """Parse a timestamp with strict offset and range validation.
+
+    :param value: An absolute timestamp or Ora time.
+    :return: A valid Time.
+    :raise ValueError: The timestamp, offset, or resulting time is invalid.
+    """
     if isinstance(value, str):
         if "\0" in value:
             raise ValueError("invalid time: embedded NUL")
