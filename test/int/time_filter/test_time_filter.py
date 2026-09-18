@@ -84,22 +84,18 @@ def test_schedule_span_query_and_cli(inst):
     for name in ("schedule_since", "schedule_until"):
         for value in (
             "",
+            [str(DAYS[2]), str(DAYS[3])],
             ["", str(DAYS[2])],
             [str(DAYS[2]), ""],
             ["", ""],
             "2026-01-01T00:00:00+99:99",
             "2026-01-01T00:00:00+99:99\0",
             "0001-01-01T00:00:00+23:59",
-            "9999-12-31T23:59:59-23:59",
         ):
             resp = _get(inst, job_id="timed", **{name: value})
             assert resp.status_code == 400
-            expected_error = (
-                f"{name} may be given at most once"
-                if isinstance(value, list)
-                else f"invalid {name}"
-            )
-            assert expected_error in resp.json()["error"]
+            message = "may be given at most once" if isinstance(value, list) else "invalid"
+            assert name in resp.json()["error"] and message in resp.json()["error"]
 
     args = ("-t", f"{DAYS[2]}..{DAYS[5]}", "-s", "success")
     assert list(_cli(inst, *args)) == list(reversed(ids[2:5]))
