@@ -662,6 +662,8 @@ async def run_post(request):
     # The run may either contain a job ID, or a complete job.
     jso = request.json
     if "job" in jso:
+        if not apsis.cfg.get("adhoc", {}).get("enabled", False):
+            return error("ad hoc jobs are disabled", 403)
         # A complete job.
         job = jso_to_job(jso["job"], None)
         job.ad_hoc = True
