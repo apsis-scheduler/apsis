@@ -259,7 +259,7 @@ def main():
         help="show only runs in STATE",
     )
 
-    def parse_times_arg(string):
+    def parse_times_arg(string: str) -> tuple[Time | None, Time | None]:
         try:
             return apsis.cmdline.parse_time_span(string)
         except ValueError as exc:
