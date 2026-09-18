@@ -3,6 +3,7 @@ Tests for RunDB.query() predicate pushdown to SQLite.
 """
 
 import ora
+import pytest
 
 from apsis.runs import Instance, Run
 from apsis.sqlite import SqliteDB
@@ -411,3 +412,68 @@ def test_migration_backfills_pagination_index(tmp_path):
     finally:
         db.close()
     assert _has_pagination_index(path)
+
+
+# --- schedule time filter ------------------------------------------------------
+
+T1 = "2026-01-01T00:00:00Z"
+T2 = "2026-01-05T09:00:00Z"
+T3 = "2026-01-10T00:00:00Z"
+
+
+def _ids(runs):
+    return {r.run_id for r in runs}
+
+
+def _at(run_db, schedule):
+    run = _make_run(run_db, "job/a", {})
+    run.times["schedule"] = ora.Time(schedule)
+    run_db.upsert(run)
+    return run
+
+
+def test_query_schedule_bounds(tmp_path):
+    """since inclusive, until exclusive, either/both/none, empty span, missing time, offset string"""
+    run_db = _setup(tmp_path)
+    r1, r2, r3 = _at(run_db, T1), _at(run_db, T2), _at(run_db, T3)
+    r_none = _make_run(run_db, "job/a", {})  # no schedule time
+
+    assert _ids(run_db.query()) == {r1.run_id, r2.run_id, r3.run_id, r_none.run_id}
+    assert _ids(run_db.query(schedule_since=ora.Time(T2))) == {r2.run_id, r3.run_id}
+    assert _ids(run_db.query(schedule_until=ora.Time(T2))) == {r1.run_id}
+    assert _ids(run_db.query(schedule_since=ora.Time(T2), schedule_until=ora.Time(T3))) == {
+        r2.run_id
+    }
+    # a span between runs matches nothing
+    assert (
+        run_db.query(schedule_since="2026-01-06T00:00:00Z", schedule_until="2026-01-07T00:00:00Z")
+        == []
+    )
+    # an offset string bound is normalized to utc, 14:00+05:00 == T2 which is 09:00Z
+    assert _ids(run_db.query(schedule_since="2026-01-05T14:00:00+05:00")) == {r2.run_id, r3.run_id}
+    for name in ("schedule_since", "schedule_until"):
+        for query, kw in ((run_db.query, {}), (run_db.query_paged, {"limit": 2})):
+            with pytest.raises(ValueError, match="invalid UTC offset"):
+                query(**kw, **{name: "2026-01-01T00:00:00+99:99"})
+
+
+def test_query_schedule_second_precision(tmp_path):
+    """fractional seconds order correctly through real upsert and query, across string widths"""
+    run_db = _setup(tmp_path)
+    base = "2026-01-05T09:00:00"
+    r = {f: _at(run_db, f"{base}{f}Z") for f in ("", ".00000101", ".05", ".5", ".5000001", ".55")}
+    nextsec = _at(run_db, "2026-01-05T09:00:01Z")
+
+    # since=.5 keeps .5 inclusive, the larger fractions, and the next second
+    assert _ids(run_db.query(schedule_since=ora.Time(f"{base}.5Z"))) == {
+        r[".5"].run_id,
+        r[".5000001"].run_id,
+        r[".55"].run_id,
+        nextsec.run_id,
+    }
+    # until=.5 keeps everything strictly before it
+    assert _ids(run_db.query(schedule_until=ora.Time(f"{base}.5Z"))) == {
+        r[""].run_id,
+        r[".00000101"].run_id,
+        r[".05"].run_id,
+    }

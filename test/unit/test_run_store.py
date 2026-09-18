@@ -630,3 +630,93 @@ def test_run_number_validation():
     for bad in ("r-5", "rabc", "r", "", "x1", "1", None, 5, "r1.0", "r 1"):
         with pytest.raises(ValueError):
             run_number(bad)
+
+
+# --- schedule time span --------------------------------------------------------
+
+T1 = "2026-01-01T00:00:00Z"
+T2 = "2026-01-05T09:00:00Z"
+T3 = "2026-01-10T00:00:00Z"
+
+
+def _schedule_at(store, run, time):
+    """schedule an expected in-memory run with nominal time `time`, as Apsis.schedule() does"""
+    store.add(run)
+    _transition(store, run, State.scheduled, times={"schedule": ora.Time(time)})
+    return run
+
+
+def _persist_at(store, schedule, *, args=None, timestamp=None):
+    run = _persist_run(store, "job", args, timestamp=timestamp)
+    run.times["schedule"] = ora.Time(schedule)
+    store._RunStore__run_db.upsert(run)
+    return run
+
+
+def _query_ids(store, **kw):
+    return {r.run_id for r in store.query(**kw)[1]}
+
+
+def test_run_store_schedule_span_in_memory(tmp_path):
+    """bounds filter expected in-memory runs: inclusive lower, exclusive upper, missing excluded, strings ok"""
+    store = _make_store(tmp_path)
+    r1 = _schedule_at(store, Run(Instance("job", {"n": "1"}), expected=True), T1)
+    r2 = _schedule_at(store, Run(Instance("job", {"n": "2"}), expected=True), T2)
+    r3 = _schedule_at(store, Run(Instance("job", {"n": "3"}), expected=True), T3)
+    r_none = Run(Instance("job", {"n": "x"}), expected=True)
+    _schedule(store, r_none)  # no schedule time
+
+    assert _query_ids(store, schedule_since=ora.Time(T2)) == {r2.run_id, r3.run_id}
+    assert _query_ids(store, schedule_until=ora.Time(T2)) == {r1.run_id}
+    assert _query_ids(store, schedule_since=T2, schedule_until=T3) == {r2.run_id}  # strings
+    assert r_none.run_id in _query_ids(store)
+    for name in ("schedule_since", "schedule_until"):
+        with pytest.raises(ValueError, match="invalid UTC offset"):
+            store.query(**{name: "2026-01-01T00:00:00+99:99"})
+        with pytest.raises(ValueError, match="invalid UTC offset"):
+            store.query_page(limit=2, **{name: "2026-01-01T00:00:00+99:99"})
+
+
+def test_run_store_schedule_span_paged_mixed_storage(tmp_path):
+    """Memory/DB exclusions survive later cursors; an active mirrored run appears once."""
+    store = _make_store(tmp_path)
+    since = ora.Time("2026-01-05T00:00:00Z")
+    until = ora.Time("2026-01-06T00:00:00Z")
+
+    def mem(n, t):
+        return _schedule_at(store, Run(Instance("job", {"n": n}), expected=True), t)
+
+    expected = []  # creation order by rowid
+    expected.append(_persist_at(store, "2026-01-05T01:00:00Z", args={"n": "d0"}).run_id)
+    mem("m1", "2026-01-04T00:00:00Z")  # expected, below lower
+    expected.append(mem("m2", "2026-01-05T02:00:00Z").run_id)  # expected, in span
+    _persist_at(store, "2026-01-06T12:00:00Z", args={"n": "d3"})  # db, above upper
+    _schedule(store, Run(Instance("job", {"n": "m4"}), expected=True))  # expected, no time
+    _persist_run(store, "job", {"n": "no-time"})  # DB, no time
+    expected.append(_persist_at(store, "2026-01-05T03:00:00Z", args={"n": "d5"}).run_id)
+    mem("m6", "2026-01-06T00:00:00Z")  # expected, at upper bound so excluded
+    _persist_at(store, "2026-01-04T12:00:00Z", args={"n": "d7"})  # db, below lower
+    active = mem("act", "2026-01-05T04:00:00Z")  # will become active: mem + db
+    for state in (State.waiting, State.starting, State.running):
+        _transition(store, active, state)
+    expected.append(active.run_id)
+    expected.append(mem("m9", "2026-01-05T05:00:00Z").run_id)  # expected, in span
+
+    want = sorted(expected, key=_rowid, reverse=True)
+    span = dict(job_id="job", schedule_since=since, schedule_until=until)
+
+    assert _query_ids(store, **span) == set(want)
+    assert _scroll(store, 2, **span) == want
+
+
+def test_run_store_schedule_span_respects_lookback(tmp_path):
+    """the span does not bypass the last-update lookback, limit_lookback=False opts out"""
+    store = _make_store(tmp_path, min_timestamp=ora.now() - 100)
+    old = _persist_at(store, T2, args={"n": "old"}, timestamp=ora.now() - 10000)
+    new = _persist_at(store, T2, args={"n": "new"})
+
+    assert _query_ids(store, schedule_since=ora.Time(T1)) == {new.run_id}
+    assert _query_ids(store, schedule_since=ora.Time(T1), limit_lookback=False) == {
+        old.run_id,
+        new.run_id,
+    }

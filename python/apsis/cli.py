@@ -2,6 +2,7 @@
 Main user CLI.
 """
 
+import argparse
 import asyncio
 import logging
 from ora import now, Time
@@ -222,11 +223,13 @@ def main():
             print("error: filter --job is required", file=sys.stderr)
             raise SystemExit(1)
 
+        schedule_since, schedule_until = args.times
         runs = client.get_runs(
             job_id=args.job,
             state=args.state,
             limit=args.limit,
-            # FIXME: times
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
 
         if args.summary:
@@ -255,12 +258,24 @@ def main():
         choices=[r.name for r in State],
         help="show only runs in STATE",
     )
+
+    def parse_times_arg(string: str) -> tuple[Time | None, Time | None]:
+        try:
+            return apsis.cmdline.parse_time_span(string)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc))
+
     cmd.add_argument(
         "--times",
         "-t",
         metavar="TIMESPAN",
-        default=None,
-        help="show only runs in TIMESPAN",
+        type=parse_times_arg,
+        default=(None, None),
+        help=(
+            "show only runs whose schedule time is in TIMESPAN, given as START..END. "
+            "START is inclusive, END is exclusive, and either may be omitted as in START.. or ..END. "
+            "each end is a time, 'now', +DURATION from now, or a daytime meaning today"
+        ),
     )
     cmd.add_argument(
         "--limit",

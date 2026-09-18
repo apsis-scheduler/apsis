@@ -8,7 +8,7 @@ import logging
 import ora
 from pathlib import Path
 import sqlalchemy as sa
-from typing import Iterable, Optional
+from typing import Iterable
 import ujson
 from typing import Iterator
 
@@ -16,6 +16,7 @@ from .actions.base import Action
 from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr, py
+from .lib.parse import parse_time
 from .lib.timing import Timer
 from .runs import Instance, Run, run_number
 from .states import State
@@ -342,6 +343,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         Build WHERE clause for run queries.
@@ -376,6 +379,17 @@ class RunDB:
                 where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
         if min_timestamp is not None:
             where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
+        # filter on schedule time from the times json, compared as iso strings
+        if schedule_since is not None:
+            where.append(
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
+                >= str(parse_time(schedule_since))
+            )
+        if schedule_until is not None:
+            where.append(
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
+                < str(parse_time(schedule_until))
+            )
 
         return sa.and_(*where)
 
@@ -529,6 +543,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         :param run_ids:
@@ -542,6 +558,11 @@ class RunDB:
           Ignored if args is also specified.
         :param min_timestamp:
           If not none, limits to runs with timestamp not less than this.
+        :param schedule_since:
+          If not none, lower bound on nominal schedule time, inclusive.
+        :param schedule_until:
+          If not none, upper bound on nominal schedule time, exclusive. Runs
+          with no schedule time are excluded once either bound is set.
         """
         expr = self.__build_where(
             run_ids=run_ids,
@@ -550,6 +571,8 @@ class RunDB:
             args=args,
             with_args=with_args,
             min_timestamp=min_timestamp,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         with Timer() as timer:
             runs = list(self.__query_runs(self.__engine, expr))
@@ -558,7 +581,7 @@ class RunDB:
             return " ".join(f"{k}={v}" for k, v in kwargs.items() if v is not None)
 
         log.debug(
-            f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp)} "
+            f"query {fmt_params(run_ids=run_ids, job_id=job_id, state=state, args=args, with_args=with_args, min_timestamp=min_timestamp, schedule_since=schedule_since, schedule_until=schedule_until)} "
             f"→ {len(runs)} runs in {timer.elapsed:.3f}s"
         )
         return runs
@@ -572,6 +595,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
         max_rowid=None,
         limit,
     ) -> list[Run]:
@@ -593,6 +618,8 @@ class RunDB:
             args=args,
             with_args=with_args,
             min_timestamp=min_timestamp,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         if max_rowid is not None:
             expr = sa.and_(expr, TBL_RUNS.c.rowid < max_rowid)
