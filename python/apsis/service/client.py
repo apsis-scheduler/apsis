@@ -335,7 +335,9 @@ class Client:
           The argument vector.  The first item is the path to the program
           to run.
         """
-        return self.__schedule(time, {"job": {"program": [str(a) for a in args]}}, **kw_args)
+        return self.schedule_adhoc(
+            time, {"program": {"type": "procstar", "argv": [str(a) for a in args]}}, **kw_args
+        )
 
     def schedule_shell_program(self, time, command, **kw_args):
         """
@@ -344,7 +346,9 @@ class Client:
         :param command:
           The shell command to run.
         """
-        return self.__schedule(time, {"job": {"program": str(command)}}, **kw_args)
+        return self.schedule_adhoc(
+            time, {"program": {"type": "procstar-shell", "command": str(command)}}, **kw_args
+        )
 
     def stop_run(self, run_id):
         return self.__put("/api/v1/runs", run_id, "stop")["runs"][run_id]
