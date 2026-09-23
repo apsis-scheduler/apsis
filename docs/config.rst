@@ -22,6 +22,9 @@ config file.
     runs:
       lookback: null            # seconds
 
+    adhoc:
+      enabled: false
+
     schedule:
       since: null               # now, or YYYY-MM-DDTHH:MM:SSZ
       max_age: null             # seconds
@@ -71,6 +74,20 @@ Runs
 `runs.lookback` specifies the maximum run age, in seconds.  Runs older than this
 are not held in memory and are not visible in user interfaces.  They are
 retained in the database file, however.
+
+
+Ad hoc jobs
+-----------
+
+``adhoc.enabled`` controls whether Apsis accepts new ad hoc job definitions.  It
+defaults to ``false`` and must be a YAML boolean.  Set it to ``true`` to use
+``apsis adhoc`` or submit job definitions through the API, for example in a
+local development environment.
+
+When disabled, API requests containing a job definition return HTTP 403 before
+the job is loaded or saved.  Previously saved ad hoc jobs can still be scheduled
+or rerun, and queued and running jobs continue normally.  Registered jobs are
+unaffected.
 
 
 Schedule
@@ -396,4 +413,3 @@ To use Procstar ECS programs, you need:
 
 See :ref:`programs` for detailed task definition requirements and the
 ``--wait``/``--wait-timeout`` flag configuration.
-

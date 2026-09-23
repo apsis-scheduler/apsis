@@ -51,6 +51,11 @@ def check(cfg, base_path: Path):
 
     cfg["actions"] = to_array(cfg.get("action", []))
 
+    adhoc_enabled = get_cfg(cfg, "adhoc.enabled", False)
+    if not isinstance(adhoc_enabled, bool):
+        raise ValueError("adhoc.enabled must be a boolean")
+    set_cfg(cfg, "adhoc.enabled", adhoc_enabled)
+
     _check_duration("waiting.max_time")
     _check_duration("procstar.agent.connection.start_timeout")
     _check_duration("procstar.agent.connection.reconnect_timeout")

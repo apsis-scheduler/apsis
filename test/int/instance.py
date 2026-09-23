@@ -51,7 +51,7 @@ class ApsisService:
         self.log_path = self.tmp_dir / "apsis.log"
         self.agent_dir = self.tmp_dir / "agent"
 
-        self.cfg = dict(cfg)
+        self.cfg = {"adhoc": {"enabled": True}} | cfg
         self.srv_proc = None
         self.env = dict(env)
 

@@ -1,8 +1,26 @@
-import logging
+from pathlib import Path
 import pytest
 
 from ruamel.yaml.constructor import DuplicateKeyError
 import apsis.config
+
+
+@pytest.mark.parametrize(
+    "config, enabled",
+    [("{}", False), ("adhoc: {enabled: false}", False), ("adhoc: {enabled: true}", True)],
+)
+def test_adhoc_config(tmp_path: Path, config: str, enabled: bool) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(config)
+    assert apsis.config.load(path)["adhoc"]["enabled"] is enabled
+
+
+@pytest.mark.parametrize("value", ['"false"', "0", "null", "[]", "{}"])
+def test_invalid_adhoc_config(tmp_path: Path, value: str) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(f"adhoc:\n  enabled: {value}\n")
+    with pytest.raises(ValueError, match="adhoc.enabled must be a boolean"):
+        apsis.config.load(path)
 
 
 def test_duplicate_key_in_config(tmp_path):
