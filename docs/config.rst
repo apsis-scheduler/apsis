@@ -79,18 +79,15 @@ retained in the database file, however.
 Ad hoc jobs
 -----------
 
-``adhoc.enabled`` controls whether Apsis accepts and starts ad hoc jobs.  It
+``adhoc.enabled`` controls whether Apsis accepts new ad hoc job definitions.  It
 defaults to ``false`` and must be a YAML boolean.  Set it to ``true`` to use
 ``apsis adhoc`` or submit job definitions through the API, for example in a
 local development environment.
 
 When disabled, API requests containing a job definition return HTTP 403 before
-the job is loaded or saved.  Scheduling or rerunning a stored ad hoc job creates
-a run in the error state, and queued ad hoc runs transition to error when they
-reach their start time or are manually started.  Already running jobs can
-finish, and registered jobs are unaffected.
-
-Restart Apsis after changing this setting.
+the job is loaded or saved.  Previously saved ad hoc jobs can still be scheduled
+or rerun, and queued and running jobs continue normally.  Registered jobs are
+unaffected.
 
 
 Schedule
@@ -416,4 +413,3 @@ To use Procstar ECS programs, you need:
 
 See :ref:`programs` for detailed task definition requirements and the
 ``--wait``/``--wait-timeout`` flag configuration.
-
