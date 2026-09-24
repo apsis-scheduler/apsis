@@ -272,7 +272,7 @@ def test_get_malformed_run_id(tmp_path):
     """
     RunDB.get() must raise LookupError for malformed IDs, not AssertionError
     or ValueError.  Even under python -O the wrong-run bug ("x123" resolving
-    to rowid 123) must not occur, because _parse_run_id checks the prefix
+    to rowid 123) must not occur, because run_number validates the shape
     explicitly rather than via assert.
     """
     import pytest
@@ -305,3 +305,109 @@ def test_query_malformed_run_ids(tmp_path):
     # All garbage: empty result, no exception.
     runs = run_db.query(run_ids=["abc", "", "x1"])
     assert list(runs) == []
+
+
+# --- query_paged ---------------------------------------------------------------
+
+
+def _rowid(run_id):
+    return int(run_id[1:])
+
+
+def test_query_paged_scroll_orders_limits_and_excludes_cursor(tmp_path):
+    """A bounded scroll returns exactly the matching IDs, newest first."""
+    run_db = _setup(tmp_path)
+    # Interleave other-job rows to catch filter leakage on later pages.
+    made = []
+    _make_run(run_db, "job/b", {})
+    for _ in range(5):
+        made.append(_make_run(run_db, "job/a", {}).run_id)
+        _make_run(run_db, "job/b", {})
+    expected = sorted(made, key=_rowid, reverse=True)
+
+    seen = []
+    lengths = []
+    cursor = None
+    for _ in range(len(made) + 2):  # bounded so a broken cursor fails, not hangs
+        page = run_db.query_paged(job_id="job/a", max_rowid=cursor, limit=2)
+        if not page:
+            break
+        ids = [r.run_id for r in page]
+        lengths.append(len(page))
+        seen.extend(ids)
+        cursor = _rowid(page[-1].run_id)
+    else:
+        raise AssertionError("scroll did not terminate")
+
+    assert lengths == [2, 2, 1]  # full, full, partial terminal page under limit 2
+    assert seen == expected  # descending, no dupes, no skips, no cross-job leakage
+
+
+def test_query_paged_with_args_and_state(tmp_path):
+    run_db = _setup(tmp_path)
+    r1 = _make_run(run_db, "job/a", {"date": "d1"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "d2"}, state=State.success)
+    _make_run(run_db, "job/a", {"date": "d1"}, state=State.failure)
+
+    page = run_db.query_paged(
+        job_id="job/a", with_args={"date": "d1"}, state=State.success, limit=10
+    )
+    assert [r.run_id for r in page] == [r1.run_id]
+
+
+def test_query_paged_min_timestamp(tmp_path):
+    run_db = _setup(tmp_path)
+    old = _make_run(run_db, "job/a", {})
+    old.timestamp = ora.now() - 10000
+    old.times = {old.state.name: old.timestamp}
+    run_db.upsert(old)
+    new = _make_run(run_db, "job/a", {})
+
+    page = run_db.query_paged(job_id="job/a", min_timestamp=ora.now() - 100, limit=10)
+    assert [r.run_id for r in page] == [new.run_id]
+
+
+def _has_pagination_index(path):
+    import sqlite3
+
+    with sqlite3.connect(path) as conn:
+        return "idx_runs_job_rowid" in {r[1] for r in conn.execute("PRAGMA index_list('runs')")}
+
+
+def test_create_has_pagination_index(tmp_path):
+    """A freshly created database gets the keyset pagination index from the schema."""
+    path = str(tmp_path / "apsis.db")
+    SqliteDB.create(path=path)
+    assert _has_pagination_index(path)
+
+
+def test_migration_backfills_pagination_index(tmp_path):
+    """
+    The migrate-db script adds the index to an older database that lacks it;
+    opening the database does NOT (index creation is an explicit migration).
+    """
+    import importlib.util
+    import sqlite3
+    from pathlib import Path
+
+    path = str(tmp_path / "apsis.db")
+    SqliteDB.create(path=path)
+
+    # simulate a database created before the index existed
+    with sqlite3.connect(path) as conn:
+        conn.execute("DROP INDEX IF EXISTS idx_runs_job_rowid")
+    assert not _has_pagination_index(path)
+
+    # load scripts/migrate-db.py (hyphenated, so not importable as a module)
+    script = Path(__file__).parents[2] / "scripts" / "migrate-db.py"
+    spec = importlib.util.spec_from_file_location("migrate_db", script)
+    migrate_db = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migrate_db)
+
+    db = SqliteDB.open(path)
+    try:
+        assert not _has_pagination_index(path)  # open() must not backfill
+        migrate_db.migrate_2_4_5(db)
+    finally:
+        db.close()
+    assert _has_pagination_index(path)
