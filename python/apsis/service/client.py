@@ -13,6 +13,7 @@ from urllib.parse import quote, urlunparse
 import websockets.client
 
 import apsis.service
+from apsis.runs import run_number
 from apsis.lib.json import nkey
 
 # -------------------------------------------------------------------------------
@@ -140,8 +141,8 @@ class Client:
             next_cursor = resp.get("paging", {}).get("next")
             if next_cursor is None:
                 return runs
-            if next_cursor == cursor:
-                raise RuntimeError(f"paging cursor did not advance: {next_cursor}")
+            if cursor is not None and run_number(next_cursor) >= run_number(cursor):
+                raise RuntimeError(f"paging cursor did not decrease: {cursor} -> {next_cursor}")
             cursor = next_cursor
 
     def __post(self, *path, data=None, **query):

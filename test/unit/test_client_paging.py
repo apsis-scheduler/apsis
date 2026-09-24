@@ -68,14 +68,15 @@ def test_get_job_runs_walks_cursor(monkeypatch):
     assert calls == [None, "r4"]
 
 
-def test_get_runs_raises_on_non_advancing_cursor(monkeypatch):
-    # a server bug that repeats the same next cursor must fail loud, not loop
+@pytest.mark.parametrize("next_cursor", ["r5", "r6"])
+def test_get_runs_raises_on_non_decreasing_cursor(monkeypatch, next_cursor):
+    # a repeated or increasing next cursor must fail loud, not loop
     client, _ = _client_returning(
         monkeypatch,
         [
             {"runs": {"r5": {}}, "paging": {"next": "r5"}},
-            {"runs": {"r5": {}}, "paging": {"next": "r5"}},
+            {"runs": {"r5": {}}, "paging": {"next": next_cursor}},
         ],
     )
-    with pytest.raises(RuntimeError, match="cursor did not advance"):
+    with pytest.raises(RuntimeError, match="cursor did not decrease"):
         client.get_runs(job_id="job")
