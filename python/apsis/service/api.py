@@ -27,7 +27,7 @@ from apsis.lib.api import (
 )
 import apsis.lib.itr
 from apsis.lib.timing import Timer
-from apsis.lib.parse import parse_duration
+from apsis.lib.parse import parse_duration, parse_time
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
 from ..jobs import JOB_RUNS_SUFFIX, jso_to_job
@@ -82,6 +82,27 @@ def _parse_cursor(args) -> str | None:
         if run_number(cursor) > MAX_CURSOR:
             raise ValueError(f"cursor too large: {cursor}")
     return cursor
+
+
+def _parse_schedule_span_args(args) -> tuple[ora.Time | None, ora.Time | None]:
+    """Parse and consume the optional schedule bounds.
+
+    :param args: Mutable query parameters with a list of values per name.
+    :return: Start and end times, with None for omitted bounds.
+    :raise ValueError: Bounds are invalid, repeated, or not in increasing order.
+    """
+    bounds = []
+    for name in ("schedule_since", "schedule_until"):
+        value = _pop_arg(args, name)
+        try:
+            bounds.append(None if value is None else parse_time(value))
+        except ValueError:
+            raise ValueError(f"invalid {name}: {value}")
+
+    since, until = bounds
+    if since is not None and until is not None and since >= until:
+        raise ValueError("schedule_since must be before schedule_until")
+    return since, until
 
 
 # -------------------------------------------------------------------------------
@@ -555,7 +576,12 @@ async def runs(request):
     apsis = request.app.apsis
 
     # Get runs from the selected interval.
-    args = request.args
+    args = request.args.copy()
+    # Retain blank schedule bounds so they cannot bypass validation.
+    raw_args = request.get_args(keep_blank_values=True)
+    for name in ("schedule_since", "schedule_until"):
+        if name in raw_args:
+            args[name] = raw_args[name]
     try:
         summary = to_bool(_pop_arg(args, "summary") or "False")
         run_id = args.pop("run_id", None)
@@ -565,6 +591,7 @@ async def runs(request):
         since = _pop_arg(args, "since")
         since = None if since is None else ora.Time(since)
         cursor = _parse_cursor(args)
+        schedule_since, schedule_until = _parse_schedule_span_args(args)
     except ValueError as exc:
         return error(str(exc), 400)
     if job_id is not None:
@@ -591,6 +618,8 @@ async def runs(request):
         state=state,
         since=since,
         with_args=args,
+        schedule_since=schedule_since,
+        schedule_until=schedule_until,
         cursor=cursor,
         limit=limit,
     )

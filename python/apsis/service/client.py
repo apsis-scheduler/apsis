@@ -15,6 +15,7 @@ import websockets.client
 import apsis.service
 from apsis.runs import run_number
 from apsis.lib.json import nkey
+from apsis.lib.parse import parse_time
 
 # -------------------------------------------------------------------------------
 
@@ -287,7 +288,36 @@ class Client:
         """
         return self.__post("/api/v1/runs", run_id, "mark", state_name)
 
-    def get_runs(self, *, job_id=None, state=None, args={}, limit: int | None = None) -> dict:
+    # query params a run arg name can't shadow
+    _RUNS_QUERY_PARAMS = frozenset(
+        {
+            "job_id",
+            "run_id",
+            "state",
+            "since",
+            "summary",
+            "cursor",
+            "schedule_since",
+            "schedule_until",
+        }
+    )
+
+    def get_runs(
+        self,
+        *,
+        job_id=None,
+        state=None,
+        args={},
+        limit: int | None = None,
+        schedule_since: Time | str | None = None,
+        schedule_until: Time | str | None = None,
+    ) -> dict:
+        """
+        :param schedule_since:
+          If not none, lower bound on nominal schedule time, inclusive.
+        :param schedule_until:
+          If not none, upper bound on nominal schedule time, exclusive.
+        """
         # limit is the total runs to return not the page size
         # walk the server pages and stop once we have that many
         if limit is not None and limit < 1:
@@ -298,15 +328,15 @@ class Client:
             query={
                 "job_id": job_id,
                 "state": state,
-                # Include args, but prefix with underscore any that collide with
-                # fixed arg names or start with an underscore, which the server
-                # strips.
-                # FIXME: Oh so hacky.
+                "schedule_since": None
+                if schedule_since is None
+                else str(parse_time(schedule_since)),
+                "schedule_until": None
+                if schedule_until is None
+                else str(parse_time(schedule_until)),
+                # escape reserved names and existing leading underscores
                 **{
-                    "_" + n
-                    if n in {"job_id", "run_id", "state", "since", "cursor", "summary"}
-                    or n.startswith("_")
-                    else n: a
+                    "_" + n if n in self._RUNS_QUERY_PARAMS or n.startswith("_") else n: a
                     for n, a in args.items()
                 },
             },

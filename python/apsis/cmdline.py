@@ -1,4 +1,4 @@
-from ora import Time, Daytime, now, get_display_time_zone
+from ora import Time, Daytime, NonexistentDateDaytime, now, get_display_time_zone
 import rich.box
 import rich.console
 from rich.style import Style
@@ -316,3 +316,50 @@ def parse_at_time(string):
     # FIXME: Accept expressions like "1 hour".
 
     raise ValueError(f"cannot interpret as time: {string}")
+
+
+def parse_time_span(string: str) -> tuple[Time | None, Time | None]:
+    """Parse a time span, with daytimes meaning today in the display zone.
+
+    :param string: START..END with optional endpoints, or a bare START.
+    :return: Inclusive start and exclusive end, with None for omitted bounds.
+    :raise ValueError: The span is invalid, empty, or reversed.
+    """
+    start, _, end = string.partition("..")
+
+    time_now = now()
+
+    def parse_bound(part: str) -> Time | None:
+        part = part.strip()
+        if not part:
+            return None
+        if part == "now":
+            return time_now
+        if part.startswith("+"):
+            try:
+                return time_now + apsis.lib.parse.parse_duration(part[1:])
+            except OverflowError:
+                # like +1e100 or +nan which ora can't turn into a time
+                raise ValueError(f"duration out of range: {part}")
+        try:
+            return apsis.lib.parse.parse_time(part)
+        except ValueError:
+            pass
+        try:
+            daytime = Daytime(part)
+        except ValueError:
+            raise ValueError(f"cannot interpret as time: {part}")
+        z = get_display_time_zone()
+        date, _ = time_now @ z
+        try:
+            return (date, daytime) @ z
+        except NonexistentDateDaytime:
+            raise ValueError(f"daytime does not exist today in {z}: {part}")
+
+    since = parse_bound(start)
+    until = parse_bound(end)
+    if since is None and until is None:
+        raise ValueError(f"empty time span: {string!r}")
+    if since is not None and until is not None and since >= until:
+        raise ValueError(f"time span start must be before end: {string!r}")
+    return since, until

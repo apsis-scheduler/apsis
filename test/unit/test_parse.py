@@ -1,6 +1,46 @@
+import ora
 import pytest
 
+from apsis.lib.parse import parse_time
+
 # -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ora.Time("2026-01-05T09:00:00.00000101Z"),
+        "2026-01-05T09:00:00.00000101Z",
+        "2026-01-06T08:59:00.00000101+23:59",
+        "2026-01-04T09:01:00.00000101-23:59",
+    ],
+)
+def test_parse_time_preserves_instant_and_precision(value):
+    assert parse_time(value) == ora.Time("2026-01-05T09:00:00.00000101Z")
+
+
+@pytest.mark.parametrize("offset", ["+99:99", "+24:00", "-24:00", "+00:60", "-00:60", "+23:60"])
+def test_parse_time_rejects_invalid_offset(offset):
+    with pytest.raises(ValueError, match="invalid UTC offset"):
+        parse_time("2026-01-05T09:00:00" + offset)
+
+
+@pytest.mark.parametrize("suffix", ["Z\0junk", "+99:99\0", "+00:60\0junk"])
+def test_parse_time_rejects_nul(suffix):
+    with pytest.raises(ValueError, match="embedded NUL"):
+        parse_time("2026-01-05T09:00:00" + suffix)
+
+
+@pytest.mark.parametrize("value", [ora.Time.INVALID, ora.Time.MISSING])
+def test_parse_time_rejects_invalid_time(value):
+    with pytest.raises(ValueError, match="invalid time"):
+        parse_time(value)
+
+
+@pytest.mark.parametrize("value", ["0001-01-01T00:00:00+23:59", "9999-12-31T23:59:59-23:59"])
+def test_parse_time_rejects_out_of_range_instant(value):
+    with pytest.raises(ValueError, match="time out of range"):
+        parse_time(value)
 
 
 def test_parse_duration_err():
