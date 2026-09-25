@@ -222,6 +222,9 @@ def main():
         if args.job is None:
             print("error: filter --job is required", file=sys.stderr)
             raise SystemExit(1)
+        if args.limit is not None and args.limit < 1:
+            print("error: --limit must be at least 1", file=sys.stderr)
+            raise SystemExit(1)
 
         schedule_since, schedule_until = args.times
         runs = client.get_runs(

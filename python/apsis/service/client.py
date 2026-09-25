@@ -84,7 +84,9 @@ class Client:
         """
         self.__addr = get_address() if address is None else Address(*address)
 
-    def __url(self, *path, scheme="http", **query):
+    def __url(self, *path, scheme="http", query=None, **kw_query):
+        # query holds params whose names may collide with these keywords
+        query = {**(query or {}), **kw_query}
         query = "&".join(
             str(k) if v is NO_ARG else f"{k}={quote(str(v))}"
             for k, v in query.items()
@@ -101,8 +103,8 @@ class Client:
             )
         )
 
-    def __request(self, method, *path, timeout=None, data=None, **query):
-        url = self.__url(*path, **query)
+    def __request(self, method, *path, timeout=None, data=None, query=None, **kw_query):
+        url = self.__url(*path, query={**(query or {}), **kw_query})
         logging.debug(f"{method} {url} data={data}")
         resp = requests.request(method, url, json=data, timeout=timeout)
         if 200 <= resp.status_code < 300:
@@ -119,7 +121,9 @@ class Client:
     def __get(self, *path, **query):
         return self.__request("GET", *path, **query)
 
-    def __get_paged_runs(self, *path, max_runs: int | None = None, **query) -> dict:
+    def __get_paged_runs(
+        self, *path, max_runs: int | None = None, query: dict[str, str] | None = None
+    ) -> dict:
         """
         Follows the `paging.next` cursor across pages, returning the merged
         {run_id: run} dict, newest first.
@@ -130,12 +134,14 @@ class Client:
         :param max_runs:
           If given, stop once `max_runs` runs are collected and return only the
           newest `max_runs`.  Otherwise walk every page (the full history).
+        :param query:
+          Query params sent with every page, mapping param name to value.
         """
         runs = {}
         cursor = None
         while True:
             # cursor is None on the first request, which __url drops
-            resp = self.__get(*path, cursor=cursor, **query)
+            resp = self.__get(*path, query={**(query or {}), "cursor": cursor})
             runs.update(resp["runs"])
             if max_runs is not None and len(runs) >= max_runs:
                 return dict(list(runs.items())[:max_runs])
@@ -291,7 +297,6 @@ class Client:
             "since",
             "summary",
             "cursor",
-            "limit",
             "schedule_since",
             "schedule_until",
         }
@@ -315,17 +320,26 @@ class Client:
         """
         # limit is the total runs to return not the page size
         # walk the server pages and stop once we have that many
+        if limit is not None and limit < 1:
+            raise ValueError(f"limit must be at least 1: {limit}")
         return self.__get_paged_runs(
             "/api/v1/runs",
             max_runs=limit,
-            job_id=job_id,
-            state=state,
-            schedule_since=None if schedule_since is None else str(parse_time(schedule_since)),
-            schedule_until=None if schedule_until is None else str(parse_time(schedule_until)),
-            # Include args, but prefix with underscore any that collide with
-            # fixed arg names.
-            # FIXME: Oh so hacky.
-            **{"_" + n if n in self._RUNS_QUERY_PARAMS else n: a for n, a in args.items()},
+            query={
+                "job_id": job_id,
+                "state": state,
+                "schedule_since": None
+                if schedule_since is None
+                else str(parse_time(schedule_since)),
+                "schedule_until": None
+                if schedule_until is None
+                else str(parse_time(schedule_until)),
+                # escape reserved names and existing leading underscores
+                **{
+                    "_" + n if n in self._RUNS_QUERY_PARAMS or n.startswith("_") else n: a
+                    for n, a in args.items()
+                },
+            },
         )
 
     def get_run(self, run_id):

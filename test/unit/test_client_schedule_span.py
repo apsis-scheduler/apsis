@@ -34,20 +34,21 @@ def test_span_and_run_args_survive_paging(monkeypatch, since, until, expected):
         "since",
         "summary",
         "cursor",
-        "limit",
         "schedule_since",
         "schedule_until",
     )
-    runs = client.get_runs(
-        job_id="job", args={n: "v" for n in reserved}, schedule_since=since, schedule_until=until
-    )
+    ordinary = {name: "v" for name in ("limit", "max_runs", "data", "timeout", "query", "scheme")}
+    job_args = {name: "v" for name in reserved} | ordinary | {"_schedule_since": "literal"}
+    runs = client.get_runs(job_id="job", args=job_args, schedule_since=since, schedule_until=until)
     assert list(runs) == ["r2", "r1"]
-    queries = [call.kwargs for call in get.call_args_list]
+    queries = [call.kwargs["query"] for call in get.call_args_list]
     assert [q["cursor"] for q in queries] == [None, "r2"]
     for query in queries:
         assert (query["schedule_since"], query["schedule_until"]) == expected
         assert query["job_id"] == "job"
         assert all(query["_" + name] == "v" for name in reserved)
+        assert {name: query[name] for name in ordinary} == ordinary
+        assert query["__schedule_since"] == "literal"
 
 
 @pytest.mark.parametrize("name", ["schedule_since", "schedule_until"])

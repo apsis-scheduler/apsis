@@ -3,6 +3,8 @@ Tests that Client.get_runs follows the /runs paging.next cursor and returns the
 full merged {run_id: run} dict.
 """
 
+from unittest.mock import Mock
+
 import pytest
 
 from apsis.service.client import Client
@@ -14,7 +16,7 @@ def _client_returning(monkeypatch, pages):
     it = iter(pages)
     calls = []
 
-    def fake_get(*path, **query):
+    def fake_get(*path, query):
         calls.append(query.get("cursor"))
         return next(it)
 
@@ -53,6 +55,14 @@ def test_get_runs_limit_stops_early(monkeypatch):
     assert calls == [None, "r4"]  # stopped after two pages
 
 
+@pytest.mark.parametrize("limit", [0, -1])
+def test_get_runs_rejects_limit_below_one(monkeypatch, limit):
+    client, calls = _client_returning(monkeypatch, [])
+    with pytest.raises(ValueError, match="limit must be at least 1"):
+        client.get_runs(job_id="job", limit=limit)
+    assert calls == []
+
+
 def test_get_job_runs_walks_cursor(monkeypatch):
     # get_job_runs paginates the same way, following paging.next across pages
     client, calls = _client_returning(
@@ -80,3 +90,21 @@ def test_get_runs_raises_on_non_decreasing_cursor(monkeypatch, next_cursor):
     )
     with pytest.raises(RuntimeError, match="cursor did not decrease"):
         client.get_runs(job_id="job")
+
+
+def test_get_runs_sends_colliding_args_as_filters(monkeypatch):
+    # job args named like client keywords or starting with an underscore still reach the server as filters
+    requests = []
+
+    def fake_request(method, url, json, timeout):
+        requests.append((url, json, timeout))
+        return Mock(status_code=200, json=Mock(return_value={"runs": {}}))
+
+    monkeypatch.setattr("apsis.service.client.requests.request", fake_request)
+    Client(("localhost", 1)).get_runs(
+        job_id="job", args={"data": "a", "timeout": "5", "summary": "true", "_x": "1"}
+    )
+
+    ((url, json, timeout),) = requests
+    assert url.endswith("?job_id=job&data=a&timeout=5&_summary=true&__x=1")
+    assert json is None and timeout is None
