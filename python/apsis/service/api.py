@@ -560,7 +560,9 @@ async def runs(request):
         run_id = args.pop("run_id", None)
         job_id = _pop_arg(args, "job_id")
         state = _pop_arg(args, "state")
+        state = None if state is None else to_state(state)
         since = _pop_arg(args, "since")
+        since = None if since is None else ora.Time(since)
         cursor = _parse_cursor(args)
     except ValueError as exc:
         return error(str(exc), 400)
@@ -575,7 +577,6 @@ async def runs(request):
         return error("either run_id or job_id filter is required", 400)
 
     when = ora.now()
-    state = None if state is None else to_state(state)
     limit = PAGE_SIZE
     if run_id is not None:
         # run_id lists explicit ids so one page holds them all
