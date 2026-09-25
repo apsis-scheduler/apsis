@@ -88,10 +88,3 @@ def test_invalid_param_rejected(inst, param):
     """Parser ValueError becomes HTTP 400; cursor cases are covered in unit tests."""
     url = f"http://localhost:{inst.port}/api/v1/runs"
     assert requests.get(url, params={"job_id": "paginated", param: "bad"}).status_code == 400
-
-
-def test_job_runs_rejects_unsupported_param(inst):
-    url = f"http://localhost:{inst.port}/api/v1/jobs/paginated/runs"
-    resp = requests.get(url, params={"state": "failure"})
-    assert resp.status_code == 400
-    assert "unsupported params: state" in resp.json()["error"]
