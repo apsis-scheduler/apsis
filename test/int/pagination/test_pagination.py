@@ -83,7 +83,8 @@ def test_run_id_filter_returns_all(inst):
     assert jso["paging"]["next"] is None
 
 
-def test_invalid_cursor_rejected(inst):
-    """Parser ValueError becomes HTTP 400; input cases are covered in unit tests."""
+@pytest.mark.parametrize("param", ["cursor", "state", "since"])
+def test_invalid_param_rejected(inst, param):
+    """Parser ValueError becomes HTTP 400; cursor cases are covered in unit tests."""
     url = f"http://localhost:{inst.port}/api/v1/runs"
-    assert requests.get(url, params={"job_id": "paginated", "cursor": "bad"}).status_code == 400
+    assert requests.get(url, params={"job_id": "paginated", param: "bad"}).status_code == 400

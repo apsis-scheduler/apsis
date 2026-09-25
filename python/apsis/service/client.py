@@ -284,6 +284,8 @@ class Client:
     def get_runs(self, *, job_id=None, state=None, args={}, limit: int | None = None) -> dict:
         # limit is the total runs to return not the page size
         # walk the server pages and stop once we have that many
+        if limit is not None and limit < 1:
+            raise ValueError(f"limit must be at least 1: {limit}")
         return self.__get_paged_runs(
             "/api/v1/runs",
             max_runs=limit,
