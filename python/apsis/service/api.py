@@ -218,13 +218,16 @@ async def job_runs(request, job_id):
     """
     Serves `GET /jobs/<job_id>/runs`; dispatched from `job()`, not routed.
 
-    One page plus a paging.next cursor, same shape as GET /runs.
+    One page plus a paging.next cursor, same shape as GET /runs.  Only
+    `cursor` is supported, any other query param is a 400.
     """
     apsis = request.app.apsis
     try:
         cursor = _parse_cursor(request.args)
     except ValueError as exc:
         return error(str(exc), 400)
+    if request.args:
+        return error(f"unsupported params: {', '.join(sorted(request.args))}", 400)
     job_id = match_job_id(apsis.jobs, unquote(job_id))
     when = ora.now()
     runs, next_cursor = apsis.run_store.query_page(job_id=job_id, cursor=cursor, limit=PAGE_SIZE)
