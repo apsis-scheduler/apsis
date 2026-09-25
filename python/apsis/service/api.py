@@ -218,7 +218,8 @@ async def job_runs(request, job_id):
     """
     Serves `GET /jobs/<job_id>/runs`; dispatched from `job()`, not routed.
 
-    One page plus a paging.next cursor, same shape as GET /runs.
+    One page plus a paging.next cursor, same shape as GET /runs.  Only
+    `cursor` is read, other query params are ignored.
     """
     apsis = request.app.apsis
     try:
