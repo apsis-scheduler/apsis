@@ -53,6 +53,14 @@ def test_get_runs_limit_stops_early(monkeypatch):
     assert calls == [None, "r4"]  # stopped after two pages
 
 
+@pytest.mark.parametrize("limit", [0, -1])
+def test_get_runs_rejects_limit_below_one(monkeypatch, limit):
+    client, calls = _client_returning(monkeypatch, [])
+    with pytest.raises(ValueError, match="limit must be at least 1"):
+        client.get_runs(job_id="job", limit=limit)
+    assert calls == []
+
+
 def test_get_job_runs_walks_cursor(monkeypatch):
     # get_job_runs paginates the same way, following paging.next across pages
     client, calls = _client_returning(
