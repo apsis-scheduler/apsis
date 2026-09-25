@@ -293,7 +293,9 @@ class Client:
             # fixed arg names.
             # FIXME: Oh so hacky.
             **{
-                "_" + n if n in {"job_id", "run_id", "state", "since", "cursor", "limit"} else n: a
+                "_" + n
+                if n in {"job_id", "run_id", "state", "since", "cursor", "limit", "max_runs"}
+                else n: a
                 for n, a in args.items()
             },
         )
