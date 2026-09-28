@@ -1,4 +1,3 @@
-import aiofiles
 import asyncio
 from collections.abc import Hashable
 import logging
@@ -382,17 +381,11 @@ async def load_jobs_dir(path, yaml_loader=DupCheckSafeLoader):
     jobs = {}
     errors = []
 
-    async def load_job(path, job_id):
+    def load_job(path, job_id):
         log.debug(f"loading: {path}")
         try:
-            async with aiofiles.open(path, mode="r") as file:
-                content = await file.read()
-
-            def _parse():
-                job_jso = yaml.load(content, Loader=yaml_loader)
-                return Job.from_jso(job_jso, job_id)
-
-            job = await asyncio.to_thread(_parse)
+            job_jso = yaml.load(path.read_text(), Loader=yaml_loader)
+            job = Job.from_jso(job_jso, job_id)
             return job_id, job, None
         except (DuplicateKeyError, yaml.YAMLError) as exc:
             schema_err = SchemaError(str(exc))
@@ -405,7 +398,7 @@ async def load_jobs_dir(path, yaml_loader=DupCheckSafeLoader):
 
     for chunk in itr.chunks(list_yaml_files(jobs_path), JOB_LOAD_BATCH_SIZE):
         for job_id, job, exc in await asyncio.gather(
-            *(load_job(path, job_id) for path, job_id in chunk)
+            *(asyncio.to_thread(load_job, path, job_id) for path, job_id in chunk)
         ):
             if job is not None:
                 jobs[job_id] = job
