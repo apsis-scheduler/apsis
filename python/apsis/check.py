@@ -330,21 +330,22 @@ def check_job_dependencies_scheduled(
         timing_reported = False
 
         for sched_time, _, inst in get_insts_to_schedule(job, sched_start, sched_stop):
-            run = Run(inst)
             inst_node = (job.job_id, args_key(inst.args))
 
             # Check for unscheduled dependencies.
-            for dep in dep_conds:
-                bound = dep.bind(run, jobs_obj)
-                if not bound:
-                    continue
-                dep_node = (bound.job_id, args_key(bound.args))
-                if dep_node not in inst_times:
-                    dep_inst = Instance(bound.job_id, bound.args)
-                    yield (
-                        job,
-                        f"scheduled run {inst}: dependency {dep_inst} not scheduled",
-                    )
+            if len(deps_of.get(inst_node, ())) != len(dep_conds):
+                run = Run(inst)
+                for dep in dep_conds:
+                    bound = dep.bind(run, jobs_obj)
+                    if not bound:
+                        continue
+                    dep_node = (bound.job_id, args_key(bound.args))
+                    if dep_node not in inst_times:
+                        dep_inst = Instance(bound.job_id, bound.args)
+                        yield (
+                            job,
+                            f"scheduled run {inst}: dependency {dep_inst} not scheduled",
+                        )
 
             # Timing check: only report once per job (first violating instance).
             # Skip cycle nodes — their exp_start is invalid.

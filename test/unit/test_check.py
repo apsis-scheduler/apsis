@@ -1,5 +1,6 @@
 from typing import List
 
+import ora
 import pytest
 
 import apsis.check
@@ -8,6 +9,7 @@ from apsis.cond.dependency import Dependency
 import apsis.jobs
 from apsis.jobs import InMemoryJobs, Job
 from apsis.runs import Instance, Run, get_bind_args, template_expand
+from apsis.schedule import ExplicitSchedule
 
 # -------------------------------------------------------------------------------
 
@@ -248,3 +250,44 @@ def test_param_name_does_not_mask_other_errors():
     errors = check_job(jobs, "job1")
     assert any("'a=b'" in e for e in errors)
     assert any("missing" in e for e in errors)
+
+
+@pytest.mark.parametrize("in_dep_window", [False, True])
+@pytest.mark.parametrize("dependency_scheduled", [False, True])
+@pytest.mark.parametrize("dependency_enabled", [False, True])
+def test_dependency_check_missing_and_disabled(
+    in_dep_window, dependency_scheduled, dependency_enabled
+):
+    start = ora.Time("2026-09-28T00:00:00Z")
+    run_time = start + (60 if in_dep_window else 2 * 86400)
+    producer_schedule = ExplicitSchedule([start])
+    jobs = InMemoryJobs(
+        [
+            Job("scheduled", schedules=[producer_schedule]),
+            Job("other", schedules=[producer_schedule] if dependency_scheduled else []),
+            Job(
+                "dependent",
+                params=["target"],
+                schedules=[ExplicitSchedule([run_time], {"target": "other"})],
+                conds=[
+                    Dependency("scheduled"),
+                    Dependency("{{ target }}", enabled=dependency_enabled),
+                ],
+            ),
+        ]
+    )
+    errors = list(
+        apsis.check.check_job_dependencies_scheduled(
+            jobs,
+            jobs.get_jobs(),
+            sched_times=(run_time, run_time + 1),
+            dep_times=(start, start + 86400),
+        )
+    )
+    if dependency_enabled and not dependency_scheduled:
+        assert len(errors) == 1
+        job, message = errors[0]
+        assert job.job_id == "dependent"
+        assert "dependency other() not scheduled" in message
+    else:
+        assert errors == []
