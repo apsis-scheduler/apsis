@@ -2,7 +2,10 @@ import asyncio
 import ora
 import pytest
 
-from apsis.scheduler import Scheduler
+from apsis.jobs import Job
+from apsis.schedule import ExplicitSchedule
+from apsis.schedule.stop import DurationStopSchedule
+from apsis.scheduler import Scheduler, get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
 
@@ -76,6 +79,35 @@ async def test_max_age_ok():
     seconds after startup.
     """
     await _run_iteration(stop=ora.now(), max_age=3600)
+
+
+@pytest.mark.parametrize("include_schedule_time", [False, True])
+def test_get_insts_to_schedule_args(include_schedule_time):
+    start = ora.Time("2026-09-28T12:00:00Z")
+    schedule_args = {"number": 42, "unused": "ignored", "schedule_time": "overridden"}
+    schedule = ExplicitSchedule([start, start + 60], schedule_args)
+    schedule.stop_schedule = DurationStopSchedule(30)
+    params = ["number", "time", "missing"]
+    expected_args = {"number": "42", "time": str(start)}
+    if include_schedule_time:
+        params.append("schedule_time")
+        expected_args["schedule_time"] = str(start)
+    job = Job(
+        "example",
+        params=params,
+        schedules=[schedule, ExplicitSchedule([start], enabled=False)],
+    )
+
+    instances = list(get_insts_to_schedule(job, start, start + 60))
+
+    assert len(instances) == 1
+    sched_time, stop_time, instance = instances[0]
+    assert sched_time == start
+    assert stop_time == start + 30
+    assert instance.job_id == "example"
+    assert instance.args == expected_args
+    assert schedule.args == schedule_args
+    assert schedule.args["schedule_time"] == "overridden"
 
 
 @pytest.mark.asyncio

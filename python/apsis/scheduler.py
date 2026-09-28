@@ -22,8 +22,11 @@ def get_insts_to_schedule(job, start, stop):
         if schedule.enabled:
             times = itertools.takewhile(lambda t: t[0] < stop, schedule(start))
             for sched_time, args in times:
-                args = {**args, "schedule_time": sched_time}
-                args = {a: str(v) for a, v in args.items() if a in job.params}
+                args = {
+                    param: str(sched_time if param == "schedule_time" else args[param])
+                    for param in job.params
+                    if param == "schedule_time" or param in args
+                }
                 stop_time = (
                     None if schedule.stop_schedule is None else schedule.stop_schedule(sched_time)
                 )
