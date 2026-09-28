@@ -139,7 +139,10 @@ def template_expand(template, args):
     :raise NameError:
       The template references a name not in `args`.
     """
-    template = _get_template(str(template))
+    template = str(template)
+    if "{" not in template and "\n" not in template and "\r" not in template:
+        return template
+    template = _get_template(template)
     return template.render(args)
 
 
