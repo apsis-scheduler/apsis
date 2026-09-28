@@ -210,7 +210,7 @@ def _propagate_expected_starts(inst_times, graph):
 
     while queue:
         node = queue.popleft()
-        for nxt in graph[node]:
+        for nxt in graph.get(node, ()):
             if exp_start[node] > exp_start[nxt]:
                 exp_start[nxt] = exp_start[node]
             indegree[nxt] -= 1
