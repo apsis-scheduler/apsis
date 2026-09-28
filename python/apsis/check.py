@@ -171,15 +171,19 @@ def _build_dep_graph(jobs_dir, jobs_obj, inst_times):
     """
     graph = defaultdict(list)
     deps_of = defaultdict(list)
+    dep_conds_by_job_id = {
+        job.job_id: [cond for cond in job.conds if isinstance(cond, Dependency)]
+        for job in jobs_dir.get_jobs()
+    }
 
     for job_id, args_k in inst_times:
-        job = jobs_dir.get_job(job_id)
+        dep_conds = dep_conds_by_job_id[job_id]
+        if not dep_conds:
+            continue
         inst = Instance(job_id, dict(args_k))
         run = Run(inst)
 
-        for cond in job.conds:
-            if not isinstance(cond, Dependency):
-                continue
+        for cond in dep_conds:
             bound = cond.bind(run, jobs_obj)
             if not bound:
                 continue
