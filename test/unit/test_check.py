@@ -255,8 +255,9 @@ def test_param_name_does_not_mask_other_errors():
 @pytest.mark.parametrize("in_dep_window", [False, True])
 @pytest.mark.parametrize("dependency_scheduled", [False, True])
 @pytest.mark.parametrize("dependency_enabled", [False, True])
+@pytest.mark.parametrize("scheduled_dependency_count", [1, 2])
 def test_dependency_check_missing_and_disabled(
-    in_dep_window, dependency_scheduled, dependency_enabled
+    in_dep_window, dependency_scheduled, dependency_enabled, scheduled_dependency_count
 ):
     start = ora.Time("2026-09-28T00:00:00Z")
     run_time = start + (60 if in_dep_window else 2 * 86400)
@@ -269,10 +270,8 @@ def test_dependency_check_missing_and_disabled(
                 "dependent",
                 params=["target"],
                 schedules=[ExplicitSchedule([run_time], {"target": "other"})],
-                conds=[
-                    Dependency("scheduled"),
-                    Dependency("{{ target }}", enabled=dependency_enabled),
-                ],
+                conds=[Dependency("scheduled")] * scheduled_dependency_count
+                + [Dependency("{{ target }}", enabled=dependency_enabled)],
             ),
         ]
     )
