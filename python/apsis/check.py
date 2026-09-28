@@ -1,4 +1,4 @@
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 import re
 
 import ora
@@ -200,13 +200,10 @@ def _propagate_expected_starts(inst_times, graph):
     Returns:
         (exp_start, cycle_nodes) where cycle_nodes is empty if no cycles.
     """
-    indegree = {node: 0 for node in inst_times}
-    for dependents in graph.values():
-        for node in dependents:
-            indegree[node] += 1
+    indegree = Counter(node for dependents in graph.values() for node in dependents)
 
     exp_start = dict(inst_times)
-    queue = deque(node for node in inst_times if indegree[node] == 0)
+    queue = deque(node for node in inst_times if node not in indegree)
 
     while queue:
         node = queue.popleft()
@@ -217,7 +214,7 @@ def _propagate_expected_starts(inst_times, graph):
             if indegree[nxt] == 0:
                 queue.append(nxt)
 
-    cycle_nodes = {node for node in inst_times if indegree[node] > 0}
+    cycle_nodes = {node for node, count in indegree.items() if count > 0}
     return exp_start, cycle_nodes
 
 
