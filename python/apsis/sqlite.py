@@ -8,7 +8,7 @@ import logging
 import ora
 from pathlib import Path
 import sqlalchemy as sa
-from typing import Iterable, Optional
+from typing import Iterable
 import ujson
 from typing import Iterator
 
@@ -342,6 +342,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         Build WHERE clause for run queries.
@@ -376,6 +378,16 @@ class RunDB:
                 where.append(sa.func.json_extract(TBL_RUNS.c.args, path) == v)
         if min_timestamp is not None:
             where.append(TBL_RUNS.c.timestamp >= dump_time(min_timestamp))
+        # filter on schedule time from the times json, compared as iso strings
+        if schedule_since is not None:
+            where.append(
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule")
+                >= str(ora.Time(schedule_since))
+            )
+        if schedule_until is not None:
+            where.append(
+                sa.func.json_extract(TBL_RUNS.c.times, "$.schedule") < str(ora.Time(schedule_until))
+            )
 
         return sa.and_(*where)
 
@@ -572,6 +584,8 @@ class RunDB:
         args=None,
         with_args=None,
         min_timestamp=None,
+        schedule_since=None,
+        schedule_until=None,
         max_rowid=None,
         limit,
     ) -> list[Run]:
@@ -593,6 +607,8 @@ class RunDB:
             args=args,
             with_args=with_args,
             min_timestamp=min_timestamp,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         if max_rowid is not None:
             expr = sa.and_(expr, TBL_RUNS.c.rowid < max_rowid)

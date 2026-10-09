@@ -364,6 +364,20 @@ def run_number(run_id: str) -> int:
     return int(match.group(1))
 
 
+def _in_schedule_span(run: Run, schedule_since, schedule_until) -> bool:
+    """
+    Returns true iff `run`'s nominal (schedule) time is in
+    `[schedule_since, schedule_until)`, where either bound may be None.  A run
+    with no schedule time is never in a span.
+    """
+    time = run.times.get("schedule")
+    return (
+        time is not None
+        and (schedule_since is None or time >= schedule_since)
+        and (schedule_until is None or time < schedule_until)
+    )
+
+
 class RunStore:
     """
     Storage API that stitches together cached in-memory runs and data from the DB. Additionally it keeps cached run
@@ -549,7 +563,19 @@ class RunStore:
 
         return now(), in_memory_list + db_runs
 
-    def __prepare_query(self, *, run_ids, job_id, state, since, args, with_args, limit_lookback):
+    def __prepare_query(
+        self,
+        *,
+        run_ids,
+        job_id,
+        state,
+        since,
+        args,
+        with_args,
+        limit_lookback,
+        schedule_since=None,
+        schedule_until=None,
+    ):
         """
         Filters the in-memory runs and normalizes the DB filters.
 
@@ -565,6 +591,16 @@ class RunStore:
         if since is not None:
             since = ora.Time(since)
             in_memory = (r for r in in_memory if r.timestamp >= since)
+
+        # same span filter as the db so in-memory and persisted runs agree
+        if schedule_since is not None:
+            schedule_since = ora.Time(schedule_since)
+        if schedule_until is not None:
+            schedule_until = ora.Time(schedule_until)
+        if schedule_since is not None or schedule_until is not None:
+            in_memory = (
+                r for r in in_memory if _in_schedule_span(r, schedule_since, schedule_until)
+            )
 
         # args takes precedence over with_args
         if args is not None:
@@ -624,6 +660,8 @@ class RunStore:
         state: "State | Iterable[State] | None" = None,
         since: "ora.Time | str | None" = None,
         with_args: dict[str, str] | None = None,
+        schedule_since: "ora.Time | str | None" = None,
+        schedule_until: "ora.Time | str | None" = None,
         cursor: str | None = None,
         limit: int,
     ) -> tuple[list["Run"], str | None]:
@@ -649,6 +687,8 @@ class RunStore:
             args=None,
             with_args=with_args,
             limit_lookback=True,
+            schedule_since=schedule_since,
+            schedule_until=schedule_until,
         )
         max_rowid = None if cursor is None else run_number(cursor)
         if max_rowid is not None:
@@ -662,7 +702,13 @@ class RunStore:
         # limit+1 detects a further page, and drop db rows already held in memory
         db_page = [
             r
-            for r in self.__run_db.query_paged(**db_kwargs, max_rowid=max_rowid, limit=limit + 1)
+            for r in self.__run_db.query_paged(
+                **db_kwargs,
+                schedule_since=schedule_since,
+                schedule_until=schedule_until,
+                max_rowid=max_rowid,
+                limit=limit + 1,
+            )
             if r.run_id not in in_memory_ids
         ]
 
