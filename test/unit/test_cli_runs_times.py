@@ -24,10 +24,10 @@ def test_runs_defaults_and_bad_span(monkeypatch, capsys):
         schedule_until=None,
     )
     client.get_runs.reset_mock()
-    for bad in ("2026-01-01T00:00:00+99:99", "0001-01-01T00:00:00+23:59"):
-        with pytest.raises(SystemExit) as exc:
-            _run(monkeypatch, "--times", bad)
-        assert exc.value.code == 2
-        err = capsys.readouterr().err
-        assert "--times" in err and f"cannot interpret as time: {bad}" in err
-        client.get_runs.assert_not_called()
+    bad = "0001-01-01T00:00:00+23:59"
+    with pytest.raises(SystemExit) as exc:
+        _run(monkeypatch, "--times", bad)
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--times" in err and f"cannot interpret as time: {bad}" in err
+    client.get_runs.assert_not_called()

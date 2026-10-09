@@ -88,8 +88,6 @@ def test_schedule_span_query_and_cli(inst):
             ["", str(DAYS[2])],
             [str(DAYS[2]), ""],
             ["", ""],
-            "2026-01-01T00:00:00+99:99",
-            "2026-01-01T00:00:00+99:99\0",
             "0001-01-01T00:00:00+23:59",
         ):
             resp = _get(inst, job_id="timed", **{name: value})

@@ -275,9 +275,11 @@ def main():
         type=parse_times_arg,
         default=(None, None),
         help=(
-            "show only runs whose schedule time is in TIMESPAN, given as START..END. "
-            "START is inclusive, END is exclusive, and either may be omitted as in START.. or ..END. "
-            "each end is a time, 'now', +DURATION from now, or a daytime meaning today"
+            "show only runs whose schedule time is in TIMESPAN, given as START..END "
+            "with START inclusive and END exclusive. either end may be left off, and each "
+            "is a time with a zone, 'now', +DURATION from now, or a daytime meaning today. "
+            "examples: 2026-10-01T00:00:00Z..2026-10-02T00:00:00Z, "
+            "2026-10-01T00:00:00Z.., ..2026-10-02T00:00:00Z, now..+2h, 09:00:00..17:00:00"
         ),
     )
     cmd.add_argument(

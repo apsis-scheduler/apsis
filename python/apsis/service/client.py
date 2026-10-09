@@ -15,7 +15,6 @@ import websockets.client
 import apsis.service
 from apsis.runs import run_number
 from apsis.lib.json import nkey
-from apsis.lib.parse import parse_time
 
 # -------------------------------------------------------------------------------
 
@@ -328,12 +327,8 @@ class Client:
             query={
                 "job_id": job_id,
                 "state": state,
-                "schedule_since": None
-                if schedule_since is None
-                else str(parse_time(schedule_since)),
-                "schedule_until": None
-                if schedule_until is None
-                else str(parse_time(schedule_until)),
+                "schedule_since": None if schedule_since is None else str(Time(schedule_since)),
+                "schedule_until": None if schedule_until is None else str(Time(schedule_until)),
                 # escape reserved names and existing leading underscores
                 **{
                     "_" + n if n in self._RUNS_QUERY_PARAMS or n.startswith("_") else n: a

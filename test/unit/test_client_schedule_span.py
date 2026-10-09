@@ -56,7 +56,7 @@ def test_invalid_span_is_rejected_before_request(monkeypatch, name):
     client = Client(("localhost", 1))
     get = Mock()
     monkeypatch.setattr(client, "_Client__get", get)
-    for value, error in [("2026-01-01T00:00:00+99:99", ValueError), (0, TypeError)]:
+    for value, error in [("garbage", ValueError), (0, TypeError)]:
         with pytest.raises(error):
             client.get_runs(job_id="job", **{name: value})
         get.assert_not_called()

@@ -27,7 +27,7 @@ from apsis.lib.api import (
 )
 import apsis.lib.itr
 from apsis.lib.timing import Timer
-from apsis.lib.parse import parse_duration, parse_time
+from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
 from ..jobs import JOB_RUNS_SUFFIX, jso_to_job
@@ -95,8 +95,8 @@ def _parse_schedule_span_args(args) -> tuple[ora.Time | None, ora.Time | None]:
     for name in ("schedule_since", "schedule_until"):
         value = _pop_arg(args, name)
         try:
-            bounds.append(None if value is None else parse_time(value))
-        except ValueError:
+            bounds.append(None if value is None else ora.Time(value))
+        except (ValueError, OverflowError):
             raise ValueError(f"invalid {name}: {value}")
 
     since, until = bounds

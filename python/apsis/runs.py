@@ -14,7 +14,6 @@ from .states import State, TRANSITIONS, ACTIVE_STATES, to_state
 from .lib.asyn import Publisher
 from .lib.calendar import get_calendar
 from .lib.memo import memoize
-from .lib.parse import parse_time
 from .lib.py import format_ctor, iterize
 
 log = logging.getLogger(__name__)
@@ -534,8 +533,6 @@ class RunStore:
         args=None,
         with_args=None,
         limit_lookback=True,
-        schedule_since=None,
-        schedule_until=None,
     ):
         """
         :param state:
@@ -550,11 +547,6 @@ class RunStore:
         :param limit_lookback:
           If True (default), applies lookback window. If False, queries all runs.
           Set to False for condition checks that need to see all active runs.
-        :param schedule_since:
-          If not none, lower bound on nominal schedule time, inclusive.
-        :param schedule_until:
-          If not none, upper bound on nominal schedule time, exclusive. Runs
-          with no schedule time are excluded once either bound is set.
         """
         in_memory_list, db_kwargs = self.__prepare_query(
             run_ids=run_ids,
@@ -564,8 +556,6 @@ class RunStore:
             args=args,
             with_args=with_args,
             limit_lookback=limit_lookback,
-            schedule_since=schedule_since,
-            schedule_until=schedule_until,
         )
         in_memory_ids = {r.run_id for r in in_memory_list}
 
@@ -583,8 +573,8 @@ class RunStore:
         args,
         with_args,
         limit_lookback,
-        schedule_since,
-        schedule_until,
+        schedule_since=None,
+        schedule_until=None,
     ):
         """
         Filters the in-memory runs and normalizes the DB filters.
@@ -604,9 +594,9 @@ class RunStore:
 
         # same span filter as the db so in-memory and persisted runs agree
         if schedule_since is not None:
-            schedule_since = parse_time(schedule_since)
+            schedule_since = ora.Time(schedule_since)
         if schedule_until is not None:
-            schedule_until = parse_time(schedule_until)
+            schedule_until = ora.Time(schedule_until)
         if schedule_since is not None or schedule_until is not None:
             in_memory = (
                 r for r in in_memory if _in_schedule_span(r, schedule_since, schedule_until)
@@ -659,8 +649,6 @@ class RunStore:
             args=args,
             with_args=with_args,
             min_timestamp=min_ts,
-            schedule_since=schedule_since,
-            schedule_until=schedule_until,
         )
         return in_memory_list, db_kwargs
 
@@ -714,7 +702,13 @@ class RunStore:
         # limit+1 detects a further page, and drop db rows already held in memory
         db_page = [
             r
-            for r in self.__run_db.query_paged(**db_kwargs, max_rowid=max_rowid, limit=limit + 1)
+            for r in self.__run_db.query_paged(
+                **db_kwargs,
+                schedule_since=schedule_since,
+                schedule_until=schedule_until,
+                max_rowid=max_rowid,
+                limit=limit + 1,
+            )
             if r.run_id not in in_memory_ids
         ]
 
