@@ -103,7 +103,7 @@ class BoundSkipDuplicate(NonmonotonicRunStoreCondition):
             self,
             check_states=self.__check_states,
             target_state=self.__target_state,
-            job_id=self.__job_id,
+            job_id=self.__run_id,
             inst=self.__inst,
         )
 
