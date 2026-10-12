@@ -1,11 +1,20 @@
 from collections import defaultdict, deque
+from collections.abc import Iterable
 import re
 
 import ora
 
 from apsis.cond.dependency import Dependency
-from apsis.jobs import JOB_RUNS_SUFFIX, Job, Jobs
-from apsis.runs import BIND_ARGS, Instance, Run, is_template, validate_args, bind
+from apsis.jobs import JOB_RUNS_SUFFIX, Job, Jobs, JobsDir
+from apsis.runs import (
+    BIND_ARGS,
+    Instance,
+    Run,
+    is_template,
+    validate_args,
+    bind,
+    template_expand,
+)
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
@@ -156,6 +165,89 @@ def _has_dependencies(job: Job) -> bool:
 def _node_inst(node: Node) -> Instance:
     job_id, args_k = node
     return Instance(job_id, dict(args_k))
+
+
+def _get_dependency_job_ids(job: Job) -> set[str] | None:
+    """Returns the ids of jobs that dependency conditions of `job` name.
+
+    Ids are expanded as when binding a run, with the job id and the args of
+    each schedule that are params other than `schedule_time`, or with no args
+    if the job has no schedules.  Returns `None` if one of them fails to expand.
+    """
+    job_ids = set()
+    for schedule_args in [s.args for s in job.schedules] or [{}]:
+        args = {
+            a: str(v) for a, v in schedule_args.items() if a in job.params and a != "schedule_time"
+        }
+        bind_args = {**BIND_ARGS, "job_id": job.job_id, **args}
+        for cond in job.conds:
+            if not isinstance(cond, Dependency):
+                continue
+            try:
+                job_ids.add(template_expand(cond.job_id, bind_args))
+            except Exception:
+                return None
+    return job_ids
+
+
+def _get_job_graph(jobs_dir: JobsDir) -> dict[str, set[str] | None]:
+    """Returns the ids of jobs each job in `jobs_dir` depends on.
+
+    A job maps to `None` if it may depend on any job.
+    """
+    return {job.job_id: _get_dependency_job_ids(job) for job in jobs_dir.get_jobs()}
+
+
+def _get_upstream_job_ids(
+    job_graph: dict[str, set[str] | None], job_ids: Iterable[str]
+) -> set[str] | None:
+    """Returns `job_ids` and the ids of jobs they transitively depend on.
+
+    Returns `None` if that may be any job.
+    """
+    upstream = set()
+    queue = list(job_ids)
+    while queue:
+        job_id = queue.pop()
+        if job_id in upstream:
+            continue
+        upstream.add(job_id)
+        dep_ids = job_graph.get(job_id, set())
+        if dep_ids is None:
+            return None
+        queue.extend(dep_ids)
+    return upstream
+
+
+def get_downstream_job_ids(jobs_dir: JobsDir, job_ids: Iterable[str]) -> set[str]:
+    """
+    Returns ids of jobs in `jobs_dir` that are in `job_ids` or transitively
+    depend on any of them.
+
+    `job_ids` may include ids of jobs not in `jobs_dir`, such as deleted jobs,
+    whose dependents are still included.  A job whose templated dependency ids
+    fail to expand is treated as depending on every job.
+    """
+    job_graph = _get_job_graph(jobs_dir)
+    dependents = defaultdict(set)
+    any_dependents = []
+    for job_id, dep_ids in job_graph.items():
+        if dep_ids is None:
+            any_dependents.append(job_id)
+        else:
+            for dep_id in dep_ids:
+                dependents[dep_id].add(job_id)
+
+    downstream = set()
+    queue = list(job_ids)
+    if queue:
+        queue.extend(any_dependents)
+    while queue:
+        job_id = queue.pop()
+        if job_id not in downstream:
+            downstream.add(job_id)
+            queue.extend(dependents[job_id])
+    return downstream & job_graph.keys()
 
 
 def _build_instances(jobs, start, stop):
@@ -323,6 +415,10 @@ def check_job_dependencies_scheduled(
     """
     Validate that job dependencies are scheduled and respect timing constraints.
 
+    Runs are listed only for the given jobs with dependencies and the jobs
+    upstream of them.  Upstream jobs that aren't given aren't checked, apart
+    from cycle reporting.
+
     For each scheduled run of the given jobs within `sched_times`, this checks:
     - A matching scheduled run exists for each dependency within `dep_times`
     - The dependency is not scheduled too late relative to the job run
@@ -339,8 +435,17 @@ def check_job_dependencies_scheduled(
 
     jobs_obj = Jobs(jobs_dir, MockJobDb())
 
+    # list runs for the given jobs with dependencies and every job upstream of them
+    job_graph = _get_job_graph(jobs_dir)
+    list_ids = _get_upstream_job_ids(job_graph, (j.job_id for j in jobs if _has_dependencies(j)))
+    if list_ids is None:
+        list_ids = job_graph.keys()
+    upstream_ids = list_ids - {j.job_id for j in jobs}
+    list_jobs = [j for j in jobs if j.job_id in list_ids]
+    list_jobs += [j for j in jobs_dir.get_jobs() if j.job_id in upstream_ids]
+
     # Build the dependency graph and propagate expected start times.
-    inst_times, job_insts = _build_instances(jobs, dep_start, dep_stop)
+    inst_times, job_insts = _build_instances(list_jobs, dep_start, dep_stop)
     graph, deps_of, missing = _build_dep_graph(jobs_dir, jobs_obj, inst_times)
     exp_start, cycle_nodes = _propagate_expected_starts(inst_times, graph)
 
