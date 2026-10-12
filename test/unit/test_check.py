@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import List
 
 import pytest
@@ -15,6 +16,32 @@ from apsis.runs import Instance, Run, get_bind_args, template_expand
 def check_job(jobs, job_id) -> List[str]:
     job = jobs.get_job(job_id)
     return list(apsis.check.check_job(jobs, job))
+
+
+@pytest.mark.parametrize(
+    "graph, updates, cycle_nodes",
+    [
+        ({}, {}, set()),
+        ({"root": ["dependent"], "late": ["dependent"]}, {"dependent": 4}, set()),
+        ({"late": ["dependent", "dependent"]}, {"dependent": 4}, set()),
+        ({"late": ["root"], "root": ["dependent"]}, {"root": 4, "dependent": 4}, set()),
+        ({"root": ["dependent"], "dependent": ["root"]}, {}, {"root", "dependent"}),
+        (
+            {"root": ["dependent"], "dependent": ["root", "late"]},
+            {},
+            {"root", "dependent", "late"},
+        ),
+    ],
+)
+def test_propagate_expected_starts(graph, updates, cycle_nodes):
+    inst_times = {"root": 1, "late": 4, "dependent": 2, "isolated": 3}
+
+    actual_starts, actual_cycle_nodes = apsis.check._propagate_expected_starts(
+        inst_times, defaultdict(list, graph)
+    )
+
+    assert actual_starts == {**inst_times, **updates}
+    assert actual_cycle_nodes == cycle_nodes
 
 
 def test_dependency_no_job():
