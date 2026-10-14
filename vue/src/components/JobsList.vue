@@ -1,5 +1,5 @@
  <template lang="pug">
-div
+div.jobs-list
   div.controls
     div
       .label Job Path:
@@ -40,52 +40,50 @@ div
         @click="$emit('showRuns')"
       ) Show Runs
 
-  table.widetable
-    colgroup
-      col(style="max-width: 300px;")
-      col(style="max-width: 300px;")
-      col(style="")
+  div.jobs-header
+    div Job
+    div Parameters
+    div Description
 
-    thead
-      tr
-        th
-          div.cell
-            | Job
-
-        th Parameters
-        th Description
-
-    tbody
-      tr.grid(
-        v-for="[path, subpath, name, job] in jobRows"
-        :key="subpath.concat([name]).join('/')"
+  DynamicScroller.jobs-scroller(
+    ref="scroller"
+    :items="jobRows"
+    key-field="key"
+    :min-item-size="31"
+    :style="{ height: 'calc(100vh - ' + scrollerTop + 'px - 1rem)' }"
+  )
+    template(slot-scope="{ item, active }")
+      DynamicScrollerItem.row(
+        :item="item"
+        :active="active"
+        :size-dependencies="[item.job]"
       )
-        td(:style="{ 'padding-left': (30 * subpath.length) + 'px' }")
+        div(:style="{ 'padding-left': (30 * item.subpath.length) + 'px' }")
 
           //- a job
           div.cell(
-            v-if="job" 
+            v-if="item.job"
           )
             svg.icon(viewBox="0 0 1800 1800", xmlns="http://www.w3.org/2000/svg")
               path(d="M 200 600 L 1600 600 L 1600 1600 L 200 1600 L 200 600" stroke="#666" stroke-width="100" fill="transparent")
               path(d="M 200 600 L 350 1000 L 1450 1000 L 1600 600" stroke="#888" stroke-width="80" fill="transparent")
               path(d="M 500 600 a 250 200 0 0 1 800 0" stroke="#888" stroke-width="150" fill="transparent")
 
-            Job.name(:job-id="job.job_id" :name="name")
+            Job.name(:job-id="item.job.job_id" :name="item.name")
 
             JobLabel(
-              v-for="label in job.metadata.labels"
+              v-for="label in item.job.metadata.labels"
               :key="label"
               :label="label"
             )
 
           //- a dir entry
           div.cell(
-            v-else 
-            v-on:click="toggleExpand(path)"
+            v-else
+            v-on:click="toggleExpand(item.path)"
           )
             TriangleIcon.indent.icon(
-              v-if="isExpanded(path)"
+              v-if="isExpanded(item.path)"
               direction="down"
             )
             TriangleIcon.indent.icon(
@@ -96,18 +94,18 @@ div
             svg.icon(viewBox="0 0 1800 1800", xmlns="http://www.w3.org/2000/svg")
               path(d="M 200 300 L 700 300 L 800 500 L 1600 500 L 1600 1600 L 200 1600 L 200 300" stroke="#666" stroke-width="100" fill="#f2f6f4")
 
-            a.dir(v-on:click="$emit('path', path.join('/'))") {{ name }}
+            a.dir(v-on:click="$emit('path', item.path.join('/'))") {{ item.name }}
 
-        td.params
-          span.params(v-if="job && job.params.length > 0") {{ join(job.params, ', ') }}
+        div
+          span.params(v-if="item.job && item.job.params.length > 0") {{ join(item.job.params, ', ') }}
 
-        td.description
-          div(v-html="job && descriptionExcerptHtml(job.metadata.description || '')")
+        div.description(v-html="item.job && descriptionExcerptHtml(item.job.metadata.description || '')")
 
 </template>
 
 <script>
 import { filter, join, sortBy } from 'lodash'
+import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 
 import HelpButton from '@/components/HelpButton'
 import Job from '@/components/Job'
@@ -182,11 +180,19 @@ export default {
   data() {
     return {
       liveKeywords: this.keywords,
+      scrollerTop: 0,
       store,
     }
   },
 
+  mounted() {
+    // size the scroller to fill the rest of the window
+    this.scrollerTop = this.$refs.scroller.$el.getBoundingClientRect().top + window.scrollY
+  },
+
   components: {
+    DynamicScroller,
+    DynamicScrollerItem,
     HelpButton,
     Job,
     JobLabel,
@@ -237,7 +243,17 @@ export default {
     /** Filtered jobs subtree flattened to display rows, including dirs.  */
     jobRows() {
       const parts = this.path ? this.path.split('/') : []
-      return Array.from(flattenTree(parts, this.jobsDir, this.expand))
+      return Array.from(
+        flattenTree(parts, this.jobsDir, this.expand),
+        ([path, subpath, name, job]) => ({
+          // trailing slash keeps a dir key distinct from a job of the same name
+          key: path.join('/') + (job ? '' : '/'),
+          path,
+          subpath,
+          name,
+          job,
+        }),
+      )
     },
 
   },
@@ -331,13 +347,53 @@ export default {
   }
 }
 
-table {
-  span.indent {
-    width: 36px;
+.jobs-list {
+  min-width: 100%;
+  width: min-content;
+}
+
+.jobs-header, .row {
+  display: grid;
+  grid-template-columns: 600px 250px minmax(600px, 1fr);
+  align-items: center;
+
+  > div {
+    padding: 3px 12px 4px 12px;
+
+    &:last-child {
+      padding-right: 2px;
+    }
+  }
+}
+
+.jobs-header {
+  border-bottom: 1px solid #aaa;
+  color: #676;
+  font-weight: 600;
+  font-size: 90%;
+  text-transform: uppercase;
+
+  > div {
+    padding-top: 12px;
+    padding-bottom: 0;
+    line-height: 30px;
+
+    &:first-child {
+      padding-left: 2px;
+    }
+  }
+}
+
+.row {
+  border-bottom: 1px solid $apsis-grid-color;
+  border-radius: 3px;
+
+  &:hover {
+    background-color: $global-hover-background;
   }
 
-  th {
-    text-align: left;
+  span.indent {
+    width: 36px;
   }
 
   .icon {
@@ -346,9 +402,10 @@ table {
   }
 
   div.cell {
-    height: 30px;
+    min-height: 30px;
     display: inline-flex;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0 4px;
   }
