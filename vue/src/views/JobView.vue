@@ -137,6 +137,7 @@ import ConfirmationModal from '@/components/ConfirmationModal'
 import Frame from '@/components/Frame'
 import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
+import { setTitle } from '@/page'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
 import RunArgs from '@/components/RunArgs'
@@ -167,6 +168,15 @@ export default {
       scheduledInstance: null,
       scheduledRunId: null,
     }
+  },
+
+  watch: {
+    job_id: {
+      immediate: true,
+      handler(job_id) {
+        setTitle(job_id)
+      },
+    },
   },
 
   computed: {

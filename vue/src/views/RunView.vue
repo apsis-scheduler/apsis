@@ -119,6 +119,7 @@ import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
 import JobWithArgs from '@/components/JobWithArgs'
 import OperationButton from '@/components/OperationButton'
+import { setTitle } from '@/page'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
 import { isComplete, OPERATIONS } from '@/runs'
@@ -180,6 +181,10 @@ export default {
 
     runState() {
       return this.run ? this.run.state : null
+    },
+
+    title() {
+      return [this.run_id, this.run && this.run.job_id]
     },
 
     hasOutput() {
@@ -334,6 +339,13 @@ export default {
     // Reset state on nav from one run to another.
     '$route'(to, from) {
       this.initRun()
+    },
+
+    title: {
+      immediate: true,
+      handler(title) {
+        setTitle(...title)
+      },
     },
 
     // When the update sequence number changes, reload the whole run.
