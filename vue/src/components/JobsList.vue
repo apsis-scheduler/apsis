@@ -101,17 +101,17 @@ div
           span.params(v-if="job && job.params.length > 0") {{ join(job.params, ', ') }}
 
         td.description
-          div(v-html="job && markdown(exerptDescription(job.metadata.description || ''))")
+          div(v-html="job && descriptionExcerptHtml(job.metadata.description || '')")
 
 </template>
 
 <script>
 import { filter, join, sortBy } from 'lodash'
-import showdown from 'showdown'
 
 import HelpButton from '@/components/HelpButton'
 import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
+import { descriptionExcerptHtml } from '@/markdown'
 import PathNav from '@/components/PathNav'
 import Program from '@/components/Program'
 import { matchKeywords, includesAll } from '@/runs'
@@ -241,16 +241,7 @@ export default {
   },
 
   methods: {
-    // Returns a shortened form of the description Markdown `src`.
-    exerptDescription(src) {
-      var paragraph = src.split('\n\n')[0]
-      if (paragraph.length > 256)
-        paragraph = paragraph.substring(0, 256) + '…'
-      return paragraph
-    },
-
-    // Converts Markdown `src` to HTML.
-    markdown(src) { return src.trim() === '' ? '' : (new showdown.Converter()).makeHtml(src) },
+    descriptionExcerptHtml,
 
     join,
 
