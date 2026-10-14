@@ -189,13 +189,16 @@ export default {
     join,
 
     fetchRun() {
-      const url = api.getRunUrl(this.run_id)
+      const run_id = this.run_id
+      const url = api.getRunUrl(run_id)
       fetch(url)
         .then(async (response) => {
-          if (response.ok) {
-            const run = (await response.json()).runs[this.run_id]
+          const run = response.ok ? (await response.json()).runs[run_id] : null
+          // drop the response if the view moved on to another run
+          if (run_id !== this.run_id)
+            return
+          if (response.ok)
             this.run = this.runSummary === null ? Object.freeze(run) : applyRunSummary(run, this.runSummary)
-          }
           else if (response.status === 404)
             this.run = undefined
           else
