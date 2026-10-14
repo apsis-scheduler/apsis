@@ -13,6 +13,7 @@ div
       WordsInput(
         :value="keywords"
         @input="$emit('keywords', $event)"
+        @words="liveKeywords = $event"
       )
       HelpButton
         p Syntax: <b>keyword keyword&hellip;</b>
@@ -180,6 +181,7 @@ export default {
 
   data() {
     return {
+      liveKeywords: this.keywords,
       store,
     }
   },
@@ -210,8 +212,8 @@ export default {
       }
       if (this.labels)
         jobs = filter(jobs, job => includesAll(this.labels, job.metadata.labels))
-      if (this.keywords) {
-        const keywords = this.keywords.map(s => s.toLowerCase())
+      if (this.liveKeywords) {
+        const keywords = this.liveKeywords.map(s => s.toLowerCase())
         jobs = filter(jobs, job => matchKeywords(keywords, job.job_id.toLowerCase()))
       }
 
