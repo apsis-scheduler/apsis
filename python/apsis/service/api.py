@@ -41,7 +41,7 @@ WS_DRAIN_TIME = 0.5
 # Max number of items to send in one websocket message.
 WS_CHUNK = 4096
 # Send bigger chunks when the json is pre-serialized
-WS_RAW_CHUNK = 2**16
+WS_RAW_CHUNK = 2**12
 
 # runs per page, fixed so one decode on the loop stays small
 PAGE_SIZE = 200
