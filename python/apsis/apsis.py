@@ -94,16 +94,11 @@ class Apsis:
         # Actions applied to all runs.
         self.__actions = [Action.from_jso(o) for o in cfg["actions"]]
 
-        # Calculate how far back we should load runs into the run store.
         try:
             lookback = cfg["runs"]["lookback"]
         except KeyError:
-            min_timestamp = None
-        else:
-            # NOTE: min_timestamp is frozen at process start; the effective query window grows with uptime. Fine for a
-            # typical weekly restart cadence
-            min_timestamp = now() - lookback
-        self.run_store = RunStore(db, min_timestamp=min_timestamp)
+            lookback = None
+        self.run_store = RunStore(db, lookback=lookback)
 
         self.outputs = OutputStore(db.output_db)
 
