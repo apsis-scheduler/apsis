@@ -13,10 +13,15 @@ import ujson
 from .states import State, TRANSITIONS, ACTIVE_STATES, to_state
 from .lib.asyn import Publisher
 from .lib.calendar import get_calendar
+from .lib.itr import chunks
 from .lib.memo import memoize
 from .lib.py import format_ctor, iterize
 
 log = logging.getLogger(__name__)
+
+# Chosen empirically to balance performance and GC pressure. Smaller batches can be deallocated before they cause a
+# gen 0 collection
+SUMMARY_PAGE_SIZE = 256
 
 # -------------------------------------------------------------------------------
 
@@ -728,12 +733,19 @@ class RunStore:
         next_cursor = page[-1].run_id if page and len(merged) > limit else None
         return page, next_cursor
 
-    def summaries(self) -> Iterator[str]:
+    def summaries(self) -> Iterator[list[str]]:
+        """
+        Yields run summary messages as json strings in pages of at most
+        `SUMMARY_PAGE_SIZE`, with expected runs first.
+        """
         from .lib.api import run_to_summary_jso
 
         # expected (scheduled) runs are only in-memory; emit them first.
-        for run in list(self.__expected_runs.values()):
-            yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
+        for runs in chunks(list(self.__expected_runs.values()), SUMMARY_PAGE_SIZE):
+            yield [
+                ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(r)})
+                for r in runs
+            ]
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp())
 

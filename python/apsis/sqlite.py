@@ -17,7 +17,7 @@ from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr, py
 from .lib.timing import Timer
-from .runs import Instance, Run, run_number
+from .runs import SUMMARY_PAGE_SIZE, Instance, Run, run_number
 from .states import State
 from .program import Program, Output, OutputMetadata
 
@@ -650,10 +650,6 @@ class RunDB:
 
 # -------------------------------------------------------------------------------
 
-# Chosen empirically to balance performance and GC pressure. Smaller batches can be deallocated before they cause a
-# gen 0 collection
-_SUMMARY_BATCH_SIZE = 256
-
 
 class RunSummaryDB:
     TABLE = sa.Table(
@@ -693,7 +689,10 @@ class RunSummaryDB:
         )
         self.__connection.connection.commit()
 
-    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[str]:
+    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[list[str]]:
+        """
+        Yields run summary payloads newest first, one list per DB page.
+        """
         # Use independent paged queries to prevent holding a read cursor across the yield, which seems to cause
         # write-lock errors when paired with litestream. Note that his problem isn't fully understood and hasn't been
         # satisfactorily reproduced in isolation.
@@ -711,7 +710,7 @@ class RunSummaryDB:
                 if max_ts is not None:
                     stmt = stmt.where(self.TABLE.c.timestamp < max_ts)
                 stmt = stmt.order_by(self.TABLE.c.timestamp.desc())
-                stmt = stmt.limit(_SUMMARY_BATCH_SIZE)
+                stmt = stmt.limit(SUMMARY_PAGE_SIZE)
                 rows = conn.execute(stmt).fetchall()
 
             if not rows:
@@ -722,10 +721,10 @@ class RunSummaryDB:
             payloads = [r[1] for r in rows]
             del rows
 
-            yield from payloads
+            yield payloads
 
             del payloads
-            if count < _SUMMARY_BATCH_SIZE:
+            if count < SUMMARY_PAGE_SIZE:
                 break
 
 
