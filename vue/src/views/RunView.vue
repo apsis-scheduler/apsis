@@ -171,14 +171,6 @@ export default {
   },
 
   computed: {
-    /**
-     * The update sequence of the run summary in the store, for detecting updates.
-     */
-    updateSeq() {
-      const run = store.state.runs.get(this.run_id)
-      return run ? run.seq : undefined
-    },
-
     runState() {
       return this.run ? this.run.state : null
     },
@@ -341,12 +333,6 @@ export default {
     // Reset state on nav from one run to another.
     '$route'(to, from) {
       this.initRun()
-    },
-
-    // When the update sequence number changes, reload the whole run.
-    updateSeq(seq, previous) {
-      if (!this.run || this.run.seq !== seq)
-        this.fetchRun()
     },
 
     runState(to, from) {
