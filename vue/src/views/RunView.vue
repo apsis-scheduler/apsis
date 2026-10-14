@@ -121,7 +121,7 @@ import JobWithArgs from '@/components/JobWithArgs'
 import OperationButton from '@/components/OperationButton'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
-import { isComplete, OPERATIONS } from '@/runs'
+import { applyRunSummary, isComplete, OPERATIONS } from '@/runs'
 import RunArgs from '@/components/RunArgs'
 import RunDependencies from '@/components/RunDependencies'
 import RunElapsed from '@/components/RunElapsed'
@@ -157,6 +157,7 @@ export default {
       },
       OPERATIONS,
       run: null,
+      runSummary: null,
       runLog: null,
       outputMetadata: null,
       outputData: null,
@@ -201,7 +202,7 @@ export default {
         .then(async (response) => {
           if (response.ok) {
             const run = (await response.json()).runs[this.run_id]
-            this.run = Object.freeze(run)
+            this.run = this.runSummary === null ? Object.freeze(run) : applyRunSummary(run, this.runSummary)
           }
           else if (response.status === 404)
             this.run = undefined
@@ -223,6 +224,11 @@ export default {
         msg => {
           msg = JSON.parse(msg.data)
           console.log('run msg:', Object.keys(msg).join(' '))
+          if (msg.run) {
+            this.runSummary = msg.run
+            if (this.run)
+              this.run = applyRunSummary(this.run, msg.run)
+          }
           if (msg.meta)
             this.meta = msg.meta
           if (msg.run_log)
@@ -303,6 +309,7 @@ export default {
       // Don't treat this as a missing run (this.run === undefined) until the
       // single run API can't find it.
       this.run = store.state.runs.get(this.run_id) || null
+      this.runSummary = null
 
       this.outputMetadata = null
       this.outputData = null

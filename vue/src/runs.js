@@ -1,4 +1,4 @@
-import { isEqual, sortBy, toPairs } from 'lodash'
+import { isEqual, pick, sortBy, toPairs } from 'lodash'
 
 export function joinArgs(args) {
   return toPairs(args).map(([n, v]) => n + '=' + v).join(', ')
@@ -37,6 +37,20 @@ function groupKey(run) {
  */
 function timeKey(run) {
   return run.times.schedule || run.times.running || run.times.error
+}
+
+/**
+ * Applies a run summary from the run updates socket to a run.
+ *
+ * Fields in the summary replace those in `run`, and of the rest only the
+ * fields not carried by summaries are kept.
+ *
+ * @param {object} run - full run or run summary
+ * @param {object} summary - run summary
+ * @returns a frozen run
+ */
+export function applyRunSummary(run, summary) {
+  return Object.freeze({...summary, ...pick(run, ['conds', 'actions', 'meta', 'program'])})
 }
 
 let nextSeq = 0
