@@ -51,6 +51,9 @@ class Store {
 
     // Array of Procstar agent connections.
     agentConns: new Map(),
+
+    // runs sent by job_id for jobs whose older runs the summary socket left out
+    summaryTruncated: {},
   }
 
   setTime(time) {
