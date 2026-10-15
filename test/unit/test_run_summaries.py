@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -8,9 +9,10 @@ import ujson
 
 from apsis import procstar
 from apsis.jobs import InMemoryJobs, Job
+from apsis.run_window import WindowSpec
 from apsis.runs import Instance, Run, RunStore
 from apsis.service import summary
-from apsis.service.summary import SummaryScope, send_scoped_init
+from apsis.service.summary import SummaryScope, send_scoped_init, send_window_init
 from apsis.sqlite import SqliteDB
 from apsis.states import State
 
@@ -299,11 +301,21 @@ def test_expected_summaries(tmp_path):
 
 
 class FakeWs:
-    def __init__(self):
+    def __init__(self, closed=False):
         self.frames = []
+        self.closed = asyncio.Event()
+        if closed:
+            self.closed.set()
 
     async def send(self, data):
         self.frames.append(ujson.loads(data))
+
+    async def wait_closed(self):
+        await self.closed.wait()
+
+    async def ensure_open(self):
+        if self.closed.is_set():
+            raise ConnectionError("closed")
 
     def ids(self):
         """
@@ -362,3 +374,89 @@ async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
     ws = FakeWs()
     await send_scoped_init(apsis, ws, SummaryScope(init=True))
     assert ws.ids() == [["x", "y"], [run.run_id]]
+
+
+def test_get_payloads(tmp_path):
+    run_store = make_run_store(tmp_path)
+    a, _ = add_runs(run_store, "a", 2)
+    payloads = run_store._RunStore__summary_db.get_payloads([a.run_id, "r999"])
+    assert list(payloads) == [a.run_id]
+    assert run_ids(payloads.values()) == [a.run_id]
+
+
+@pytest.mark.asyncio
+async def test_window_summaries(tmp_path):
+    run_store = make_run_store(tmp_path)
+    t = ora.now()
+    expected = Run(Instance("a", {}), expected=True)
+    expected.times["schedule"] = t + 60
+    run_store.add(expected)
+    (run,) = add_runs(run_store, "a", 1)
+    run._transition(t, State.scheduled, times={"schedule": t})
+    run_store.update(run, t)
+
+    window = await run_store.query_window(WindowSpec(anchor=t, grouping=False))
+    assert window.run_ids == [run.run_id, expected.run_id]
+    summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
+    assert run_ids(summaries) == [expected.run_id, run.run_id]
+
+
+@pytest.mark.asyncio
+async def test_send_window_init(tmp_path):
+    run_store = make_run_store(tmp_path)
+    t = ora.now()
+    runs = add_runs(run_store, "a", 3)
+    for i, run in enumerate(runs):
+        run.state = State.success
+        run.times["schedule"] = t - 60 * (3 - i)
+        run_store.update(run, t)
+    apsis = SimpleNamespace(run_store=run_store)
+
+    ws = FakeWs()
+    spec = WindowSpec(anchor=t, limit=1)
+    await send_window_init(
+        apsis, ws, SummaryScope(init=True, types=frozenset({"run"}), window=spec)
+    )
+    assert ws.ids() == [[runs[2].run_id]]
+    assert ws.frames[-1] == [
+        {
+            "type": "run_window",
+            "anchor": str(t),
+            "limit": 1,
+            "grouping": True,
+            "groups": {runs[2].run_id: 3},
+            "earlier": None,
+            "later": None,
+            "complete": True,
+        }
+    ]
+
+    ws = FakeWs()
+    spec = WindowSpec(anchor=t, limit=1, grouping=False)
+    await send_window_init(
+        apsis, ws, SummaryScope(init=True, types=frozenset({"run"}), window=spec)
+    )
+    (msg,) = ws.frames[-1]
+    assert msg["groups"] == {}
+    assert msg["earlier"] == {"time": str(t - 60)}
+
+
+@pytest.mark.asyncio
+async def test_send_window_init_closed():
+    """A client closing during the window walk stops the walk."""
+    walking = asyncio.Event()
+
+    async def query_window(spec):
+        walking.set()
+        await asyncio.sleep(3600)
+
+    apsis = SimpleNamespace(run_store=SimpleNamespace(query_window=query_window))
+    ws = FakeWs()
+    init = asyncio.ensure_future(
+        send_window_init(apsis, ws, SummaryScope(init=True, types=frozenset(), window=WindowSpec()))
+    )
+    await walking.wait()
+    ws.closed.set()
+    with pytest.raises(ConnectionError):
+        await init
+    assert ws.frames == []

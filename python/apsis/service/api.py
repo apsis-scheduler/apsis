@@ -11,7 +11,12 @@ from urllib.parse import unquote, parse_qs
 import websockets
 
 from . import messages
-from .summary import make_summary_predicate, parse_summary_scope, send_scoped_init
+from .summary import (
+    make_summary_predicate,
+    parse_summary_scope,
+    send_scoped_init,
+    send_window_init,
+)
 from apsis import procstar
 from apsis.lib import asyn
 from apsis.lib.api import (
@@ -33,6 +38,7 @@ from apsis.lib.parse import parse_duration
 from apsis.lib.sys import to_signal
 from apsis.states import to_state
 from ..jobs import JOB_RUNS_SUFFIX, jso_to_job
+from ..run_window import WindowUnavailable
 from ..runs import Instance, RunError, run_number
 
 log = logging.getLogger(__name__)
@@ -685,7 +691,15 @@ async def websocket_summary(request, ws):
     predicate = make_summary_predicate(scope)
     with apsis.summary_publisher.subscription(predicate=predicate) as sub:
         try:
-            if init and scope.scoped:
+            if init and scope.window is not None:
+                try:
+                    with Timer(name=f"{prefix} send window init", print=log.debug):
+                        await send_window_init(apsis, ws, scope)
+                except WindowUnavailable:
+                    await ws.close(code=4503, reason="run window unavailable")
+                    return
+
+            elif init and scope.scoped:
                 with Timer(name=f"{prefix} send scoped init", print=log.debug):
                     await send_scoped_init(apsis, ws, scope)
 
