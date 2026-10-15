@@ -736,6 +736,15 @@ table.runlist {
     }
   }
 
+  th, td {
+    vertical-align: baseline;
+  }
+
+  // drops the state icon from the baseline to the middle of the text
+  .col-state > span {
+    vertical-align: -4px;
+  }
+
   .col-job, .col-args, .col-arg {
     text-align: left;
   }
@@ -752,10 +761,6 @@ table.runlist {
 
   .col-run, .col-state, .col-operations {
     text-align: center;
-  }
-
-  .col-state {
-    vertical-align: bottom;
   }
 
   .col-schedule-time, .col-start-time, .col-stop-time {
