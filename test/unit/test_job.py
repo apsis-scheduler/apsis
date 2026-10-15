@@ -1,6 +1,6 @@
 import ora
 
-from apsis.jobs import Job
+from apsis.jobs import Job, Jobs, JobsDir
 from apsis.schedule.stop import DurationStopSchedule
 
 # -------------------------------------------------------------------------------
@@ -81,3 +81,40 @@ def test_schedule_jso_start_stop():
     assert set(jso.keys()) == {"start", "stop"}
     assert jso["start"]["interval"] == 1800
     assert jso["stop"]["duration"] == 900
+
+
+def test_get_dependents():
+    def job(job_id, dep_job_id, sched_args=(), cond_type="dependency"):
+        return Job.from_jso(
+            {
+                "program": {"type": "no-op"},
+                "schedule": [
+                    {"type": "daily", "tz": "UTC", "daytime": "12:00:00", "args": a}
+                    for a in sched_args
+                ],
+                "condition": {"type": cond_type, "job_id": dep_job_id},
+            },
+            job_id,
+        )
+
+    jobs = Jobs(
+        JobsDir(
+            None,
+            {
+                j.job_id: j
+                for j in (
+                    job("plain", "up/a"),
+                    job("tmpl", "up/{{ region }}", [{"region": "a"}, {"region": "b"}]),
+                    job("own", "{{ job_id }}/up", [{}]),
+                    job("missing", "up/{{ date }}", [{"region": "a"}]),
+                    job("bad", "up/{{ region + 1 }}", [{"region": "a"}]),
+                    job("max", "up/a", cond_type="max_running"),
+                )
+            },
+        ),
+        None,
+    )
+    assert jobs.get_dependents("up/a") == {"plain", "tmpl"}
+    assert jobs.get_dependents("up/b") == {"tmpl"}
+    assert jobs.get_dependents("own/up") == {"own"}
+    assert jobs.get_dependents("plain") == frozenset()

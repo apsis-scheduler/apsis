@@ -1,6 +1,8 @@
 import aiofiles
 import asyncio
+from collections import defaultdict
 from collections.abc import Hashable
+import functools
 import logging
 import os
 from pathlib import Path
@@ -13,11 +15,13 @@ from ruamel.yaml import YAML
 from .actions import Action
 from .actions.schedule import successor_from_jso
 from .cond import Condition
+from .cond.dependency import Dependency
 from .exc import JobError, JobsDirErrors, SchemaError
 from .lib import itr
 from .lib.json import to_array, to_narray, check_schema
 from .lib.py import tupleize, format_ctor
 from .program import Program, NoOpProgram
+from .runs import BIND_ARGS, is_template, template_expand
 from .schedule import schedule_to_jso, schedule_from_jso
 
 log = logging.getLogger(__name__)
@@ -457,6 +461,34 @@ class Jobs:
                 raise LookupError(f"unknown job ID: {job_id}") from None
 
     __getitem__ = get_job
+
+    @functools.cached_property
+    def __dependents(self) -> dict[str, set[str]]:
+        dependents = defaultdict(set)
+        for job in self.__jobs_dir.get_jobs():
+            for cond in job.conds:
+                if not isinstance(cond, Dependency):
+                    continue
+                if not is_template(cond.job_id):
+                    dependents[cond.job_id].add(job.job_id)
+                    continue
+                for sched in job.schedules:
+                    bind_args = {**BIND_ARGS, "job_id": job.job_id, **sched.args}
+                    try:
+                        dependents[template_expand(cond.job_id, bind_args)].add(job.job_id)
+                    except Exception:
+                        # the template needs run time args or fails with these
+                        pass
+        return dependents
+
+    def get_dependents(self, job_id: str) -> frozenset[str]:
+        """
+        Returns IDs of jobs in the jobs dir with a dependency on `job_id`.
+
+        A templated dependency job ID counts if it expands to `job_id` with
+        the args of one of the job's schedules.
+        """
+        return frozenset(self.__dependents.get(job_id, ()))
 
     def get_jobs(self, *, ad_hoc=None):
         """
