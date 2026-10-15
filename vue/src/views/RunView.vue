@@ -202,7 +202,7 @@ export default {
           else if (response.status === 404)
             this.run = undefined
           else
-            store.state.errors.add('fetch ' + url + ' ' + response.status + ' ' + await response.text())
+            store.state.errors.push('fetch ' + url + ' ' + response.status + ' ' + await response.text())
         })
     },
 
