@@ -470,3 +470,82 @@ def test_query_schedule_second_precision(tmp_path):
         r[".00000101"].run_id,
         r[".05"].run_id,
     }
+
+
+def _walk(run_db, *, desc, time, limit):
+    """Pages through schedule_page and returns the run IDs."""
+    run_ids = []
+    rowid = None
+    while rows := run_db.schedule_page(desc=desc, time=time, rowid=rowid, limit=limit):
+        run_ids += [r[1] for r in rows]
+        rowid, time = rows[-1][0], rows[-1][2]
+    return run_ids
+
+
+def test_schedule_page_ties(tmp_path):
+    """ties on schedule time continue across page boundaries by rowid"""
+    run_db = _setup(tmp_path)
+    r1, r2a, r2b, r2c, r3 = (_at(run_db, t) for t in (T1, T2, T2, T2, T3))
+    _make_run(run_db, "job/a", {})  # no schedule time
+
+    t2 = str(ora.Time(T2))
+    assert _walk(run_db, desc=True, time=str(ora.Time(T3)), limit=2) == [
+        r2c.run_id,
+        r2b.run_id,
+        r2a.run_id,
+        r1.run_id,
+    ]
+    assert _walk(run_db, desc=False, time=t2, limit=2) == [
+        r2a.run_id,
+        r2b.run_id,
+        r2c.run_id,
+        r3.run_id,
+    ]
+
+
+def test_group_stats(tmp_path):
+    """principals break schedule time ties by rowid, latest for completed and earliest for scheduled"""
+    run_db = _setup(tmp_path)
+    _at(run_db, T1)
+    _, r3b = _at(run_db, T3), _at(run_db, T3)
+    scheds = []
+    for _ in range(2):
+        sched = _make_run(run_db, "job/a", {}, state=State.scheduled)
+        sched.times["schedule"] = ora.Time(T2)
+        run_db.upsert(sched)
+        scheds.append(sched)
+    _make_run(run_db, "job/a", {"x": "1"})
+
+    assert run_db.group_stats("job/a", "{}", ["success"], None, earliest=False) == (
+        r3b._rowid,
+        r3b.run_id,
+        str(ora.Time(T3)),
+        3,
+    )
+    assert run_db.group_stats("job/a", "{}", ["scheduled"], None, earliest=True) == (
+        scheds[0]._rowid,
+        scheds[0].run_id,
+        str(ora.Time(T2)),
+        2,
+    )
+    assert run_db.group_stats("job/a", "{}", ["success"], ora.now() + 60, earliest=False) == (
+        None,
+        None,
+        None,
+        0,
+    )
+
+
+def test_job_rows(tmp_path):
+    run_db = _setup(tmp_path)
+    a1, a2 = _make_run(run_db, "job/a", {}), _make_run(run_db, "job/a", {})
+    _make_run(run_db, "job/b", {})
+    _make_run(run_db, "job/c", {})
+
+    assert run_db.count_job_rows(["job/a", "job/b"], 10) == 3
+    assert run_db.count_job_rows(["job/a", "job/b"], 2) == 2
+    assert [r[1] for r in run_db.job_page("job/a", max_rowid=2**62, limit=10)] == [
+        a2.run_id,
+        a1.run_id,
+    ]
+    assert [r[1] for r in run_db.job_page("job/a", max_rowid=a2._rowid, limit=10)] == [a1.run_id]
