@@ -770,6 +770,36 @@ class RunStore:
             job_id, min_timestamp=self.__min_timestamp(), page_size=page_size
         )
 
+    async def query_window(self, spec):
+        """
+        Returns the `RunWindow` for `WindowSpec` `spec` over runs in the
+        lookback window.
+        """
+        from .run_window import query_window
+
+        return await query_window(
+            self.__run_db,
+            list(self.__expected_runs.values()),
+            spec,
+            min_timestamp=self.__min_timestamp(),
+        )
+
+    def get_summaries(self, run_ids: list[str]) -> list[str]:
+        """
+        Returns summary messages of `run_ids` in order, skipping unknown runs.
+        """
+        from .lib.api import run_to_summary_jso
+
+        expected = self.__expected_runs
+        payloads = self.__summary_db.get_payloads(r for r in run_ids if r not in expected)
+        return [
+            ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(expected[r])})
+            if r in expected
+            else payloads[r]
+            for r in run_ids
+            if r in expected or r in payloads
+        ]
+
     def count_runs(
         self, *, job_id=None, state=None, args=None, with_args=None, limit_lookback=True
     ):
