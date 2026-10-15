@@ -51,4 +51,29 @@ describe('RunsList.vue', () => {
     expect(vm.labels).toBe(null)
     expect(vm.args).toBe(null)
   })
+
+  it('resizes a column by dragging its header edge and resets it on double click', async () => {
+    const saved = new Map()
+    Object.defineProperty(window, 'localStorage', {
+      value: {getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value)},
+      configurable: true,
+    })
+    const vm = mountRunsList({})
+    const col = () => vm.$el.querySelector('col').style.width
+    const handle = vm.$el.querySelector('th.col-job .col-resizer')
+    const start = col()
+
+    handle.dispatchEvent(new MouseEvent('mousedown', {clientX: 100}))
+    window.dispatchEvent(new MouseEvent('mousemove', {clientX: 160}))
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    await vm.$nextTick()
+    expect(col()).toBe(parseInt(start) + 60 + 'px')
+    expect(mountRunsList({}).$el.querySelector('col').style.width).toBe(col())
+
+    handle.dispatchEvent(new MouseEvent('dblclick'))
+    await vm.$nextTick()
+    expect(col()).toBe(start)
+    expect(mountRunsList({}).$el.querySelector('col').style.width).toBe(start)
+    delete window.localStorage
+  })
 })

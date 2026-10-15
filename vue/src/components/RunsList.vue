@@ -127,44 +127,39 @@ div
 
 
   div.runlist
-    table.runlist
+    table.runlist(
+      ref="table"
+      :style="{ width: tableWidth + 'px' }"
+    )
       colgroup
-        col(v-if="showJob" style="min-width: 10rem")
-        template(v-if="argColumnStyle === 'separate'")
-          col(v-for="param in params")
-        col(v-if="argColumnStyle === 'combined'" style="min-width: 10rem; max-width: 100%;")
-        col(style="width: 4rem")
-        col(style="width: 4rem")
-        col(v-if="grouping" style="width: 5rem")
-        col(style="width: 10rem")
-        col(style="width: 10rem")
-        col(style="width: 6rem")
-        col(style="width: 10rem")
-        col(style="width: 4rem")
+        col(
+          v-for="column in columns"
+          :key="column.name"
+          :style="{ width: colWidth(column.name) + 'px' }"
+        )
 
       thead
         tr
-          th.col-job(v-if="showJob") Job
-          template(v-if="argColumnStyle === 'separate'")
-            th.col-arg(v-for="param in params") {{ param }}
-          th.col-args(v-if="argColumnStyle == 'combined'") Args
-          th.col-run Run
-          th.col-state State
-          th.col-group(v-if="grouping") Hidden
-          th.col-schedule-time Schedule
-          th.col-start-time Start
-          th.col-elapsed Elapsed
-          th.col-stop-time Scheduled Stop
-          th.col-operations Operations
+          th(
+            v-for="column, i in columns"
+            :key="column.name"
+            :class="column.cls"
+            :title="column.label"
+          )
+            | {{ column.label }}
+            span.col-resizer(
+              @mousedown.prevent="startResize(column.name, i, $event)"
+              @dblclick="resetWidth(column.name)"
+            )
 
       tbody
         tr(v-if="groups.groups.length == 0")
-          td.note(colspan="9") No runs.
+          td.note(:colspan="columns.length") No runs.
         tr(v-else)
-          td.spacer(colspan="9")
+          td.spacer(:colspan="columns.length")
 
         tr(v-if="(asc ? groups.earlierCount : groups.laterCount) > 0")
-          td.note(colspan="9")
+          td.note(:colspan="columns.length")
             | {{ asc ? groups.earlierCount : groups.laterCount }}
             | {{ asc ? 'earlier' : 'later' }} rows not shown
             button(
@@ -173,7 +168,7 @@ div
 
         template(v-for="run, i in groups.groups")
           tr(v-if="nowIndicator && i === groups.nowIndex")
-            td(colspan="9")
+            td(:colspan="columns.length")
               .timeSeparator
                 div.border
                 div.now now
@@ -237,7 +232,7 @@ div
                 )
 
         tr(v-if="(asc ? groups.laterCount : groups.earlierCount) > 0")
-          td.note(colspan="9")
+          td.note(:colspan="columns.length")
             | {{ asc ? groups.laterCount : groups.earlierCount }}
             | {{ asc ? 'later' : 'earlier' }} rows not shown
             button(
@@ -251,6 +246,7 @@ import { entries, filter, flatten, groupBy, includes, isEqual, keys, map, sortBy
 
 import { argsToArray, arrayToArgs, matchKeywords, includesAll, OPERATIONS, toggleArg, toggleLabel } from '@/runs'
 import { formatDuration, formatElapsed, formatTime } from '@/time'
+import { columnWidth, dragWidth, loadWidths, saveWidths } from '@/columns'
 import DropList from '@/components/DropList'
 import HamburgerMenu from '@/components/HamburgerMenu'
 import HelpButton from '@/components/HelpButton'
@@ -271,6 +267,19 @@ import TriangleIcon from '@/components/icons/TriangleIcon'
 import WordsInput from '@/components/WordsInput'
 
 const COUNTS = [20, 50, 100, 200, 500, 1000]
+
+const COLUMNS = {
+  job: {name: 'job', cls: 'col-job', label: 'Job'},
+  args: {name: 'args', cls: 'col-args', label: 'Args'},
+  run: {name: 'run', cls: 'col-run', label: 'Run'},
+  state: {name: 'state', cls: 'col-state', label: 'State'},
+  group: {name: 'group', cls: 'col-group', label: 'Hidden'},
+  schedule: {name: 'schedule', cls: 'col-schedule-time', label: 'Schedule'},
+  start: {name: 'start', cls: 'col-start-time', label: 'Start'},
+  elapsed: {name: 'elapsed', cls: 'col-elapsed', label: 'Elapsed'},
+  stop: {name: 'stop', cls: 'col-stop-time', label: 'Scheduled Stop'},
+  operations: {name: 'operations', cls: 'col-operations', label: 'Operations'},
+}
 
 /**
  * Constructs a predicate fn for matching runs with `args`.
@@ -363,6 +372,8 @@ export default {
       states: null,      // all states
       time: 'now',
 
+      widths: loadWidths(),
+
       // Initialize with the query prop.
       ...this.query,
     }
@@ -398,6 +409,29 @@ export default {
   
     params() {
       return uniq(flatten(map(this.runs, run => keys(run.args))))
+    },
+
+    columns() {
+      const params = this.argColumnStyle === 'separate'
+        ? this.params.map(param => ({name: 'arg:' + param, cls: 'col-arg', label: param}))
+        : []
+      return [
+        this.showJob && COLUMNS.job,
+        ...params,
+        this.argColumnStyle === 'combined' && COLUMNS.args,
+        COLUMNS.run,
+        COLUMNS.state,
+        this.grouping && COLUMNS.group,
+        COLUMNS.schedule,
+        COLUMNS.start,
+        COLUMNS.elapsed,
+        COLUMNS.stop,
+        COLUMNS.operations,
+      ].filter(column => column)
+    },
+
+    tableWidth() {
+      return this.columns.reduce((width, column) => width + this.colWidth(column.name), 0)
     },
 
     // Array of rerun groups, each an array of runs that are reruns of the
@@ -578,6 +612,45 @@ export default {
     toggleArg,
     toggleLabel,
 
+    colWidth(column) {
+      return columnWidth(this.widths, column)
+    },
+
+    // sizes the dom while dragging so rows don't rerender then saves the width on release
+    startResize(column, index, event) {
+      const table = this.$refs.table
+      const col = table.querySelector('colgroup').children[index]
+      const handle = event.currentTarget
+      const x = event.clientX
+      const start = this.colWidth(column)
+      const others = this.tableWidth - start
+      let width = start
+      const move = e => {
+        width = dragWidth(start, e.clientX - x)
+        col.style.width = width + 'px'
+        table.style.width = others + width + 'px'
+      }
+      const up = () => {
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', up)
+        table.classList.remove('resizing')
+        handle.classList.remove('active')
+        if (width !== start) {
+          this.$set(this.widths, column, width)
+          saveWidths(this.widths)
+        }
+      }
+      table.classList.add('resizing')
+      handle.classList.add('active')
+      window.addEventListener('mousemove', move)
+      window.addEventListener('mouseup', up)
+    },
+
+    resetWidth(column) {
+      this.$delete(this.widths, column)
+      saveWidths(this.widths)
+    },
+
     // Sends our current state to the parent as a query object.
     emitQuery() {
       this.$emit('query', {
@@ -716,6 +789,41 @@ export default {
 
 table.runlist {
   @extend .widetable;
+  table-layout: fixed;
+
+  &.resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  th {
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  td {
+    overflow-wrap: break-word;
+  }
+
+  .col-job a {
+    white-space: normal;
+  }
+
+  .col-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    border-right: 2px solid transparent;
+
+    &:hover, &.active {
+      border-right-color: $global-focus-color;
+    }
+  }
 
   thead {
     position: sticky;
@@ -819,6 +927,18 @@ table.runlist {
       margin: 0 8px;
       color: $global-frame-color;
     }
+  }
+}
+</style>
+
+<style lang="scss">
+// args wrap within their column instead of running into the next one
+table.runlist .col-args .run-arg {
+  max-width: 100%;
+  vertical-align: top;
+
+  .arg {
+    white-space: normal;
   }
 }
 </style>
