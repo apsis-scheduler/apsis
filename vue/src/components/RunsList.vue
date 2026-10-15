@@ -179,14 +179,15 @@ div
             td.col-job(v-if="showJob")
               //- Is this the group run?
               Job(:job-id="run.job_id")
-              JobLabel(
-                v-for="label in run.labels || []"
-                :label="label"
-                :key="label"
-                :clickable="jobControls"
-                :selected="labels !== null && labels.includes(label)"
-                @click="labels = toggleLabel(labels, label)"
-              )
+              .job-labels(v-if="run.labels && run.labels.length > 0")
+                JobLabel(
+                  v-for="label in run.labels"
+                  :label="label"
+                  :key="label"
+                  :clickable="jobControls"
+                  :selected="labels !== null && labels.includes(label)"
+                  @click="labels = toggleLabel(labels, label)"
+                )
 
             template(v-if="argColumnStyle === 'separate'")
               td(v-for="param in params")
@@ -809,6 +810,21 @@ table.runlist {
 
   .col-job a {
     white-space: normal;
+  }
+
+  .job-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+    margin-top: 2px;
+    font-size: 75%;
+
+    .job-label {
+      flex-shrink: 0;
+      box-sizing: border-box;
+      max-width: 100%;
+      margin-left: 0;
+    }
   }
 
   .col-resizer {
