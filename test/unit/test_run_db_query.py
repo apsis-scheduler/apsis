@@ -3,6 +3,8 @@ Tests for RunDB.query() predicate pushdown to SQLite.
 """
 
 import ora
+import pytest
+import sqlite3
 
 from apsis.runs import Instance, Run
 from apsis.sqlite import SqliteDB
@@ -516,3 +518,18 @@ def test_job_rows(tmp_path):
         a1.run_id,
     ]
     assert [r[1] for r in run_db.job_page("job/a", max_rowid=a2._rowid, limit=10)] == [a1.run_id]
+
+
+def test_schedule_index_check(tmp_path):
+    path = tmp_path / "apsis.db"
+    SqliteDB.create(path=path)
+    conn = SqliteDB.open(path).conn
+    conn.execute("DROP INDEX idx_runs_schedule")
+    conn.commit()
+    assert not SqliteDB.open(path).run_db.has_schedule_index
+
+    # other db errors pass through
+    conn.execute("DROP TABLE runs")
+    conn.commit()
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        SqliteDB.open(path)
