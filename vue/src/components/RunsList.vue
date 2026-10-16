@@ -140,7 +140,7 @@ div
 
       thead
         tr
-          th.head(
+          th(
             v-for="column, i in columns"
             :key="column.name"
             :class="column.cls"
@@ -884,18 +884,10 @@ table.runlist {
     }
   }
 
-  .col-run, .col-state, .col-operations {
-    text-align: center;
-  }
-
-  th.head {
-    text-align: left;
-  }
 
   .col-schedule-time, .col-start-time, .col-stop-time {
     font-size: 90%;
     color: $global-light-color;
-    text-align: right;
   }
 
   .col-stop-time .overdue {
@@ -903,7 +895,6 @@ table.runlist {
   }
 
   .col-group {
-    text-align: right;
     white-space: nowrap;
     color: $global-light-color;
     font-size: 90%;
@@ -917,7 +908,6 @@ table.runlist {
 
   .col-elapsed {
     padding-right: 1em;
-    text-align: right;
     white-space: nowrap;
   }
 
