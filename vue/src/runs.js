@@ -41,18 +41,6 @@ function timeKey(run) {
 
 let nextSeq = 0
 
-const RUNS_MAP = Symbol('runs map')
-
-// reads through a runs view go to the shared runs map
-const RUNS_VIEW = {
-  get(map, key) {
-    if (key === RUNS_MAP)
-      return map
-    const value = Reflect.get(map, key, map)
-    return typeof value === 'function' ? value.bind(map) : value
-  },
-}
-
 export function clearRunState(state) {
   state.runs = new Map()
   state.jobs = new Map()
@@ -109,7 +97,7 @@ export function processMsgs(msgs, state) {
       case 'run_summary':
       case 'run_transition':
         if (runs === null)
-          runs = state.runs[RUNS_MAP] || state.runs
+          runs = new Map(state.runs)
         let run = msg.run_summary
         // Add sort and group keys to runs in msg.
         run.group_key = groupKey(run)
@@ -123,7 +111,7 @@ export function processMsgs(msgs, state) {
 
       case 'run_delete':
         if (runs === null)
-          runs = state.runs[RUNS_MAP] || state.runs
+          runs = new Map(state.runs)
         runs.delete(msg.run_id)
         stats.run++
         break
@@ -134,9 +122,8 @@ export function processMsgs(msgs, state) {
     state.agentConns = agentConns
   if (jobs !== null)
     state.jobs = jobs
-  // runs are updated in place so set a new view of them instead
   if (runs !== null)
-    state.runs = new Proxy(runs, RUNS_VIEW)
+    state.runs = runs
 
   console.log(
     'summary msgs:',
