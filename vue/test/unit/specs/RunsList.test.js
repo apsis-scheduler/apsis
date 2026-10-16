@@ -43,12 +43,16 @@ describe('RunsList.vue', () => {
     }
   })
 
-  it('ignores clicks when the filter controls are hidden', async () => {
-    const vm = mountRunsList({jobControls: false, runControls: false})
-    vm.$el.querySelector('.job-label').click()
-    vm.$el.querySelector('.run-arg').click()
-    await vm.$nextTick()
-    expect(vm.labels).toBe(null)
-    expect(vm.args).toBe(null)
+  it('ignores clicks and highlights nothing when the filter controls are hidden', async () => {
+    for (const argColumnStyle of ['combined', 'separate']) {
+      const query = {args: {fruit: 'mango'}, labels: ['daily']}
+      const vm = mountRunsList({argColumnStyle, query, jobControls: false, runControls: false})
+      vm.$el.querySelector('.job-label').click()
+      vm.$el.querySelector('.col-args .run-arg, .arg-value').click()
+      await vm.$nextTick()
+      expect(vm.labels).toEqual(['daily'])
+      expect(vm.args).toEqual({fruit: 'mango'})
+      expect(vm.$el.querySelector('.job-label.selected, .run-arg.selected, .arg-value.selected')).toBe(null)
+    }
   })
 })

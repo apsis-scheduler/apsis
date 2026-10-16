@@ -189,7 +189,7 @@ div
                 :label="label"
                 :key="label"
                 :clickable="jobControls"
-                :selected="labels !== null && labels.includes(label)"
+                :selected="jobControls && labels !== null && labels.includes(label)"
                 @click="labels = toggleLabel(labels, label)"
               )
 
@@ -197,7 +197,7 @@ div
               td(v-for="param in params")
                 span.arg-value(
                   v-if="param in run.args"
-                  :class="{ clickable: runControls, selected: args !== null && args[param] === run.args[param] }"
+                  :class="{ clickable: runControls, selected: runControls && args !== null && args[param] === run.args[param] }"
                   @click="runControls && (args = toggleArg(args, param, run.args[param]))"
                 ) {{ run.args[param] }}
             //- Else all together.
@@ -205,7 +205,7 @@ div
               RunArgs(
                 :args="run.args"
                 :clickable="runControls"
-                :selected="args"
+                :selected="runControls ? args : null"
                 @click="(param, arg) => args = toggleArg(args, param, arg)"
               )
 
