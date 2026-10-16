@@ -10,7 +10,7 @@ function makeJob(job_id, labels) {
 }
 
 describe('JobsView.vue', () => {
-  it('toggles a label filter in the url when a label is clicked', async () => {
+  it('toggles a label filter in the url when a label is clicked and skips pushing the url it shows', async () => {
     store.state.jobs = new Map([
       makeJob('one', ['critical', 'daily']),
       makeJob('two', ['daily']),
@@ -44,5 +44,13 @@ describe('JobsView.vue', () => {
     label('two', 1).click()
     await Vue.nextTick()
     expect(router.currentRoute.query.labels).toBe(undefined)
+
+    // a url with its params in another order or left out isn't pushed again
+    const push = jest.spyOn(router, 'push')
+    for (const url of ['/jobs?labels=daily&keywords=one', '/jobs?labels=critical']) {
+      router.replace(url)
+      await Vue.nextTick()
+    }
+    expect(push).not.toHaveBeenCalled()
   })
 })
