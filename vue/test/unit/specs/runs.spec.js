@@ -78,28 +78,22 @@ describe('run window span', () => {
   })
 })
 
-describe('isRunWindowStale', () => {
-  const at = iso => ({
-    runWindow: {anchor: '2026-10-14T10:00:00+00:00', end: Date.parse('2026-10-14T12:00:00+00:00')},
-    runWindowStale: false,
-    time: new Date(iso),
-  })
+test('isRunWindowStale', () => {
+  const anchor = '2026-10-14T10:00:00+00:00'
+  const at = (iso, runWindow = {anchor, end: Date.parse('2026-10-14T12:00:00+00:00')}) => (
+    {runWindow, runWindowStale: false, time: new Date(iso)}
+  )
 
-  test('a window at now goes stale halfway to its later edge', () => {
-    expect(runs.isRunWindowStale(at('2026-10-14T10:59:59Z'), true)).toBe(false)
-    expect(runs.isRunWindowStale(at('2026-10-14T11:00:00Z'), true)).toBe(true)
-    expect(runs.isRunWindowStale(at('2026-10-14T11:00:00Z'), false)).toBe(false)
-  })
+  // a window at now goes stale halfway to its later edge
+  expect(runs.isRunWindowStale(at('2026-10-14T10:59:59Z'), true)).toBe(false)
+  expect(runs.isRunWindowStale(at('2026-10-14T11:00:00Z'), true)).toBe(true)
+  expect(runs.isRunWindowStale(at('2026-10-14T11:00:00Z'), false)).toBe(false)
 
-  test('an open or empty later side never goes stale with time', () => {
-    const state = at('2026-10-15T00:00:00Z')
-    expect(runs.isRunWindowStale({...state, runWindow: {...state.runWindow, end: Infinity}}, true)).toBe(false)
-    const anchor = state.runWindow.anchor
-    expect(runs.isRunWindowStale({...state, runWindow: {anchor, end: Date.parse(anchor)}}, true)).toBe(false)
-  })
+  // an open or empty later side never goes stale with time
+  expect(runs.isRunWindowStale(at('2026-10-15T00:00:00Z', {anchor, end: Infinity}), true)).toBe(false)
+  expect(runs.isRunWindowStale(at('2026-10-15T00:00:00Z', {anchor, end: Date.parse(anchor)}), true)).toBe(false)
 
-  test('a window missing runs is stale and no window is not', () => {
-    expect(runs.isRunWindowStale({...at('2026-10-14T10:00:00Z'), runWindowStale: true}, false)).toBe(true)
-    expect(runs.isRunWindowStale({runWindow: null, runWindowStale: false}, true)).toBe(false)
-  })
+  // a window missing runs is stale and no window is not
+  expect(runs.isRunWindowStale({...at('2026-10-14T10:00:00Z'), runWindowStale: true}, false)).toBe(true)
+  expect(runs.isRunWindowStale(at('2026-10-14T10:00:00Z', null), true)).toBe(false)
 })
