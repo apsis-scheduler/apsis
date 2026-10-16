@@ -47,8 +47,6 @@ log = logging.getLogger(__name__)
 WS_DRAIN_TIME = 0.5
 # Max number of items to send in one websocket message.
 WS_CHUNK = 4096
-# Send bigger chunks when the json is pre-serialized
-WS_RAW_CHUNK = 2**12
 
 # runs per page, fixed so one decode on the loop stays small
 PAGE_SIZE = 200
@@ -649,13 +647,13 @@ async def _send_chunked(msgs, ws, prefix):
 
 async def _send_raw(pages: Iterable[list[str]], ws, prefix: str) -> None:
     """
-    Sends pages of json messages in frames of at least `WS_RAW_CHUNK` messages,
+    Sends pages of json messages in frames of at least `WS_CHUNK` messages,
     except the last, yielding to the event loop after each page.
     """
     chunk = []
     for page in pages:
         chunk.extend(page)
-        if len(chunk) >= WS_RAW_CHUNK:
+        if len(chunk) >= WS_CHUNK:
             await _send_raw_chunk(chunk, ws, prefix)
             chunk = []
         await asyncio.sleep(0)

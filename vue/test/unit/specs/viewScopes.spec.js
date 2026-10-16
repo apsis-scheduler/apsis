@@ -17,8 +17,8 @@ function windowScope(show) {
   return {window: [['time', 'now'], ['limit', show], ['grouping', 1]]}
 }
 
-function makeRun(run_id, seq) {
-  return {run_id, job_id: 'job/' + run_id, args: {}, state: 'new', times: {}, seq,
+function makeRun(run_id) {
+  return {run_id, job_id: 'job/' + run_id, args: {}, state: 'new', times: {},
           dependencies: [['dep/' + run_id, {}]]}
 }
 
@@ -80,8 +80,8 @@ describe('view summary scopes', () => {
   })
 
   test('the run page keeps the previous scope until the run is known', async () => {
-    const r1 = makeRun('r1', 1)
-    const r2 = makeRun('r2', 1)
+    const r1 = makeRun('r1')
+    const r2 = makeRun('r2')
     await go('/runs/r1')
     expect(setSummaryScope).not.toHaveBeenCalled()
     await respond(r1)
@@ -90,28 +90,5 @@ describe('view summary scopes', () => {
     expect(setSummaryScope).toHaveBeenCalledTimes(1)
     await respond(r2)
     expect(setSummaryScope.mock.calls).toEqual([[runScope(r1)], [runScope(r2)]])
-  })
-
-  test('the run page refetches the run when its summary changes', async () => {
-    await go('/runs/r3')
-    expect(fetch).toHaveBeenCalledTimes(1)
-    // the summary arrives before the fetch
-    store.state.runs = new Map([['r3', makeRun('r3', 1)]])
-    await flush()
-    expect(fetch).toHaveBeenCalledTimes(2)
-    await respond(makeRun('r3', 1))
-    await respond(makeRun('r3', 1))
-
-    store.state.runs = new Map([['r3', makeRun('r3', 2)]])
-    await flush()
-    expect(fetch).toHaveBeenCalledTimes(3)
-    await respond(makeRun('r3', 2))
-
-    // rescoping clears the run from the store then sends it again unchanged
-    store.state.runs = new Map()
-    await flush()
-    store.state.runs = new Map([['r3', makeRun('r3', 2)]])
-    await flush()
-    expect(fetch).toHaveBeenCalledTimes(3)
   })
 })

@@ -61,7 +61,7 @@ def group_key(entry: Entry) -> str:
     Scheduled and completed runs group by instance, and others are never grouped.
     """
     sgrp = STATE_GROUPS[entry.state]
-    # keys are strings so the many kept during a walk aren't gc tracked
+    # keys are plain strings with a null byte between job ID and args
     return sgrp + entry.run_id if sgrp == "R" else f"{sgrp}{entry.job_id}\0{entry.args}"
 
 
@@ -323,7 +323,10 @@ async def query_window(
     keep = _make_keep(
         spec, job_ids, float("-inf") if min_timestamp is None else dump_time(min_timestamp)
     )
-    expected = [e for e in map(_expected_entry, expected_runs) if keep(e)]
+    expected = []
+    for chunk in chunks(expected_runs, PAGE_ROWS):
+        expected.extend(e for e in map(_expected_entry, chunk) if keep(e))
+        await asyncio.sleep(0)
     expected.sort(key=lambda e: (e.sched, e.rowid))
     key_of = group_key if spec.grouping else lambda e: "R" + e.run_id
 

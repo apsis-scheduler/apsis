@@ -5,7 +5,7 @@ import { clearRunState, processMsgs } from '@/runs.js'
 import store from '@/store.js'
 import { Socket } from '@/websocket.js'
 
-// shared by the jobs and agents views so switching between them keeps the socket
+// scope of the jobs and agents views
 export const JOBS_SCOPE = {types: ['job', 'agent_conn']}
 
 export function jobScope(job_id) {
