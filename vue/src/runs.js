@@ -64,8 +64,8 @@ function inRunWindow(runWindow, run) {
 
 /**
  * Returns true if the run window in store `state` should be reloaded, since
- * it's missing runs it needs or, for a window at now, the clock passed halfway
- * from its anchor to its later edge.
+ * it's missing runs it needs or, for a window at now, the time since it loaded
+ * reached half the span from its anchor to its later edge.
  */
 export function isRunWindowStale(state, atNow) {
   const runWindow = state.runWindow
@@ -74,7 +74,8 @@ export function isRunWindowStale(state, atNow) {
   if (state.runWindowStale)
     return true
   const anchor = Date.parse(runWindow.anchor)
-  return atNow && anchor < runWindow.end && state.time >= (anchor + runWindow.end) / 2
+  return atNow && anchor < runWindow.end
+    && state.time - runWindow.loaded >= (runWindow.end - anchor) / 2
 }
 
 /**
@@ -187,6 +188,7 @@ export function processMsgs(msgs, state) {
           runIds: new Set(windowRuns.keys()),
           start: msg.earlier ? Date.parse(msg.earlier.time) : -Infinity,
           end: msg.later ? Date.parse(msg.later.time) : Infinity,
+          loaded: Date.now(),
         })
         break
     }
