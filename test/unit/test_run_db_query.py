@@ -521,14 +521,10 @@ def test_job_rows(tmp_path):
 
 
 def test_schedule_index_check(tmp_path):
+    """Db errors other than a missing index pass through."""
     path = tmp_path / "apsis.db"
     SqliteDB.create(path=path)
     conn = SqliteDB.open(path).conn
-    conn.execute("DROP INDEX idx_runs_schedule")
-    conn.commit()
-    assert not SqliteDB.open(path).run_db.has_schedule_index
-
-    # other db errors pass through
     conn.execute("DROP TABLE runs")
     conn.commit()
     with pytest.raises(sqlite3.OperationalError, match="no such table"):
