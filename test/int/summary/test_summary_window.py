@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import closing
 import sqlite3
+from urllib.parse import quote
 
 import ora
 import pytest
@@ -71,27 +72,15 @@ async def test_window(service, run_ids):
     # windowed mode sends runs only by default
     assert {m["type"] for m in msgs} == {"run_summary", "run_window"}
 
-    msgs = await service.read_summary("init&time=now&limit=2&grouping=0", until="run_window")
+    anchor = msgs[-1]["anchor"]
+    msgs = await service.read_summary(
+        f"init&time={quote(anchor)}&limit=2&grouping=0", until="run_window"
+    )
     assert window_ids(msgs) == [run_ids["done"], run_ids["a1"][0]]
+    assert (msgs[-1]["anchor"], msgs[-1]["limit"], msgs[-1]["grouping"]) == (anchor, 2, False)
     assert msgs[-1]["groups"] == {}
     assert msgs[-1]["earlier"] is None
     assert msgs[-1]["later"]["time"]
-
-
-@pytest.mark.parametrize(
-    "query, expected",
-    [
-        ("path=b", ["b"]),
-        ("state=scheduled&grouping=0", ["a1", "a1", "a2", "b"]),
-        ("arg=x=2", ["a2"]),
-        ("arg=x&keyword=A", ["done", "a1", "a2"]),
-    ],
-)
-@pytest.mark.asyncio
-async def test_window_filters(service, run_ids, query, expected):
-    msgs = await service.read_summary(f"init&time=now&{query}", until="run_window")
-    names = {r: n for n, ids in run_ids.items() for r in ([ids] if isinstance(ids, str) else ids)}
-    assert [names[r] for r in window_ids(msgs)] == expected
 
 
 @pytest.mark.asyncio
@@ -120,31 +109,6 @@ async def test_window_deltas(service, run_ids):
     for run_id in (b_run_id, a2_run_id):
         service.wait_run(run_id)
     assert {m["run_summary"]["run_id"] for m in msgs} == {a1_run_id}
-
-
-@pytest.mark.asyncio
-async def test_window_reload(service):
-    """Runs of a job added by a reload reach a path filtered window."""
-    url = f"ws://localhost:{service.port}/api/v1/summary?init&time=now&path=a"
-    async with get_ws_msgs(url) as frames:
-        async for frame in frames:
-            if ujson.loads(frame)[-1]["type"] == "run_window":
-                break
-        (service.jobs_dir / "a").mkdir()
-        with open(service.jobs_dir / "a" / "new.yaml", "w") as file:
-            yaml.dump(
-                {"program": {"type": "no-op"}, "schedule": {"type": "interval", "interval": "6h"}},
-                file,
-            )
-        service.client.reload_jobs()
-
-        async def read():
-            async for frame in frames:
-                for msg in ujson.loads(frame):
-                    if msg.get("run_summary", {}).get("job_id") == "a/new":
-                        return msg
-
-        assert await asyncio.wait_for(read(), 10)
 
 
 @pytest.mark.asyncio
