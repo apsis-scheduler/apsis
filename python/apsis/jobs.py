@@ -476,8 +476,8 @@ class Jobs:
                     bind_args = {**BIND_ARGS, "job_id": job.job_id, **sched.args}
                     try:
                         dependents[template_expand(cond.job_id, bind_args)].add(job.job_id)
-                    except Exception:
-                        # the template needs run time args or fails with these
+                    except NameError:
+                        # the template needs an arg only a run has like date
                         pass
         return dependents
 

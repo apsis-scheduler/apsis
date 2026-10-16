@@ -351,7 +351,9 @@ class RunDB:
                 "EXPLAIN QUERY PLAN SELECT rowid FROM runs INDEXED BY idx_runs_schedule"
                 f" WHERE {SCHEDULE_TIME_SQL} < ''"
             ).fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as exc:
+            if "no such index" not in str(exc):
+                raise
             return False
         # an index on some other expression can only scan
         return plan[0][3].startswith("SEARCH")
