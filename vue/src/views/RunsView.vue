@@ -7,15 +7,17 @@ div
     :query="query"
     @query="onQueryChange"
     :timeControls="true"
+    windowed
   )
 
 </template>
 
 <script>
 import { isEqual } from 'lodash'
-import { argsToArray, arrayToArgs } from '@/runs'
+import { argsToArray, arrayToArgs, isRunWindowStale } from '@/runs'
 import RunsList from '@/components/RunsList'
-import { setSummaryScope } from '@/summary.js'
+import store from '@/store.js'
+import { setSummaryScope, windowScope } from '@/summary.js'
 import { formatCompactUTCTime, parseCompactUTCTime } from '@/time'
 
 /**
@@ -41,7 +43,13 @@ export default {
   },
 
   created() {
-    setSummaryScope()
+    setSummaryScope(windowScope(this.query))
+  },
+
+  computed: {
+    windowStale() {
+      return isRunWindowStale(store.state, this.query.time === 'now')
+    },
   },
 
   watch: {
@@ -49,7 +57,17 @@ export default {
     // trigger an update to the query.
     '$route'(to) {
       this.$set(this, 'query', this.urlToQuery(to.query))
-    }
+    },
+
+    query() {
+      setSummaryScope(windowScope(this.query))
+    },
+
+    // reload a stale window, keeping its runs until the new one arrives
+    windowStale(stale) {
+      if (stale)
+        setSummaryScope(windowScope(this.query), true)
+    },
   },
 
   methods: {

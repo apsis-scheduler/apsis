@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import router from '@/router'
+import { processMsgs } from '@/runs.js'
 import store from '@/store.js'
 import { JOBS_SCOPE, jobScope, runScope, setSummaryScope } from '@/summary.js'
 
@@ -11,6 +12,10 @@ jest.mock('@/websocket.js', () => ({
 }))
 
 const flush = () => new Promise(resolve => setTimeout(resolve))
+
+function windowScope(show) {
+  return {window: [['time', 'now'], ['limit', show], ['grouping', 1]]}
+}
 
 function makeRun(run_id) {
   return {run_id, job_id: 'job/' + run_id, args: {}, state: 'new', times: {},
@@ -50,7 +55,19 @@ describe('view summary scopes', () => {
     await go('/jobs')
     await go('/agents')
     await go('/runs')
-    expect(setSummaryScope.mock.calls).toEqual([[JOBS_SCOPE], [JOBS_SCOPE], []])
+    expect(setSummaryScope.mock.calls).toEqual([[JOBS_SCOPE], [JOBS_SCOPE], [windowScope(50)]])
+  })
+
+  test('the runs page follows its query and reloads a stale window', async () => {
+    await go('/runs')
+    await go('/runs?show=20')
+    processMsgs([{type: 'run_window', groups: {}, earlier: null, later: null}], store.state)
+    store.state.runWindowStale = true
+    await flush()
+    store.state.runWindowStale = false
+    await flush()
+    expect(setSummaryScope.mock.calls)
+      .toEqual([[windowScope(50)], [windowScope(20)], [windowScope(20), true]])
   })
 
   test('the job page rescopes when the job changes', async () => {
