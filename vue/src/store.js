@@ -53,6 +53,8 @@ class Store {
     agentConns: new Map(),
   }
 
+  _tickTimer = null
+
   setTime(time) {
     this.state.time = time || new Date()
     this.state.timeStr = formatTime(this.state.time, this.state.timeZone)
@@ -72,12 +74,20 @@ class Store {
   }
 
   _tick() {
+    window.clearTimeout(this._tickTimer)
+    this._tickTimer = null
+    // stop ticking while the page is hidden
+    if (document.hidden)
+      return
+
     this.setTime()
     // Update every second, on the second.
-    window.setTimeout(() => this._tick(), 1000 - this.state.time % 1000) 
+    this._tickTimer = window.setTimeout(() => this._tick(), 1000 - this.state.time % 1000)
   }
 
   constructor() {
+    // tick right away when the page is shown again
+    document.addEventListener('visibilitychange', () => this._tick())
     this._tick()
   }
 }
