@@ -34,4 +34,28 @@ describe('RunView.vue', () => {
     vm.$destroy()
     expect(favicon()).toEqual('/static/favicon.svg')
   })
+
+  it('resets the favicon when the run is missing', async () => {
+    document.head.innerHTML = '<link rel="icon" href="/static/favicon.svg">'
+    const favicon = () => document.querySelector('link[rel="icon"]').getAttribute('href')
+    let respond
+    global.fetch = jest.fn(() => new Promise(resolve => { respond = resolve }))
+    store.state.runs = new Map([['r1', {
+      run_id: 'r1',
+      job_id: 'test/job',
+      args: {},
+      state: 'new',
+      times: {},
+    }]])
+
+    const vm = new (Vue.extend(RunView))({
+      propsData: { run_id: 'r1' },
+    }).$mount()
+    await vm.$nextTick()
+    expect(favicon()).not.toEqual('/static/favicon.svg')
+
+    respond({ok: false, status: 404})
+    await new Promise(resolve => setTimeout(resolve))
+    expect(favicon()).toEqual('/static/favicon.svg')
+  })
 })
