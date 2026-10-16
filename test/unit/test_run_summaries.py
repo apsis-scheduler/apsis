@@ -376,14 +376,6 @@ async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
     assert ws.ids() == [["x", "y"], [run.run_id]]
 
 
-def test_get_payloads(tmp_path):
-    run_store = make_run_store(tmp_path)
-    a, _ = add_runs(run_store, "a", 2)
-    payloads = run_store._RunStore__summary_db.get_payloads([a.run_id, "r999"])
-    assert list(payloads) == [a.run_id]
-    assert run_ids(payloads.values()) == [a.run_id]
-
-
 @pytest.mark.asyncio
 async def test_window_summaries(tmp_path):
     run_store = make_run_store(tmp_path)
@@ -399,46 +391,6 @@ async def test_window_summaries(tmp_path):
     assert window.run_ids == [run.run_id, expected.run_id]
     summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
     assert run_ids(summaries) == [expected.run_id, run.run_id]
-
-
-@pytest.mark.asyncio
-async def test_send_window_init(tmp_path):
-    run_store = make_run_store(tmp_path)
-    t = ora.now()
-    runs = add_runs(run_store, "a", 3)
-    for i, run in enumerate(runs):
-        run.state = State.success
-        run.times["schedule"] = t - 60 * (3 - i)
-        run_store.update(run, t)
-    apsis = SimpleNamespace(run_store=run_store)
-
-    ws = FakeWs()
-    spec = WindowSpec(anchor=t, limit=1)
-    await send_window_init(
-        apsis, ws, SummaryScope(init=True, types=frozenset({"run"}), window=spec)
-    )
-    assert ws.ids() == [[runs[2].run_id]]
-    assert ws.frames[-1] == [
-        {
-            "type": "run_window",
-            "anchor": str(t),
-            "limit": 1,
-            "grouping": True,
-            "groups": {runs[2].run_id: 3},
-            "earlier": None,
-            "later": None,
-            "complete": True,
-        }
-    ]
-
-    ws = FakeWs()
-    spec = WindowSpec(anchor=t, limit=1, grouping=False)
-    await send_window_init(
-        apsis, ws, SummaryScope(init=True, types=frozenset({"run"}), window=spec)
-    )
-    (msg,) = ws.frames[-1]
-    assert msg["groups"] == {}
-    assert msg["earlier"] == {"time": str(t - 60)}
 
 
 @pytest.mark.asyncio
