@@ -54,6 +54,10 @@ class Store {
 
     // runs sent by job_id for jobs whose older runs the summary socket left out
     summaryTruncated: {},
+    // last run_window message from the summary socket, with group keys
+    runWindow: null,
+    // true once the run window is missing runs it needs
+    runWindowStale: false,
   }
 
   setTime(time) {

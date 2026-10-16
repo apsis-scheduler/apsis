@@ -10,14 +10,96 @@ describe('Urls', () => {
 })
 
 describe('processMsgs', () => {
-  test('summary messages set truncation and errors', () => {
-    const errors = []
-    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), errors: {push: e => errors.push(e)}}
+  test('summary init done sets truncation', () => {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
     runs.processMsgs([{type: 'summary_init_done', truncated: {a: 10000}}], state)
     expect(state.summaryTruncated).toEqual({a: 10000})
-    runs.processMsgs([{type: 'summary_error', error: 'unknown types: x'}], state)
-    expect(errors).toEqual(['summary error: unknown types: x'])
     runs.clearRunState(state)
     expect(state.summaryTruncated).toEqual({})
+  })
+})
+
+describe('run windows', () => {
+  const run = (run_id, state) => ({
+    run_id, job_id: 'a', args: {}, state, times: {schedule: '2026-10-14T00:00:00+00:00'},
+  })
+
+  test('group counts add the runs the window left out', () => {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
+    runs.processMsgs([{type: 'run_summary', run_summary: run('r1', 'success')}], state)
+    runs.processMsgs([{type: 'run_window', groups: {r1: 5, r9: 2}, earlier: null, later: null}], state)
+    expect(state.runWindow.groups).toEqual({r1: {count: 5, key: 'Ca\0'}, r9: {count: 2, key: null}})
+    expect(runs.groupCount([state.runs.get('r1')], state.runWindow)).toBe(5)
+    expect(runs.groupCount([state.runs.get('r1')], null)).toBe(1)
+
+    // a newer run of the group adds to the count
+    runs.processMsgs([{type: 'run_summary', run_summary: run('r2', 'failure')}], state)
+    expect(runs.groupCount([state.runs.get('r1'), state.runs.get('r2')], state.runWindow)).toBe(6)
+
+    expect(state.runWindowStale).toBe(false)
+
+    // a counted run that left its group counts alone and the window goes stale
+    runs.processMsgs([{type: 'run_transition', run_summary: run('r1', 'running')}], state)
+    expect(runs.groupCount([state.runs.get('r1')], state.runWindow)).toBe(1)
+    expect(state.runWindowStale).toBe(true)
+
+    runs.clearRunState(state)
+    expect(state.runWindow).toBe(null)
+    expect(state.runWindowStale).toBe(false)
+  })
+})
+
+describe('run window span', () => {
+  const run = (run_id, hour) => ({
+    run_id, job_id: 'a', args: {}, state: 'success', times: {schedule: `2026-10-14T${hour}:00:00+00:00`},
+  })
+  const kept = state => Array.from(state.runs.keys()).sort()
+
+  function load(earlier, later) {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
+    runs.processMsgs([
+      {type: 'run_summary', run_summary: run('r1', '10')},
+      {type: 'run_window', groups: {}, earlier, later},
+    ], state)
+    return state
+  }
+
+  test('runs outside the span or unsent at its edges are dropped', () => {
+    const state = load({time: '2026-10-14T10:00:00+00:00'}, {time: '2026-10-14T12:00:00+00:00'})
+    const msgs = [run('r1', '10'), run('r2', '10'), run('r3', '11'), run('r4', '12'), run('r5', '08'), run('r6', '13')]
+    runs.processMsgs(msgs.map(r => ({type: 'run_transition', run_summary: r})), state)
+    expect(kept(state)).toEqual(['r1', 'r3'])
+  })
+
+  test('a side with nothing past it is open', () => {
+    const state = load(null, null)
+    runs.processMsgs([run('r5', '08'), run('r6', '13')].map(r => ({type: 'run_summary', run_summary: r})), state)
+    expect(kept(state)).toEqual(['r1', 'r5', 'r6'])
+  })
+})
+
+describe('isRunWindowStale', () => {
+  const at = iso => ({
+    runWindow: {anchor: '2026-10-14T10:00:00+00:00', end: Date.parse('2026-10-14T12:00:00+00:00')},
+    runWindowStale: false,
+    time: new Date(iso),
+  })
+
+  test('a window at now goes stale halfway to its later edge', () => {
+    expect(runs.isRunWindowStale(at('2026-10-14T10:59:59Z'), true)).toBe(false)
+    expect(runs.isRunWindowStale(at('2026-10-14T11:00:00Z'), true)).toBe(true)
+    expect(runs.isRunWindowStale(at('2026-10-14T11:00:00Z'), false)).toBe(false)
+  })
+
+  test('an open or empty later side never goes stale with time', () => {
+    const state = at('2026-10-15T00:00:00Z')
+    expect(runs.isRunWindowStale({...state, runWindow: {...state.runWindow, end: Infinity}}, true)).toBe(false)
+    const anchor = state.runWindow.anchor
+    expect(runs.isRunWindowStale({...state, runWindow: {anchor, end: Date.parse(anchor)}}, true)).toBe(false)
+  })
+
+  test('a window missing runs is stale and no window is not', () => {
+    expect(runs.isRunWindowStale({...at('2026-10-14T10:00:00Z'), runWindowStale: true}, false)).toBe(true)
+    expect(runs.isRunWindowStale({runWindow: null, runWindowStale: false}, true)).toBe(false)
   })
 })
