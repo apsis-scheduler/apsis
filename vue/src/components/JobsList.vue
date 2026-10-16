@@ -56,7 +56,6 @@ div.jobs-list
       DynamicScrollerItem.row(
         :item="item"
         :active="active"
-        :size-dependencies="[item.job]"
       )
         div(:style="{ 'padding-left': (30 * item.subpath.length) + 'px' }")
 
