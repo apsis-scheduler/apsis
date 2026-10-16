@@ -183,6 +183,21 @@ export function arrayToArgs(arr) {
 }
 
 /**
+ * Adds `label` to a labels filter, or removes it if already present.
+ *
+ * @param {string[] | null} labels - the labels filter, or null for none
+ * @param {string} label
+ * @returns {string[] | null} the new filter, or null if empty
+ */
+export function toggleLabel(labels, label) {
+  labels = labels || []
+  const result = labels.includes(label)
+    ? labels.filter(l => l !== label)
+    : [...labels, label]
+  return result.length > 0 ? result : null
+}
+
+/**
  * Returns true if each member of `keywords` is a substring of `string`.
  */
 export function matchKeywords(keywords, string) {

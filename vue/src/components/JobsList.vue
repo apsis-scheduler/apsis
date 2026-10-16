@@ -95,6 +95,9 @@ div.jobs-list
               v-for="label in item.job.metadata.labels"
               :key="label"
               :label="label"
+              clickable
+              :selected="labels !== null && labels.includes(label)"
+              @click="$emit('labels', toggleLabel(labels, label))"
             )
 
         div
@@ -114,7 +117,7 @@ import JobLabel from '@/components/JobLabel'
 import { descriptionExcerptHtml } from '@/markdown'
 import PathNav from '@/components/PathNav'
 import Program from '@/components/Program'
-import { matchKeywords, includesAll } from '@/runs'
+import { matchKeywords, includesAll, toggleLabel } from '@/runs'
 import SearchInput from '@/components/SearchInput'
 import store from '@/store.js'
 import TriangleIcon from '@/components/icons/TriangleIcon'
@@ -263,6 +266,8 @@ export default {
     descriptionExcerptHtml,
 
     join,
+
+    toggleLabel,
 
     toggleExpand(path) {
       this.$set(this.expand, path, !this.expand[path])
