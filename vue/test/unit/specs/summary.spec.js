@@ -153,7 +153,6 @@ describe('run windows', () => {
 
   test('4503 falls back to no scope', () => {
     summary.setSummaryScope(summary.windowScope(QUERY))
-    sockets[0].onMessage(frame({type: 'summary_error', error: 'runs schedule index missing'}))
     sockets[0].onClose({code: 4503})
     expect(sockets.length).toBe(2)
     expect(sockets[1].url.search).toBe('?init')
