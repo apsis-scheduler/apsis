@@ -63,6 +63,11 @@ describe('RunsList.vue', () => {
     const handle = vm.$el.querySelector('th.col-job .col-resizer')
     const start = col()
 
+    // a click without a drag saves nothing
+    handle.dispatchEvent(new MouseEvent('mousedown', {clientX: 100}))
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    expect(saved.size).toBe(0)
+
     handle.dispatchEvent(new MouseEvent('mousedown', {clientX: 100}))
     window.dispatchEvent(new MouseEvent('mousemove', {clientX: 160}))
     window.dispatchEvent(new MouseEvent('mouseup'))
