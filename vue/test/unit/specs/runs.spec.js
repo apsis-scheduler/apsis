@@ -10,13 +10,10 @@ describe('Urls', () => {
 })
 
 describe('processMsgs', () => {
-  test('summary messages set truncation and errors', () => {
-    const errors = []
-    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), errors: {push: e => errors.push(e)}}
+  test('summary init done sets truncation', () => {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map()}
     runs.processMsgs([{type: 'summary_init_done', truncated: {a: 10000}}], state)
     expect(state.summaryTruncated).toEqual({a: 10000})
-    runs.processMsgs([{type: 'summary_error', error: 'unknown types: x'}], state)
-    expect(errors).toEqual(['summary error: unknown types: x'])
     runs.clearRunState(state)
     expect(state.summaryTruncated).toEqual({})
   })

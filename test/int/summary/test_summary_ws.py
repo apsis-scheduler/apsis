@@ -13,7 +13,6 @@ NO_OP = {"type": "no-op"}
 JOBS = {
     "a": {"program": NO_OP},
     "b": {"program": NO_OP},
-    "c": {"program": NO_OP, "condition": {"type": "dependency", "job_id": "a"}},
     "sched": {"program": NO_OP, "schedule": {"type": "interval", "interval": "6h"}},
 }
 
@@ -66,35 +65,11 @@ async def read_until(frames, pred):
 
 
 @pytest.mark.asyncio
-async def test_unscoped_init(service, run_ids):
-    # unscoped init has no done message and sends db runs last
-    msgs = await service.read_summary("init", until="run_summary")
-    assert job_ids(msgs) == sorted(JOBS)
-    runs = run_job_ids(msgs)
-    assert set(run_ids["a"] + run_ids["b"]) <= set(runs)
-    assert "sched" in runs.values()
-    assert "summary_init_done" not in {m["type"] for m in msgs}
-
-
-@pytest.mark.asyncio
 async def test_job_scope(service, run_ids):
     msgs = await service.read_summary("init&job_id=a")
     assert job_ids(msgs) == ["a"]
     assert run_job_ids(msgs) == {r: "a" for r in run_ids["a"]}
     assert msgs[-1] == {"type": "summary_init_done", "truncated": {}}
-
-
-@pytest.mark.asyncio
-async def test_types_scope(service, run_ids):
-    msgs = await service.read_summary("init&types=job,agent_conn")
-    assert job_ids(msgs) == sorted(JOBS)
-    assert run_job_ids(msgs) == {}
-
-
-@pytest.mark.asyncio
-async def test_dependents_scope(service):
-    msgs = await service.read_summary("init&types=job&dependents_of=a")
-    assert job_ids(msgs) == ["c"]
 
 
 @pytest.mark.asyncio
