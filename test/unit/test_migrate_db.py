@@ -23,7 +23,7 @@ def migrate_db():
         "CREATE INDEX idx_runs_schedule ON runs (json_extract(times, '$.running'))",
     ],
 )
-def test_migrate_2_6_0(tmp_path, migrate_db, replace_sql):
+def test_migrate_2_7_0(tmp_path, migrate_db, replace_sql):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
     conn = SqliteDB.open(path).conn
@@ -34,10 +34,10 @@ def test_migrate_2_6_0(tmp_path, migrate_db, replace_sql):
 
     db = SqliteDB.open(path)
     assert not db.run_db.has_schedule_index
-    migrate_db.migrate_2_6_0(db)
+    migrate_db.migrate_2_7_0(db)
     db = SqliteDB.open(path)
     assert db.run_db.has_schedule_index
 
     # running again leaves the index alone
-    migrate_db.migrate_2_6_0(db)
+    migrate_db.migrate_2_7_0(db)
     assert SqliteDB.open(path).run_db.has_schedule_index
