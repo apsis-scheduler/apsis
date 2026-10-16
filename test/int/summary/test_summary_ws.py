@@ -84,10 +84,12 @@ async def test_bad_scope(service):
 
 
 @pytest.mark.asyncio
-async def test_live_deltas(service, run_ids):
-    url = f"ws://localhost:{service.port}/api/v1/summary?init&job_id=a"
+@pytest.mark.parametrize("init", [True, False])
+async def test_live_deltas(service, run_ids, init):
+    url = f"ws://localhost:{service.port}/api/v1/summary?{'init&' if init else ''}job_id=a"
     async with get_ws_msgs(url) as frames:
-        await read_until(frames, lambda m: m["type"] == "summary_init_done")
+        if init:
+            await read_until(frames, lambda m: m["type"] == "summary_init_done")
         b_run_id = service.client.schedule("b", {}, "now")["run_id"]
         a_run_id = service.client.schedule("a", {}, "now")["run_id"]
         msgs = await asyncio.wait_for(
