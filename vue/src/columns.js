@@ -7,7 +7,7 @@ const DEFAULT_WIDTHS = {
   arg: 160,
   run: 100,
   state: 72,
-  group: 100,
+  group: 115,
   schedule: 150,
   start: 150,
   elapsed: 90,
