@@ -15,17 +15,21 @@ def make_db(tmp_path):
     return SqliteDB.open(path)
 
 
-def make_run_store(tmp_path, min_timestamp=ora.now() - 86400):
-    return RunStore(make_db(tmp_path), min_timestamp=min_timestamp)
+def make_run_store(tmp_path, lookback=86400):
+    return RunStore(make_db(tmp_path), lookback=lookback)
 
 
-def test_min_timestamp_none(tmp_path):
-    run_store = make_run_store(tmp_path, min_timestamp=None)
+def all_summaries(run_store: RunStore) -> list[str]:
+    return [s for page in run_store.summaries() for s in page]
+
+
+def test_lookback_none(tmp_path):
+    run_store = make_run_store(tmp_path, lookback=None)
 
     run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=True)
     run_store.add(run)
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     assert len(summaries) == 1
 
 
@@ -68,7 +72,7 @@ def test_no_db_lock_truncate(tmp_path):
     db_path = tmp_path / "apsis.db"
     SqliteDB.create(db_path)
     db = SqliteDB.open(db_path, timeout=5)
-    run_store = RunStore(db, min_timestamp=ora.now() - 86400)
+    run_store = RunStore(db, lookback=86400)
 
     for i in range(100):
         run = Run(Instance("test/job", {"date": f"2026-01-{i:02d}"}), expected=False)
@@ -115,7 +119,7 @@ def test_summaries_includes_expected_runs(tmp_path):
     run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=True)
     run_store.add(run)
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     assert len(summaries) == 1
 
     parsed = ujson.loads(summaries[0])
@@ -134,7 +138,7 @@ def test_summaries_includes_persisted_runs(tmp_path):
     run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     assert len(summaries) == 1
 
     parsed = ujson.loads(summaries[0])
@@ -153,7 +157,7 @@ def test_summaries_updated_on_transition(tmp_path):
     run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     parsed = ujson.loads(summaries[0])
     assert parsed["run_summary"]["state"] == "scheduled"
 
@@ -161,7 +165,7 @@ def test_summaries_updated_on_transition(tmp_path):
     run._transition(ora.now(), State.waiting)
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     parsed = ujson.loads(summaries[0])
     assert parsed["run_summary"]["state"] == "waiting"
 
@@ -186,7 +190,7 @@ def test_summaries_cover_all_runs(tmp_path):
         persisted_runs.append(run)
 
     all_runs = expected_runs + persisted_runs
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
 
     # one summary per run
     assert len(summaries) == len(all_runs)
@@ -209,6 +213,32 @@ def test_summaries_no_duplicates_for_expected_becoming_persisted(tmp_path):
     run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     summary_run_ids = [ujson.loads(s)["run_summary"]["run_id"] for s in summaries]
     assert summary_run_ids.count(run.run_id) == 1
+
+
+def test_summaries_paged(tmp_path, monkeypatch):
+    """Summaries come in pages of at most SUMMARY_PAGE_SIZE, expected runs first."""
+    monkeypatch.setattr("apsis.runs.SUMMARY_PAGE_SIZE", 2)
+    monkeypatch.setattr("apsis.sqlite.SUMMARY_PAGE_SIZE", 2)
+    run_store = make_run_store(tmp_path)
+
+    expected_ids = set()
+    for i in range(3):
+        run = Run(Instance(f"test/expected-{i}", {}), expected=True)
+        run_store.add(run)
+        expected_ids.add(run.run_id)
+
+    persisted_ids = set()
+    for i in range(3):
+        run = Run(Instance(f"test/persisted-{i}", {}), expected=False)
+        run_store.add(run)
+        persisted_ids.add(run.run_id)
+
+    pages = [
+        [ujson.loads(s)["run_summary"]["run_id"] for s in page] for page in run_store.summaries()
+    ]
+    assert [len(p) for p in pages] == [2, 1, 2, 1]
+    assert set(pages[0] + pages[1]) == expected_ids
+    assert set(pages[2] + pages[3]) == persisted_ids

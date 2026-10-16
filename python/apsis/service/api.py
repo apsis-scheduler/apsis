@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterable
 import itertools
 import logging
 import ora
@@ -39,8 +40,6 @@ log = logging.getLogger(__name__)
 WS_DRAIN_TIME = 0.5
 # Max number of items to send in one websocket message.
 WS_CHUNK = 4096
-# Send bigger chunks when the json is pre-serialized
-WS_RAW_CHUNK = 2**16
 
 # runs per page, fixed so one decode on the loop stays small
 PAGE_SIZE = 200
@@ -639,12 +638,26 @@ async def _send_chunked(msgs, ws, prefix):
         await asyncio.sleep(0)
 
 
-async def _send_raw(json_msgs, ws, prefix):
-    for chunk in apsis.lib.itr.chunks(json_msgs, WS_RAW_CHUNK):
-        json = "[" + ",".join(chunk) + "]"
-        log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
-        await ws.send(json)
+async def _send_raw(pages: Iterable[list[str]], ws, prefix: str) -> None:
+    """
+    Sends pages of json messages in frames of at least `WS_CHUNK` messages,
+    except the last, yielding to the event loop after each page.
+    """
+    chunk = []
+    for page in pages:
+        chunk.extend(page)
+        if len(chunk) >= WS_CHUNK:
+            await _send_raw_chunk(chunk, ws, prefix)
+            chunk = []
         await asyncio.sleep(0)
+    if chunk:
+        await _send_raw_chunk(chunk, ws, prefix)
+
+
+async def _send_raw_chunk(chunk: list[str], ws, prefix: str) -> None:
+    json = "[" + ",".join(chunk) + "]"
+    log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
+    await ws.send(json)
 
 
 # Message types (see apsis.service.messages) to include in summary.
