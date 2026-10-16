@@ -151,7 +151,7 @@ class _Side:
     ):
         """
         :param pages:
-          Pages of entries, nearest first.
+          Nonempty pages of entries, nearest first.
         :param extra:
           Matching entries to merge in, nearest first.
         """
@@ -180,8 +180,7 @@ class _Side:
                 if keep(entry):
                     yield entry
             scanned += len(page)
-            if page:
-                self.last = page[-1].sched
+            self.last = page[-1].sched
             if scanned >= SIDE_BUDGET:
                 return
             await asyncio.sleep(0)
