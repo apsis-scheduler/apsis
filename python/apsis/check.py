@@ -172,7 +172,8 @@ def _get_dependency_job_ids(job: Job) -> set[str] | None:
 
     Ids are expanded as when binding a run, with the job id and the args of
     each schedule that are params other than `schedule_time`, or with no args
-    if the job has no schedules.  Returns `None` if one of them fails to expand.
+    if the job has no schedules.  Returns `None` if one of them uses an arg
+    that only a run has, like `date`.
     """
     job_ids = set()
     for schedule_args in [s.args for s in job.schedules] or [{}]:
@@ -185,7 +186,7 @@ def _get_dependency_job_ids(job: Job) -> set[str] | None:
                 continue
             try:
                 job_ids.add(template_expand(cond.job_id, bind_args))
-            except Exception:
+            except NameError:
                 return None
     return job_ids
 
