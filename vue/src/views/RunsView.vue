@@ -15,6 +15,7 @@ div
 import { isEqual } from 'lodash'
 import { argsToArray, arrayToArgs } from '@/runs'
 import RunsList from '@/components/RunsList'
+import { setSummaryScope } from '@/summary.js'
 import { formatCompactUTCTime, parseCompactUTCTime } from '@/time'
 
 /**
@@ -37,6 +38,10 @@ export default {
     return {
       query: this.urlToQuery(this.$route.query),
     }
+  },
+
+  created() {
+    setSummaryScope()
   },
 
   watch: {

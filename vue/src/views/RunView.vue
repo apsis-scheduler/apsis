@@ -129,6 +129,7 @@ import RunsList from '@/components/RunsList'
 import State from '@/components/State'
 import Timestamp from '@/components/Timestamp'
 import store from '@/store'
+import { runScope, setSummaryScope } from '@/summary.js'
 import { Socket, parseHttp } from '@/websocket.js'
 
 export default {
@@ -180,6 +181,11 @@ export default {
 
     runState() {
       return this.run ? this.run.state : null
+    },
+
+    // keep the previous scope until the run is known
+    summaryScope() {
+      return this.run ? runScope(this.run) : null
     },
 
     hasOutput() {
@@ -340,6 +346,11 @@ export default {
     updateSeq(seq, previous) {
       if (!this.run || this.run.seq !== seq)
         this.fetchRun()
+    },
+
+    summaryScope(scope) {
+      if (scope !== null)
+        setSummaryScope(scope)
     },
 
     runState(to, from) {
