@@ -16,8 +16,8 @@ class FakeWs:
 
 @pytest.mark.asyncio
 async def test_send_raw_frames_and_yields_between_pages(monkeypatch):
-    """Pages are joined into frames of at least WS_RAW_CHUNK messages and other tasks run between pages."""
-    monkeypatch.setattr(api, "WS_RAW_CHUNK", 4)
+    """Pages are joined into frames of at least WS_CHUNK messages and other tasks run between pages."""
+    monkeypatch.setattr(api, "WS_CHUNK", 4)
     ticks = 0
 
     async def ticker():
@@ -45,7 +45,7 @@ async def test_send_raw_frames_and_yields_between_pages(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_raw_no_empty_frame(monkeypatch):
-    monkeypatch.setattr(api, "WS_RAW_CHUNK", 2)
+    monkeypatch.setattr(api, "WS_CHUNK", 2)
     for pages, frames in [([], []), ([["0", "1"]], [[0, 1]])]:
         ws = FakeWs()
         await api._send_raw(pages, ws, "test")

@@ -94,10 +94,7 @@ class Apsis:
         # Actions applied to all runs.
         self.__actions = [Action.from_jso(o) for o in cfg["actions"]]
 
-        try:
-            lookback = cfg["runs"]["lookback"]
-        except KeyError:
-            lookback = None
+        lookback = cfg.get("runs", {}).get("lookback")
         self.run_store = RunStore(db, lookback=lookback)
 
         self.outputs = OutputStore(db.output_db)
