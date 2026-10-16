@@ -120,10 +120,6 @@ export function processMsgs(msgs, state) {
       case 'summary_init_done':
         state.summaryTruncated = msg.truncated
         break
-
-      case 'summary_error':
-        state.errors.push('summary error: ' + msg.error)
-        break
     }
 
   // Set new maps to trigger reactivity updates.
