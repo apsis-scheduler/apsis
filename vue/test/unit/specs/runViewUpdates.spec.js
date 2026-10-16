@@ -34,8 +34,10 @@ function respond(run_id, response) {
 
 const ok = run => ({ok: true, json: async () => ({runs: {[run.run_id]: run}})})
 
+const runSocket = () => sockets.findLast(s => s.url.toString().includes('/runs/r1/updates'))
+
 function sendSummary(summary) {
-  sockets[sockets.length - 1].onMessage({data: JSON.stringify({run: summary})})
+  runSocket().onMessage({data: JSON.stringify({run: summary})})
 }
 
 function mount(run_id) {
@@ -63,7 +65,7 @@ describe('RunView run updates', () => {
 
     // other messages leave the run alone
     const run = vm.run
-    sockets[sockets.length - 1].onMessage({data: JSON.stringify({meta: {elapsed: 1}})})
+    runSocket().onMessage({data: JSON.stringify({meta: {elapsed: 1}})})
     expect(vm.meta).toEqual({elapsed: 1})
     expect(vm.run).toBe(run)
   })
