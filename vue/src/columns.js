@@ -12,7 +12,7 @@ const DEFAULT_WIDTHS = {
   start: 150,
   elapsed: 90,
   stop: 150,
-  operations: 100,
+  operations: 110,
 }
 
 export const MIN_WIDTH = 40
