@@ -32,7 +32,7 @@ export function runScope(run) {
  */
 export function queryToWindowParams(query) {
   const params = [
-    ['time', query.time || 'now'],
+    ['time', query.time],
     ['limit', query.show],
     ['grouping', query.grouping ? 1 : 0],
   ]
