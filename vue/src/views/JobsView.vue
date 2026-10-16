@@ -56,7 +56,7 @@ export default {
   methods: {
     pushRoute() {
       const joinWords = (words) => words !== null ? words.join(',') : undefined
-      this.$router.push({
+      const location = {
         params: {
           path: toPathParts(this.path),
         },
@@ -64,7 +64,10 @@ export default {
           keywords: joinWords(this.keywords),
           labels: joinWords(this.labels),
         }
-      })
+      }
+      // syncing from a route change lands here too, so skip pushing the same url
+      if (this.$router.resolve(location).route.fullPath !== this.$route.fullPath)
+        this.$router.push(location)
     },
 
     showRuns() {
