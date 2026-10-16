@@ -57,11 +57,6 @@ describe('RunsList.vue', () => {
   })
 
   it('resizes a column by dragging its header edge and resets it on double click', async () => {
-    const saved = new Map()
-    Object.defineProperty(window, 'localStorage', {
-      value: {getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value)},
-      configurable: true,
-    })
     const vm = mountRunsList({})
     const col = () => vm.$el.querySelector('col').style.width
     const handle = vm.$el.querySelector('th.col-job .col-resizer')
@@ -70,7 +65,7 @@ describe('RunsList.vue', () => {
     // a click without a drag saves nothing
     handle.dispatchEvent(new MouseEvent('mousedown', {clientX: 100}))
     window.dispatchEvent(new MouseEvent('mouseup'))
-    expect(saved.size).toBe(0)
+    expect(localStorage.length).toBe(0)
 
     handle.dispatchEvent(new MouseEvent('mousedown', {clientX: 100}))
     window.dispatchEvent(new MouseEvent('mousemove', {clientX: 160}))
@@ -83,6 +78,5 @@ describe('RunsList.vue', () => {
     await vm.$nextTick()
     expect(col()).toBe(start)
     expect(mountRunsList({}).$el.querySelector('col').style.width).toBe(start)
-    delete window.localStorage
   })
 })
