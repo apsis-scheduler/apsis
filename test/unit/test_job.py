@@ -1,4 +1,5 @@
 import ora
+import pytest
 
 from apsis.jobs import Job, Jobs, JobsDir
 from apsis.schedule.stop import DurationStopSchedule
@@ -107,7 +108,6 @@ def test_get_dependents():
                     job("tmpl", "up/{{ region }}", [{"region": "a"}, {"region": "b"}]),
                     job("own", "{{ job_id }}/up", [{}]),
                     job("missing", "up/{{ date }}", [{"region": "a"}]),
-                    job("bad", "up/{{ region + 1 }}", [{"region": "a"}]),
                     job("max", "up/a", cond_type="max_running"),
                 )
             },
@@ -118,3 +118,7 @@ def test_get_dependents():
     assert jobs.get_dependents("up/b") == {"tmpl"}
     assert jobs.get_dependents("own/up") == {"own"}
     assert jobs.get_dependents("plain") == frozenset()
+
+    bad = job("bad", "up/{{ region + 1 }}", [{"region": "a"}])
+    with pytest.raises(TypeError):
+        Jobs(JobsDir(None, {"bad": bad}), None).get_dependents("up/a")
