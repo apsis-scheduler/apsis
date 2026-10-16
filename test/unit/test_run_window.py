@@ -257,7 +257,7 @@ async def test_no_jobs_or_index(tmp_path):
         await query_window(LockedDB(), [], WindowSpec(), min_timestamp=None)
 
     # a small job set doesn't need the index
-    window = await query_window(run_db, [], WindowSpec(job_ids=frozenset("a")), min_timestamp=None)
+    window = await query_window(run_db, [], WindowSpec(job_ids=frozenset({"a"})), min_timestamp=None)
     assert window.run_ids == ["r1"]
 
 
