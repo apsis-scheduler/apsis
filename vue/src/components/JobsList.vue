@@ -70,12 +70,6 @@ div.jobs-list
 
             Job.name(:job-id="item.job.job_id" :name="item.name")
 
-            JobLabel(
-              v-for="label in item.job.metadata.labels"
-              :key="label"
-              :label="label"
-            )
-
           //- a dir entry
           div.cell(
             v-else
@@ -95,6 +89,16 @@ div.jobs-list
 
             a.dir(v-on:click="$emit('path', item.path.join('/'))") {{ item.name }}
 
+          .job-labels(v-if="item.job && item.job.metadata.labels.length > 0")
+            JobLabel(
+              v-for="label in item.job.metadata.labels"
+              :key="label"
+              :label="label"
+              clickable
+              :selected="labels !== null && labels.includes(label)"
+              @click="$emit('labels', toggleLabel(labels, label))"
+            )
+
         div
           span.params(v-if="item.job && item.job.params.length > 0") {{ join(item.job.params, ', ') }}
 
@@ -112,7 +116,7 @@ import JobLabel from '@/components/JobLabel'
 import { descriptionExcerptHtml } from '@/markdown'
 import PathNav from '@/components/PathNav'
 import Program from '@/components/Program'
-import { matchKeywords, includesAll } from '@/runs'
+import { matchKeywords, includesAll, toggleLabel } from '@/runs'
 import SearchInput from '@/components/SearchInput'
 import store from '@/store.js'
 import TriangleIcon from '@/components/icons/TriangleIcon'
@@ -261,6 +265,8 @@ export default {
     descriptionExcerptHtml,
 
     join,
+
+    toggleLabel,
 
     toggleExpand(path) {
       this.$set(this.expand, path, !this.expand[path])
@@ -439,6 +445,22 @@ export default {
 
     .disabled {
       color: #aaa;
+    }
+  }
+
+  .job-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+    margin-bottom: 2px;
+    padding-left: 26px;
+    font-size: 75%;
+
+    .job-label {
+      flex-shrink: 0;
+      box-sizing: border-box;
+      max-width: 100%;
+      margin-left: 0;
     }
   }
 
