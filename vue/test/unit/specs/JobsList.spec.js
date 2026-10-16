@@ -24,5 +24,19 @@ describe('JobsList.vue', () => {
 
     input.dispatchEvent(new Event('change'))
     expect(emitted).toEqual([['one']])
+
+    input.value = ''
+    input.dispatchEvent(new Event('input'))
+    await Vue.nextTick()
+    expect(rowNames()).toEqual(['alpha', 'beta'])
+    // cleared text matches the null keywords prop so there's nothing to emit
+    input.dispatchEvent(new Event('change'))
+    expect(emitted).toEqual([['one']])
+  })
+
+  it('keys a dir apart from a job with the same name', () => {
+    store.state.jobs = new Map(['a', 'a/b'].map(id => [id, makeJob(id)]))
+    const vm = new (Vue.extend(JobsList))().$mount()
+    expect(vm.jobRows.map(({ key }) => key)).toEqual(['a/', 'a'])
   })
 })
