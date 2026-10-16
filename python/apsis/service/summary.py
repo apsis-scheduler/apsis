@@ -92,7 +92,7 @@ def parse_summary_scope(query_string: str, jobs: Jobs) -> SummaryScope:
     if not window:
         return SummaryScope(init="init" in query, types=types, job_ids=job_ids)
 
-    time = one("time", "now")
+    time = one("time", None)
     limit = int(one("limit", "50"))
     if not 1 <= limit <= MAX_LIMIT:
         raise ValueError(f"limit must be 1 to {MAX_LIMIT}")
