@@ -834,10 +834,11 @@ table.runlist {
     width: 8px;
     height: 100%;
     cursor: col-resize;
-    border-right: 2px solid transparent;
+    // faint line so the resize edge shows before hovering
+    border-right: 1px solid #ddd;
 
     &:hover, &.active {
-      border-right-color: $global-focus-color;
+      border-right: 2px solid $global-focus-color;
     }
   }
 
