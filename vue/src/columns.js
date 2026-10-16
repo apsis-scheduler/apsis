@@ -5,14 +5,14 @@ const DEFAULT_WIDTHS = {
   job: 320,
   args: 260,
   arg: 160,
-  run: 110,
+  run: 100,
   state: 72,
-  group: 120,
-  schedule: 160,
-  start: 160,
+  group: 100,
+  schedule: 150,
+  start: 150,
   elapsed: 90,
-  stop: 160,
-  operations: 112,
+  stop: 150,
+  operations: 100,
 }
 
 export const MIN_WIDTH = 40
