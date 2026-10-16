@@ -140,7 +140,7 @@ div
 
       thead
         tr
-          th(
+          th.head(
             v-for="column, i in columns"
             :key="column.name"
             :class="column.cls"
@@ -886,6 +886,10 @@ table.runlist {
 
   .col-run, .col-state, .col-operations {
     text-align: center;
+  }
+
+  th.head {
+    text-align: left;
   }
 
   .col-schedule-time, .col-start-time, .col-stop-time {
