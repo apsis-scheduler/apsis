@@ -71,12 +71,6 @@ div.jobs-list
 
             Job.name(:job-id="item.job.job_id" :name="item.name")
 
-            JobLabel(
-              v-for="label in item.job.metadata.labels"
-              :key="label"
-              :label="label"
-            )
-
           //- a dir entry
           div.cell(
             v-else
@@ -95,6 +89,13 @@ div.jobs-list
               path(d="M 200 300 L 700 300 L 800 500 L 1600 500 L 1600 1600 L 200 1600 L 200 300" stroke="#666" stroke-width="100" fill="#f2f6f4")
 
             a.dir(v-on:click="$emit('path', item.path.join('/'))") {{ item.name }}
+
+          .job-labels(v-if="item.job && item.job.metadata.labels.length > 0")
+            JobLabel(
+              v-for="label in item.job.metadata.labels"
+              :key="label"
+              :label="label"
+            )
 
         div
           span.params(v-if="item.job && item.job.params.length > 0") {{ join(item.job.params, ', ') }}
@@ -440,6 +441,22 @@ export default {
 
     .disabled {
       color: #aaa;
+    }
+  }
+
+  .job-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+    margin-bottom: 2px;
+    padding-left: 26px;
+    font-size: 75%;
+
+    .job-label {
+      flex-shrink: 0;
+      box-sizing: border-box;
+      max-width: 100%;
+      margin-left: 0;
     }
   }
 
