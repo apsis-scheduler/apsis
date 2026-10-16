@@ -42,6 +42,12 @@ describe('RunsList run window', () => {
     expect([g.laterMore, g.laterTime]).toEqual([true, '2026-10-14T12:00:00+00:00'])
   })
 
+  test('windowed shows no more runs once the server window has no edges', () => {
+    processMsgs([{type: 'run_window', groups: {r1: 4, r2: 3}, earlier: null, later: null}], store.state)
+    const g = groups(true)
+    expect([g.earlierMore, g.laterMore]).toEqual([false, false])
+  })
+
   test('not windowed uses local runs only', () => {
     const g = groups(false)
     expect(g.groups.map(r => r.run_id)).toEqual(['r2', 'r4'])
