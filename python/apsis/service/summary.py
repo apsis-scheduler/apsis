@@ -226,18 +226,7 @@ async def send_window_init(apsis, ws, scope: SummaryScope) -> None:
     await _send_jobs_and_conns(apsis, ws, scope)
     spec = scope.window
     async with _WINDOW_WALKS:
-        walk = asyncio.ensure_future(apsis.run_store.query_window(spec))
-        closed = asyncio.ensure_future(ws.wait_closed())
-        try:
-            done, _ = await asyncio.wait({walk, closed}, return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            # stop the walk if the client goes away or this handler is cancelled
-            closed.cancel()
-            if not walk.done():
-                walk.cancel()
-    if walk not in done:
-        await ws.ensure_open()
-    window = walk.result()
+        window = await apsis.run_store.query_window(spec)
     for chunk in chunks(window.run_ids, PAGE_ROWS):
         await _send(ws, apsis.run_store.get_summaries(chunk))
     msg = {

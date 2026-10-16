@@ -1,4 +1,3 @@
-import asyncio
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -12,7 +11,7 @@ from apsis.jobs import InMemoryJobs, Job
 from apsis.run_window import WindowSpec
 from apsis.runs import Instance, Run, RunStore
 from apsis.service import summary
-from apsis.service.summary import SummaryScope, send_scoped_init, send_window_init
+from apsis.service.summary import SummaryScope, send_scoped_init
 from apsis.sqlite import SqliteDB
 from apsis.states import State
 
@@ -301,21 +300,11 @@ def test_expected_summaries(tmp_path):
 
 
 class FakeWs:
-    def __init__(self, closed=False):
+    def __init__(self):
         self.frames = []
-        self.closed = asyncio.Event()
-        if closed:
-            self.closed.set()
 
     async def send(self, data):
         self.frames.append(ujson.loads(data))
-
-    async def wait_closed(self):
-        await self.closed.wait()
-
-    async def ensure_open(self):
-        if self.closed.is_set():
-            raise ConnectionError("closed")
 
     def ids(self):
         """
@@ -391,24 +380,3 @@ async def test_window_summaries(tmp_path):
     assert window.run_ids == [run.run_id, expected.run_id]
     summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
     assert run_ids(summaries) == [expected.run_id, run.run_id]
-
-
-@pytest.mark.asyncio
-async def test_send_window_init_closed():
-    """A client closing during the window walk stops the walk."""
-    walking = asyncio.Event()
-
-    async def query_window(spec):
-        walking.set()
-        await asyncio.sleep(3600)
-
-    apsis = SimpleNamespace(run_store=SimpleNamespace(query_window=query_window))
-    ws = FakeWs()
-    init = asyncio.ensure_future(
-        send_window_init(apsis, ws, SummaryScope(init=True, types=frozenset(), window=WindowSpec()))
-    )
-    await walking.wait()
-    ws.closed.set()
-    with pytest.raises(ConnectionError):
-        await init
-    assert ws.frames == []
