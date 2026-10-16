@@ -41,3 +41,12 @@ async def test_send_raw_frames_and_yields_between_pages(monkeypatch):
 
     assert ws.frames == [[{"n": n} for n in range(6)], [{"n": n} for n in range(6, 9)]]
     assert ticks_at_page == sorted(set(ticks_at_page))
+
+
+@pytest.mark.asyncio
+async def test_send_raw_no_empty_frame(monkeypatch):
+    monkeypatch.setattr(api, "WS_RAW_CHUNK", 2)
+    for pages, frames in [([], []), ([["0", "1"]], [[0, 1]])]:
+        ws = FakeWs()
+        await api._send_raw(pages, ws, "test")
+        assert ws.frames == frames
