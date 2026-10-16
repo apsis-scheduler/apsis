@@ -61,7 +61,7 @@ def group_key(entry: Entry) -> str:
     Scheduled and completed runs group by instance, and others are never grouped.
     """
     sgrp = STATE_GROUPS[entry.state]
-    # keys are strings so the many kept during a walk aren't gc tracked
+    # keys are plain strings with a null byte between job ID and args
     return sgrp + entry.run_id if sgrp == "R" else f"{sgrp}{entry.job_id}\0{entry.args}"
 
 

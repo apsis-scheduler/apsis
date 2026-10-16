@@ -304,8 +304,7 @@ sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 # rowid is the immutable run number so it is a stable cursor
 sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
 
-# runs are windowed by schedule time, and sqlite only uses this index for
-# queries with this literal expression, not with the json path bound
+# schedule time of a run, written the same as idx_runs_schedule
 SCHEDULE_TIME_SQL = "json_extract(times, '$.schedule')"
 # labels of the job when the run was created
 RUN_LABELS_SQL = "json_extract(meta, '$.job.labels')"
