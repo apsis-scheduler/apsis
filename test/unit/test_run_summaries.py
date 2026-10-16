@@ -8,6 +8,7 @@ import ujson
 
 from apsis import procstar
 from apsis.jobs import InMemoryJobs, Job
+from apsis.run_window import WindowSpec
 from apsis.runs import Instance, Run, RunStore
 from apsis.service import summary
 from apsis.service.summary import SummaryScope, send_scoped_init
@@ -362,3 +363,20 @@ async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
     ws = FakeWs()
     await send_scoped_init(apsis, ws, SummaryScope(init=True))
     assert ws.ids() == [["x", "y"], [run.run_id]]
+
+
+@pytest.mark.asyncio
+async def test_window_summaries(tmp_path):
+    run_store = make_run_store(tmp_path)
+    t = ora.now()
+    expected = Run(Instance("a", {}), expected=True)
+    expected.times["schedule"] = t + 60
+    run_store.add(expected)
+    (run,) = add_runs(run_store, "a", 1)
+    run._transition(t, State.scheduled, times={"schedule": t})
+    run_store.update(run, t)
+
+    window = await run_store.query_window(WindowSpec(anchor=t, grouping=False))
+    assert window.run_ids == [run.run_id, expected.run_id]
+    summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
+    assert run_ids(summaries) == [expected.run_id, run.run_id]

@@ -8,6 +8,7 @@ import logging
 import ora
 from pathlib import Path
 import sqlalchemy as sa
+import sqlite3
 from typing import Iterable
 import ujson
 from typing import Iterator
@@ -303,6 +304,12 @@ sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 # rowid is the immutable run number so it is a stable cursor
 sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
 
+# schedule time of a run, written the same as idx_runs_schedule
+SCHEDULE_TIME_SQL = "json_extract(times, '$.schedule')"
+# labels of the job when the run was created
+RUN_LABELS_SQL = "json_extract(meta, '$.job.labels')"
+sa.Index("idx_runs_schedule", sa.func.json_extract(TBL_RUNS.c.times, "$.schedule"))
+
 TBL_RUNS_SELECT = sa.select(
     [
         TBL_RUNS.columns[n]
@@ -332,6 +339,23 @@ class RunDB:
         self.__engine = engine
         self.__connection = engine.raw_connection()
         # FIXME: Do we need to clean this up?
+        self.has_schedule_index = self.__check_schedule_index()
+
+    def __check_schedule_index(self) -> bool:
+        """
+        Returns true if idx_runs_schedule exists and serves schedule time queries.
+        """
+        try:
+            plan = self.__connection.connection.execute(
+                "EXPLAIN QUERY PLAN SELECT rowid FROM runs INDEXED BY idx_runs_schedule"
+                f" WHERE {SCHEDULE_TIME_SQL} < ''"
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such index" not in str(exc):
+                raise
+            return False
+        # an index on some other expression can only scan
+        return plan[0][3].startswith("SEARCH")
 
     @staticmethod
     def __build_where(
@@ -622,6 +646,114 @@ class RunDB:
         )
         return runs
 
+    @staticmethod
+    def __window_columns(labels: bool) -> str:
+        """
+        Returns window row columns, with run labels as a json array or null.
+        """
+        labels = RUN_LABELS_SQL if labels else "NULL"
+        return f"rowid, run_id, {SCHEDULE_TIME_SQL}, job_id, args, state, timestamp, {labels}"
+
+    def schedule_page(
+        self, *, desc: bool, time: str, rowid: int | None, limit: int, labels: bool = False
+    ) -> list[tuple[int, str, str, str, str, str, float, str | None]]:
+        """
+        Returns up to `limit` window rows nearest `time` by schedule time.
+
+        With `desc`, returns runs scheduled before `time`, latest first, else
+        runs scheduled at or after it, earliest first.  To continue a walk,
+        pass the schedule time and rowid of the last row as `time` and `rowid`.
+        Requires idx_runs_schedule.
+
+        :param labels:
+          If true, include run labels.
+        """
+        E = SCHEDULE_TIME_SQL
+        if desc:
+            where = f"{E} < :t" if rowid is None else f"{E} <= :t AND ({E} < :t OR rowid < :r)"
+            order = "DESC"
+        else:
+            where = f"{E} >= :t" if rowid is None else f"{E} >= :t AND ({E} > :t OR rowid > :r)"
+            order = "ASC"
+        return self.__connection.connection.execute(
+            f"SELECT {self.__window_columns(labels)} FROM runs INDEXED BY idx_runs_schedule"
+            f" WHERE {where} ORDER BY {E} {order}, rowid {order} LIMIT :n",
+            {"t": time, "r": rowid, "n": limit},
+        ).fetchall()
+
+    def job_page(
+        self, job_id: str, *, max_rowid: int, limit: int, labels: bool = False
+    ) -> list[tuple[int, str, str | None, str, str, str, float, str | None]]:
+        """
+        Returns up to `limit` window rows of `job_id` below `max_rowid`, by
+        rowid descending.
+        """
+        return self.__connection.connection.execute(
+            f"SELECT {self.__window_columns(labels)} FROM runs"
+            " WHERE job_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT ?",
+            (job_id, max_rowid, limit),
+        ).fetchall()
+
+    def get_job_ids(self) -> list[str]:
+        """
+        Returns the job IDs of all runs.
+        """
+        return [
+            j for (j,) in self.__connection.connection.execute("SELECT DISTINCT job_id FROM runs")
+        ]
+
+    def count_job_rows(self, job_ids: Iterable[str], cap: int) -> int:
+        """
+        Returns the number of runs of `job_ids`, counting at most `cap`.
+        """
+        ((count,),) = self.__connection.connection.execute(
+            "SELECT count(*) FROM (SELECT 1 FROM runs"
+            " WHERE job_id IN (SELECT value FROM json_each(?)) LIMIT ?)",
+            (json.dumps(list(job_ids)), cap),
+        ).fetchall()
+        return count
+
+    def group_stats(
+        self,
+        job_id: str,
+        args: str,
+        states: Iterable[str],
+        min_timestamp: ora.Time | None,
+        *,
+        earliest: bool,
+        labels: Iterable[str] = (),
+    ) -> tuple[int | None, str | None, str | None, int]:
+        """
+        Returns the rowid, run ID, and schedule time of the earliest or latest
+        scheduled run of `job_id` with canonical `args` in one of `states` and
+        with all of `labels`, by schedule time then rowid, and the number of
+        such runs.
+        """
+        E = SCHEDULE_TIME_SQL
+        labels = list(labels)
+        where = (
+            "job_id = :job_id AND args = :args AND state IN (SELECT value FROM json_each(:states))"
+            f" AND timestamp >= :min_ts AND {E} IS NOT NULL"
+        ) + "".join(
+            f" AND EXISTS (SELECT 1 FROM json_each({RUN_LABELS_SQL}) WHERE value = :label{i})"
+            for i in range(len(labels))
+        )
+        order = "ASC" if earliest else "DESC"
+        row = self.__connection.connection.execute(
+            f"SELECT rowid, run_id, {E},"
+            f" (SELECT count(*) FROM runs INDEXED BY idx_runs_job_args WHERE {where})"
+            f" FROM runs INDEXED BY idx_runs_job_args WHERE {where}"
+            f" ORDER BY {E} {order}, rowid {order} LIMIT 1",
+            {
+                "job_id": job_id,
+                "args": args,
+                "states": json.dumps(list(states)),
+                "min_ts": float("-inf") if min_timestamp is None else dump_time(min_timestamp),
+                **{f"label{i}": label for i, label in enumerate(labels)},
+            },
+        ).fetchone()
+        return (None, None, None, 0) if row is None else row
+
     def count_runs(
         self,
         *,
@@ -726,6 +858,18 @@ class RunSummaryDB:
             del payloads
             if count < SUMMARY_PAGE_SIZE:
                 break
+
+    def get_payloads(self, run_ids: Iterable[str]) -> dict[str, str]:
+        """
+        Returns summary payloads of `run_ids` by run ID, skipping missing runs.
+        """
+        return dict(
+            self.__connection.connection.execute(
+                "SELECT run_id, payload FROM run_summary"
+                " WHERE run_id IN (SELECT value FROM json_each(?))",
+                (json.dumps(list(run_ids)),),
+            ).fetchall()
+        )
 
     def query_job(
         self, job_id: str, *, min_timestamp: ora.Time | None, page_size: int
