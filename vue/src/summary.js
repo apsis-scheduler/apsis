@@ -66,10 +66,10 @@ let windowUnavailable = false
  * no scope is given.
  *
  * Does nothing if the scope is unchanged and `refresh` is false, or if the
- * open socket is unscoped, since that already has everything.  Otherwise closes the previous socket
- * and opens a new one, and replaces runs, jobs, and agent conns once its init
- * is done, or right away for no scope.  If the server can't serve run
- * windows, a window scope becomes no scope.
+ * open socket is unscoped, since that already has everything.  Otherwise
+ * closes the previous socket and opens a new one, and replaces runs, jobs,
+ * and agent conns once its init is done, or right away for no scope.  If the
+ * server can't serve run windows, a window scope becomes no scope.
  */
 export function setSummaryScope(scope, refresh = false) {
   if (windowUnavailable && scope && scope.window)
