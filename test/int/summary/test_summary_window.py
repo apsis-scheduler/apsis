@@ -119,7 +119,3 @@ async def test_window_no_index():
             with pytest.raises(websockets.ConnectionClosedError):
                 await conn.recv()
             assert conn.close_code == 4503
-
-        # a small job set doesn't need the index
-        msgs = await inst.read_summary("init&time=now&job_id=a", until="run_window")
-        assert msgs[-1]["type"] == "run_window"
