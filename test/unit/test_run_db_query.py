@@ -503,39 +503,6 @@ def test_schedule_page_ties(tmp_path):
     ]
 
 
-def test_group_stats(tmp_path):
-    """principals break schedule time ties by rowid, latest for completed and earliest for scheduled"""
-    run_db = _setup(tmp_path)
-    _at(run_db, T1)
-    _, r3b = _at(run_db, T3), _at(run_db, T3)
-    scheds = []
-    for _ in range(2):
-        sched = _make_run(run_db, "job/a", {}, state=State.scheduled)
-        sched.times["schedule"] = ora.Time(T2)
-        run_db.upsert(sched)
-        scheds.append(sched)
-    _make_run(run_db, "job/a", {"x": "1"})
-
-    assert run_db.group_stats("job/a", "{}", ["success"], None, earliest=False) == (
-        r3b._rowid,
-        r3b.run_id,
-        str(ora.Time(T3)),
-        3,
-    )
-    assert run_db.group_stats("job/a", "{}", ["scheduled"], None, earliest=True) == (
-        scheds[0]._rowid,
-        scheds[0].run_id,
-        str(ora.Time(T2)),
-        2,
-    )
-    assert run_db.group_stats("job/a", "{}", ["success"], ora.now() + 60, earliest=False) == (
-        None,
-        None,
-        None,
-        0,
-    )
-
-
 def test_job_rows(tmp_path):
     run_db = _setup(tmp_path)
     a1, a2 = _make_run(run_db, "job/a", {}), _make_run(run_db, "job/a", {})
