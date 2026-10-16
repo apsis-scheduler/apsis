@@ -344,8 +344,7 @@ export default {
 
     // When the update sequence number changes, reload the whole run.
     updateSeq(seq, previous) {
-      // the run leaves the store when the summary scope changes
-      if (seq !== undefined && (!this.run || this.run.seq !== seq))
+      if (!this.run || this.run.seq !== seq)
         this.fetchRun()
     },
 
