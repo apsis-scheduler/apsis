@@ -126,6 +126,7 @@ def test_window_predicate():
     assert predicate(run("a/gone", {"x": "1"}))
     assert not predicate(run("a/x", {"x": "2"}))
     assert not predicate(run("b/x", {"x": "1"}))
+    assert not predicate(run("ab/x", {"x": "1"}))
     assert not predicate(run("a/x", {"x": "1"}, labels=()))
     assert predicate({"type": "run_delete", "run_id": "r1", "job_id": "a/x"})
     assert not predicate({"type": "job_add", "job": {"job_id": "a/z", "metadata": {}}})

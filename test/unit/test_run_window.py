@@ -261,12 +261,3 @@ async def test_no_jobs_or_index(tmp_path):
         run_db, [], WindowSpec(job_ids=frozenset({"a"})), min_timestamp=None
     )
     assert window.run_ids == ["r1"]
-
-
-def test_job_filter():
-    assert JobFilter().matches("a/b", [])
-    f = JobFilter(path="a/b", keywords=("Lo",), labels=("x",))
-    assert f.matches("a/b/slow", ["x", "y"])
-    assert not f.matches("a/bslow", ["x"])
-    assert not f.matches("a/b/fast", ["x"])
-    assert not f.matches("a/b/slow", ["y"])
