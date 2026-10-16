@@ -21,18 +21,26 @@ export default {
     }
   },
 
+  computed: {
+    words() {
+      return this.text ? this.text.split(' ').filter(w => w) : null
+    },
+  },
+
   methods: {
     onChange() {
       // Emit 'input' and 'change' only if the value is effectively different.
-      const value = this.text ? this.text.split(' ').filter(w => w) : null
-      if (!isEqual(value, this.value)) {
-        this.$emit('input', value)
-        this.$emit('change', value)
+      if (!isEqual(this.words, this.value)) {
+        this.$emit('input', this.words)
+        this.$emit('change', this.words)
       }
     },
   },
 
   watch: {
+    // emit 'words' as the text changes, before it's committed
+    words(words) { this.$emit('words', words) },
+
     value(value) {
       this.text = this.value ? this.value.join(' ') : ''
     },
