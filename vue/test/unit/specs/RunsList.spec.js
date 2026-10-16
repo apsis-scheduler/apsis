@@ -15,8 +15,8 @@ function summaries(...runs) {
   return runs.map(r => ({type: 'run_summary', run_summary: r}))
 }
 
-function groups() {
-  const vm = new (Vue.extend(RunsList))({propsData: {query: QUERY, windowed: true}})
+function groups(windowed) {
+  const vm = new (Vue.extend(RunsList))({propsData: {query: QUERY, windowed}})
   return vm.groups
 }
 
@@ -35,10 +35,17 @@ describe('RunsList run window', () => {
   })
 
   test('windowed adds server group counts and edges', () => {
-    const g = groups()
+    const g = groups(true)
     expect(g.groups.map(r => r.run_id)).toEqual(['r2', 'r4'])
     expect(g.counts).toEqual({r2: 3, r4: 5})
     expect([g.earlierMore, g.earlierTime]).toEqual([true, '2026-10-14T10:00:00+00:00'])
     expect([g.laterMore, g.laterTime]).toEqual([true, '2026-10-14T12:00:00+00:00'])
+  })
+
+  test('not windowed uses local runs only', () => {
+    const g = groups(false)
+    expect(g.groups.map(r => r.run_id)).toEqual(['r2', 'r4'])
+    expect(g.counts).toEqual({r2: 1, r4: 2})
+    expect([g.earlierMore, g.laterMore]).toEqual([false, false])
   })
 })
