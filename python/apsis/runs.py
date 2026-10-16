@@ -765,6 +765,27 @@ class RunStore:
 
         yield from self.__summary_db.query(min_timestamp=self.__min_timestamp())
 
+    def expected_summaries(self, job_ids: frozenset[str]) -> list[str]:
+        """
+        Returns summary messages of expected runs of `job_ids`.
+        """
+        from .lib.api import run_to_summary_jso
+
+        return [
+            ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(r)})
+            for r in self.__expected_runs.values()
+            if r.inst.job_id in job_ids
+        ]
+
+    def job_summaries(self, job_id: str, *, page_size: int) -> Iterator[list[str]]:
+        """
+        Yields pages of summary messages of `job_id` runs in the lookback
+        window, newest run first, excluding expected runs.
+        """
+        return self.__summary_db.query_job(
+            job_id, min_timestamp=self.__min_timestamp(), page_size=page_size
+        )
+
     def count_runs(
         self, *, job_id=None, state=None, args=None, with_args=None, limit_lookback=True
     ):
