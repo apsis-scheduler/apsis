@@ -9,6 +9,15 @@ from procstar.agent.exc import (
     ProcessUnknownError,
 )
 from procstar.agent.proc import FdData, Interval, Process, Result
+
+try:
+    from procstar.agent.proc import SignalNotDelivered
+except ImportError:  # procstar client predating the update type
+
+    class SignalNotDelivered:  # pragma: no cover
+        signum = None
+
+
 from signal import Signals
 from typing import Any, Dict
 import uuid
@@ -247,43 +256,6 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
         evidence = "none"
     oom["evidence"] = evidence
     return oom
-
-
-# Allowance for clock differences between the agent host and Apsis when
-# comparing the agent's recorded stop time with the time the timeout signal was
-# requested.
-TIMEOUT_CLOCK_TOLERANCE = 5.0  # seconds
-
-
-def _timeout_applies(res, timeout_signal: str, timeout_sent_at) -> bool:
-    """
-    Decides whether a run whose timeout fired really timed out.
-
-    Sending the timeout signal only queues a request to the agent; if the
-    process had already exited and the agent was finalizing its units, the
-    signal was never delivered.  If the agent's recorded stop time is clearly
-    before the signal was requested (beyond `TIMEOUT_CLOCK_TOLERANCE`), the
-    process exited on its own and the timeout does not apply, whatever
-    signal terminated it (systemd may have sent the same signal after an OOM).
-    If the stop time is clearly after the request, the timeout applies.  In
-    the ambiguous window, or when the stop time cannot be read, the timeout
-    applies if the status shows the timeout signal; otherwise it stands only
-    when nothing can be read at all.
-    """
-    status = getattr(res, "status", None)
-    signalled = status is not None and getattr(status, "signal", None) == timeout_signal
-    stop = getattr(getattr(res, "times", None), "stop", None)
-    if stop is None or timeout_sent_at is None:
-        return True
-    try:
-        delta = ora.Time(stop) - timeout_sent_at
-    except Exception:
-        return True
-    if delta < -TIMEOUT_CLOCK_TOLERANCE:
-        return False
-    if delta > TIMEOUT_CLOCK_TOLERANCE:
-        return True
-    return signalled
 
 
 def _oom_message(meta: dict) -> str | None:
@@ -625,7 +597,6 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         self.stopping = False
         self.stop_signals = []
         self.timed_out = False
-        self.timeout_sent_at = None
 
     @property
     def _spec_argv(self):
@@ -761,7 +732,6 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                     if not self.stopping and self.proc is not None:
                         log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
-                        self.timeout_sent_at = ora.now()
                         timeout_signal = Signals[self.program.timeout.signal]
                         self.stop_signals.append(timeout_signal)
                         await self.proc.send_signal(timeout_signal)
@@ -793,6 +763,9 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                     case FdData():
                         fd_data = _combine_fd_data(fd_data, update)
                         yield base.ProgramUpdate(outputs=await _make_outputs(fd_data))
+
+                    case SignalNotDelivered():
+                        self._on_signal_not_delivered(update.signum)
 
                     case Result() as res:
                         meta = self._get_result_metadata(res)
@@ -840,13 +813,6 @@ class BaseRunningProcstarProgram(base.RunningProgram):
             outputs = await _make_outputs(fd_data)
             meta["stop"] = {"signals": [s.name for s in self.stop_signals]}
 
-            if self.timed_out and not _timeout_applies(
-                res, self.program.timeout.signal, self.timeout_sent_at
-            ):
-                # The process had already exited when the timeout fired.
-                log.info(f"{self.run_id}: exited before the timeout signal; not a timeout")
-                self.timed_out = False
-
             if res.status.exit_code == 0 and not self.timed_out:
                 # The process terminated successfully.
                 yield ProgramSuccess(meta=meta, outputs=outputs)
@@ -890,6 +856,20 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                     # Just log this; for Apsis, the proc is done.
                     log.error(f"delete {self.proc.proc_id}: {exc}")
                 self.proc = None
+
+    def _on_signal_not_delivered(self, signum):
+        """
+        The agent reported that a signal we sent did not reach the process,
+        which was already gone.  If it was the timeout signal, the run did not
+        time out: the process exited on its own first.
+        """
+        if self.timed_out and self.program.timeout is not None:
+            timeout_signal = Signals[self.program.timeout.signal]
+            if signum is None or int(signum) == int(timeout_signal):
+                log.info(f"{self.run_id}: process exited before the timeout signal; not a timeout")
+                self.timed_out = False
+                if timeout_signal in self.stop_signals:
+                    self.stop_signals.remove(timeout_signal)
 
     async def stop(self):
         if self.proc is None:

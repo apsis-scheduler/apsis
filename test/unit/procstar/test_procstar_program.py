@@ -542,27 +542,26 @@ def test_systemd_oom_kill_without_kernel_counters():
     assert meta["oom"]["evidence"] == "job_limit_likely"
 
 
-def test_timeout_applies():
-    import ora
+def test_signal_not_delivered_clears_timeout():
+    from signal import Signals
 
-    from apsis.program.procstar.agent import _timeout_applies
+    program = Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "/usr/bin/true",
+            "timeout": {"duration": "1h", "signal": "SIGTERM"},
+        }
+    )
+    running = program.bind({}).run("r123", {})
+    # the timeout fired and the signal was requested
+    running.timed_out = True
+    running.stop_signals.append(Signals.SIGTERM)
+    # ... but the agent reports the process was already gone
+    running._on_signal_not_delivered(int(Signals.SIGTERM))
+    assert running.timed_out is False
+    assert running.stop_signals == []
 
-    sent = ora.Time("2026-10-19T12:00:00+00:00")
-    exited = {"exit_code": 0, "signal": None}
-    killed = {"exit_code": None, "signal": "SIGTERM"}
-
-    def res(status, stop):
-        return _res(status=status, times={"stop": stop})
-
-    # exited clearly before the signal was requested: not a timeout, even if the
-    # same signal name appears (e.g. systemd's SIGTERM after a child OOM)
-    assert _timeout_applies(res(exited, "2026-10-19T11:59:30+00:00"), "SIGTERM", sent) is False
-    assert _timeout_applies(res(killed, "2026-10-19T11:59:30+00:00"), "SIGTERM", sent) is False
-    # stopped clearly after the request: a timeout, whatever the status
-    assert _timeout_applies(res(exited, "2026-10-19T12:00:30+00:00"), "SIGTERM", sent) is True
-    # within the clock tolerance: decided by the signal
-    assert _timeout_applies(res(killed, "2026-10-19T11:59:59+00:00"), "SIGTERM", sent) is True
-    assert _timeout_applies(res(exited, "2026-10-19T11:59:59+00:00"), "SIGTERM", sent) is False
-    # cannot tell: the timeout stands
-    assert _timeout_applies(_res(status=exited), "SIGTERM", sent) is True
-    assert _timeout_applies(res(exited, "2026-10-19T11:59:30+00:00"), "SIGTERM", None) is True
+    # a different undelivered signal (e.g. a stop) does not affect the timeout
+    running.timed_out = True
+    running._on_signal_not_delivered(int(Signals.SIGINT))
+    assert running.timed_out is True
