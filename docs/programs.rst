@@ -164,8 +164,10 @@ The run's program metadata records the request and what the agent observed:
 - `oom.evidence`, an assessment from the cgroup counters: `job_limit_likely`
   (a process was OOM-killed and the run's cgroup ran out of memory under a
   finite limit), `oom_kill_observed` (a kill without the cgroup running out of
-  memory; a system-wide OOM is possible), `limit_hit_no_kill`, `none`, or
-  `unknown` when counters are not reported.  The raw counters are kept
+  memory; a system-wide OOM is possible), `limit_hit_no_kill`,
+  `systemd_oom_kill` (systemd reports `oom-kill` for the scope while the
+  kernel counters show no kill, e.g. systemd-oomd), `none`, or `unknown`
+  when counters are not reported.  The raw counters are kept
   alongside.
 
 When a run fails and evidence points at the limit, the failure message says

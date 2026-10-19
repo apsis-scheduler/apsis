@@ -455,11 +455,13 @@ def test_oom_evidence(acct, evidence, message):
     from apsis.program.procstar.agent import _oom_message
 
     running = _running({"mem_max_gb": 2}, {})
+    # systemd marks the scope oom-kill only when a kill happened.
+    scope_result = "oom-kill" if acct["memory"]["events"]["oom_kill"] else "success"
     meta = running._get_result_metadata(
-        _res(errors=[], systemd_enabled=True, scope_result="oom-kill", cgroup_accounting=acct)
+        _res(errors=[], systemd_enabled=True, scope_result=scope_result, cgroup_accounting=acct)
     )
     assert meta["oom"]["evidence"] == evidence
-    assert meta["oom"]["scope_result"] == "oom-kill"
+    assert meta["oom"]["scope_result"] == scope_result
     assert meta["oom"]["kill_count"] == acct["memory"]["events"]["oom_kill"]
     got = _oom_message(meta)
     if message is None:
@@ -531,3 +533,38 @@ def test_requested_limit_unknown_for_old_run_state():
     meta = running._get_result_metadata(_res(errors=[]))
     assert meta["memory_limit"]["requested_bytes"] == 2 * 10**9
     assert meta["memory_limit"]["source"] == "job"
+
+
+def test_systemd_oom_kill_without_kernel_counters():
+    from apsis.program.procstar.agent import _oom_message
+
+    running = _running({"mem_max_gb": 2}, {})
+    # systemd-oomd style: scope ended by oom-kill, kernel counters zero.
+    meta = running._get_result_metadata(
+        _res(
+            errors=[],
+            systemd_enabled=True,
+            scope_result="oom-kill",
+            cgroup_accounting=_acct(max_=2 * 10**9),
+        )
+    )
+    assert meta["oom"]["evidence"] == "systemd_oom_kill"
+    assert _oom_message(meta) == "systemd reports OOM-related termination; cause not attributed"
+    # ... and with no counters at all.
+    acct = _acct(max_=2 * 10**9)
+    del acct["memory"]["events"]
+    del acct["memory"]["events_local"]
+    meta = running._get_result_metadata(
+        _res(errors=[], systemd_enabled=True, scope_result="oom-kill", cgroup_accounting=acct)
+    )
+    assert meta["oom"]["evidence"] == "systemd_oom_kill"
+    # A kernel kill still wins over the scope result.
+    meta = running._get_result_metadata(
+        _res(
+            errors=[],
+            systemd_enabled=True,
+            scope_result="oom-kill",
+            cgroup_accounting=_acct(max_=2 * 10**9, kills=1, local_oom=1),
+        )
+    )
+    assert meta["oom"]["evidence"] == "job_limit_likely"

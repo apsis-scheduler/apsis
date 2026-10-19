@@ -218,6 +218,9 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
       (a system-wide OOM is possible).
     - `limit_hit_no_kill`: usage hit the limit but nothing was killed;
       allocations may still have failed inside the program.
+    - `systemd_oom_kill`: systemd reports the scope ended by an OOM kill
+      (`Result=oom-kill`) but the kernel counters show none; typically a
+      userspace OOM killer such as systemd-oomd.  Cause not attributed.
     - `none`: counters present and zero.
     - `unknown`: the kill counter is not reported (older agent or failed
       read), or no kill is reported and the limit counters are missing.
@@ -234,13 +237,15 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
     }
     kills, local_oom, hits = oom["kill_count"], oom["local_oom_count"], oom["local_limit_hits"]
     if kills is None:
-        evidence = "unknown"
+        evidence = "systemd_oom_kill" if oom["scope_result"] == "oom-kill" else "unknown"
     elif kills > 0:
         # A recorded kill is never erased by missing attribution evidence.
         if local_oom is not None and local_oom > 0 and observed.get("state") == "finite":
             evidence = "job_limit_likely"
         else:
             evidence = "oom_kill_observed"
+    elif oom["scope_result"] == "oom-kill":
+        evidence = "systemd_oom_kill"
     elif hits is None or local_oom is None:
         evidence = "unknown"
     elif hits > 0:
@@ -269,6 +274,8 @@ def _oom_message(meta: dict) -> str | None:
         return "OOM kill recorded in this run; cause not attributed, host-wide OOM possible"
     if evidence == "limit_hit_no_kill":
         return "memory limit reached, no OOM kill recorded"
+    if evidence == "systemd_oom_kill":
+        return "systemd reports OOM-related termination; cause not attributed"
     return None
 
 
@@ -722,10 +729,17 @@ class BaseRunningProcstarProgram(base.RunningProgram):
 
                     if not self.stopping and self.proc is not None:
                         log.info(f"{self.run_id}: timeout")
-                        self.timed_out = True
                         timeout_signal = Signals[self.program.timeout.signal]
-                        self.stop_signals.append(timeout_signal)
-                        await self.proc.send_signal(timeout_signal)
+                        try:
+                            await self.proc.send_signal(timeout_signal)
+                        except Exception as exc:
+                            # The process has most likely already exited and the
+                            # agent is finalizing; don't turn its result into a
+                            # timeout.
+                            log.warning(f"{self.run_id}: timeout signal not sent: {exc}")
+                        else:
+                            self.timed_out = True
+                            self.stop_signals.append(timeout_signal)
 
                 tasks.add("timeout", timeout_handler())
 
