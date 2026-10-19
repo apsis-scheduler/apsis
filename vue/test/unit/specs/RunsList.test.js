@@ -94,20 +94,28 @@ describe('RunsList.vue', () => {
   })
 
   it('fills the rest of the window with the table pane only when asked', async () => {
-    expect(mountRunsList({}).$refs.pane.classList.contains('pane')).toBe(false)
+    let observer = null
+    window.ResizeObserver = class {
+      constructor(callback) { observer = this; this.callback = callback }
+      observe(target) { this.target = target }
+      disconnect() { observer = null }
+    }
+    const plain = mountRunsList({})
+    expect(plain.$refs.pane.classList.contains('pane')).toBe(false)
+    plain.$destroy()
+    expect(observer).toBe(null)
 
     const vm = mountRunsList({fillWindow: true})
     const pane = vm.$refs.pane
     expect(pane.classList.contains('pane')).toBe(true)
     expect(vm.paneTop).toBe(0)
+    expect(observer.target).toBe(document.body)
 
     pane.getBoundingClientRect = () => ({top: 300})
-    window.dispatchEvent(new Event('resize'))
+    observer.callback()
     expect(vm.paneTop).toBe(300)
 
     vm.$destroy()
-    pane.getBoundingClientRect = () => ({top: 500})
-    window.dispatchEvent(new Event('resize'))
-    expect(vm.paneTop).toBe(300)
+    expect(observer).toBe(null)
   })
 })

@@ -617,12 +617,15 @@ export default {
   mounted() {
     if (this.fillWindow) {
       this.measurePane()
-      window.addEventListener('resize', this.measurePane)
+      // the body resizes with the window and with anything above the pane
+      this.paneObserver = new ResizeObserver(this.measurePane)
+      this.paneObserver.observe(document.body)
     }
   },
 
   beforeDestroy() {
-    window.removeEventListener('resize', this.measurePane)
+    if (this.paneObserver)
+      this.paneObserver.disconnect()
   },
 
   methods: {
