@@ -132,6 +132,52 @@ In this example, Apsis sends SIGTERM to the program after five minutes, if it
 hasn't completed yet.  The `signal` key is optional and defaults to SIGTERM.
 
 
+Resource limits
+^^^^^^^^^^^^^^^
+
+A Procstar program may limit the memory available to the run, including all
+processes it starts.  The agent enforces the limit with a systemd slice
+(`MemoryMax`, with swap disabled), so it requires an agent running with
+systemd and cgroups v2.
+
+.. code:: yaml
+
+    program:
+        type: procstar-shell
+        command: ...
+        resources:
+            mem_max_gb: 16
+
+`mem_max_gb` is in units of 10\ :sup:`9` bytes.  If omitted, the limit from
+`procstar.agent.resource_defaults.mem_max_gb` in the Apsis config applies, if
+any (see :ref:`config <config>`).
+
+The run's program metadata records the request and what the agent observed:
+
+- `memory_limit.requested_bytes` and `memory_limit.source` (`job`, `default`,
+  `none`, or `unknown` for runs started before this was recorded).  The
+  request is recorded at launch and kept across reconnects.
+- `memory_limit.observed.state`: `finite` (with `bytes`, as rounded by the
+  kernel), `unlimited`, `unavailable` (agent without systemd integration) or
+  `unknown` (older agent).  Only `finite` means a limit was enforced.
+- `oom.evidence`, an assessment from the cgroup counters: `job_limit_likely`
+  (a process was OOM-killed and the run's cgroup ran out of memory under a
+  finite limit), `oom_kill_observed` (a kill without the cgroup running out of
+  memory; a system-wide OOM is possible), `limit_hit_no_kill`,
+  `systemd_oom_kill` (systemd reports `oom-kill` for the scope while the
+  kernel counters show no kill, e.g. systemd-oomd), `none`, or `unknown`
+  when counters are not reported.  The raw counters are kept
+  alongside.
+
+When a run fails and evidence points at the limit, the failure message says
+so, for example ``killed by SIGKILL (OOM kill recorded in this run; likely
+caused by its 16.0 GB memory limit, peak 16.0 GB)``.  "Likely" qualifies the
+cause, not the kill: the cumulative counters cannot tie a particular kill to
+a particular OOM event.  A run whose main process exits
+successfully after a child was OOM-killed still succeeds; the evidence is in
+its metadata.
+
+
 Procstar ECS Programs
 ---------------------
 
