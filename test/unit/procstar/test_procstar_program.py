@@ -540,3 +540,28 @@ def test_systemd_oom_kill_without_kernel_counters():
         )
     )
     assert meta["oom"]["evidence"] == "job_limit_likely"
+
+
+def test_signal_not_delivered_clears_timeout():
+    from signal import Signals
+
+    program = Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "/usr/bin/true",
+            "timeout": {"duration": "1h", "signal": "SIGTERM"},
+        }
+    )
+    running = program.bind({}).run("r123", {})
+    # the timeout fired and the signal was requested
+    running.timed_out = True
+    running.stop_signals.append(Signals.SIGTERM)
+    # ... but the agent reports the process was already gone
+    running._on_signal_not_delivered(int(Signals.SIGTERM))
+    assert running.timed_out is False
+    assert running.stop_signals == []
+
+    # a different undelivered signal (e.g. a stop) does not affect the timeout
+    running.timed_out = True
+    running._on_signal_not_delivered(int(Signals.SIGINT))
+    assert running.timed_out is True

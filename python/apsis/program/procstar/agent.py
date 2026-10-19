@@ -9,6 +9,15 @@ from procstar.agent.exc import (
     ProcessUnknownError,
 )
 from procstar.agent.proc import FdData, Interval, Process, Result
+
+try:
+    from procstar.agent.proc import SignalNotDelivered
+except ImportError:  # procstar client predating the update type
+
+    class SignalNotDelivered:  # pragma: no cover
+        signum = None
+
+
 from signal import Signals
 from typing import Any, Dict
 import uuid
@@ -756,6 +765,9 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                         fd_data = _combine_fd_data(fd_data, update)
                         yield base.ProgramUpdate(outputs=await _make_outputs(fd_data))
 
+                    case SignalNotDelivered():
+                        self._on_signal_not_delivered(update.signum)
+
                     case Result() as res:
                         meta = self._get_result_metadata(res)
 
@@ -845,6 +857,20 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                     # Just log this; for Apsis, the proc is done.
                     log.error(f"delete {self.proc.proc_id}: {exc}")
                 self.proc = None
+
+    def _on_signal_not_delivered(self, signum):
+        """
+        The agent reported that a signal we sent did not reach the process,
+        which was already gone.  If it was the timeout signal, the run did not
+        time out: the process exited on its own first.
+        """
+        if self.timed_out and self.program.timeout is not None:
+            timeout_signal = Signals[self.program.timeout.signal]
+            if signum is None or int(signum) == int(timeout_signal):
+                log.info(f"{self.run_id}: process exited before the timeout signal; not a timeout")
+                self.timed_out = False
+                if timeout_signal in self.stop_signals:
+                    self.stop_signals.remove(timeout_signal)
 
     async def stop(self):
         if self.proc is None:
