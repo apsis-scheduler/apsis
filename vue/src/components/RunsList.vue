@@ -713,14 +713,14 @@ export default {
 }
 
 .controls {
-  width: 80em;
+  box-sizing: border-box;
   margin-top: 1em;
   margin-bottom: 2em;
   background: $global-control-background;
   padding: 12px 18px;
 
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(max(26em, calc((100% - 4em) / 3)), 1fr));
   gap: 12px 2em;
   justify-items: left;
   align-items: baseline;
@@ -944,6 +944,11 @@ table.runlist {
 </style>
 
 <style lang="scss">
+// the table scrolls sideways on its own instead of the whole page
+div.runlist {
+  overflow-x: auto;
+}
+
 // one arg per line, wrapping within the column
 table.runlist .col-args .run-arg {
   display: block;
