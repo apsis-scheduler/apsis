@@ -351,7 +351,8 @@ class RunDB:
                 f" WHERE {SCHEDULE_TIME_SQL} < ''"
             ).fetchall()
         except sqlite3.OperationalError as exc:
-            if "no such index" not in str(exc):
+            # a partial index has no query solution
+            if "no such index" not in str(exc) and "no query solution" not in str(exc):
                 raise
             return False
         # an index on some other expression can only scan
