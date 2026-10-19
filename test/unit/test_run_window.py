@@ -320,26 +320,30 @@ async def test_no_jobs_or_index(tmp_path):
 @pytest.mark.parametrize("grouping", [True, False])
 @pytest.mark.parametrize("job_filter", [JobFilter(), JobFilter(path="a")])
 @pytest.mark.asyncio
-async def test_expected_run_starts_during_window(tmp_path, monkeypatch, job_filter, grouping):
+async def test_expected_runs_start_during_window(tmp_path, job_filter, grouping):
     """
-    An expected run that starts while the window is built shows once, and its
+    Expected runs that start while the window is built show once, and their
     job's next scheduled run still shows.
     """
-    monkeypatch.setattr(run_window, "PAGE_ROWS", 1)
-    run_db = make_db(tmp_path, [])
-    run = make_run(1, "a", {}, State.scheduled, NOW - 60, expected=True)
-    expected = {"r1": run, "r2": make_run(2, "a", {}, State.scheduled, NOW + 60, expected=True)}
+    run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW - 90)])
+    # one starting run is nearer the anchor than the db run and one is past it
+    starting = [
+        make_run(i, "a", {}, State.scheduled, NOW + t, expected=True)
+        for i, t in ((2, -120), (3, -60))
+    ]
+    runs = starting + [make_run(4, "a", {}, State.scheduled, NOW + 60, expected=True)]
+    expected = {r.run_id: r for r in runs}
 
     async def start():
-        # the run starts at the first yield of the window build
-        await asyncio.sleep(0)
-        run.state = State.running
-        run.expected = False
-        run_db.upsert(run)
-        del expected["r1"]
+        # the runs start at the first yield of the window build
+        for run in starting:
+            run.state = State.running
+            run.expected = False
+            run_db.upsert(run)
+            del expected[run.run_id]
 
     task = asyncio.create_task(start())
     spec = WindowSpec(anchor=NOW, grouping=grouping, job_filter=job_filter)
     window = await query_window(run_db, expected, spec, min_timestamp=None)
     await task
-    assert window.run_ids == ["r1", "r2"]
+    assert window.run_ids == ["r2", "r1", "r3", "r4"]
