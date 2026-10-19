@@ -521,7 +521,7 @@ def test_job_rows(tmp_path):
 
 
 def test_schedule_index_check(tmp_path):
-    """Db errors other than a missing index pass through."""
+    """Db errors other than a missing or partial index pass through."""
     path = tmp_path / "apsis.db"
     SqliteDB.create(path=path)
     conn = SqliteDB.open(path).conn
