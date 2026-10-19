@@ -126,7 +126,11 @@ div
         div &nbsp;
 
 
-  div.runlist
+  div.runlist(
+    ref="pane"
+    :class="{ pane: fillWindow }"
+    :style="fillWindow ? { height: 'calc(100vh - ' + paneTop + 'px - 1rem)' } : null"
+  )
     table.runlist(
       ref="table"
       :style="{ width: tableWidth + 'px' }"
@@ -332,6 +336,9 @@ export default {
 
     // If true, show a row indicating the current time.
     nowIndicator: {type: Boolean, default: true},
+
+    // If true, the table scrolls in a pane that fills the rest of the window.
+    fillWindow: {type: Boolean, default: false},
   },
 
   components: {
@@ -356,6 +363,7 @@ export default {
 
   data() {
     return {
+      paneTop: 0,
       store,
       // If true, show profiling on console.log.
       profile: false,
@@ -606,7 +614,22 @@ export default {
 
   },
 
+  mounted() {
+    if (this.fillWindow) {
+      this.measurePane()
+      window.addEventListener('resize', this.measurePane)
+    }
+  },
+
+  beforeDestroy() {
+    window.removeEventListener('resize', this.measurePane)
+  },
+
   methods: {
+    measurePane() {
+      this.paneTop = this.$refs.pane.getBoundingClientRect().top + window.scrollY
+    },
+
     formatElapsed,
     arrayToArgs,
     argsToArray,
@@ -947,6 +970,16 @@ table.runlist {
 // the table scrolls sideways on its own instead of the whole page
 div.runlist {
   overflow-x: auto;
+
+  &.pane {
+    overflow: auto;
+
+    thead {
+      top: 0;
+      z-index: 1;
+      background: white;
+    }
+  }
 }
 
 // one arg per line, wrapping within the column

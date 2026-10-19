@@ -79,4 +79,22 @@ describe('RunsList.vue', () => {
     expect(col()).toBe(start)
     expect(mountRunsList({}).$el.querySelector('col').style.width).toBe(start)
   })
+
+  it('fills the rest of the window with the table pane only when asked', async () => {
+    expect(mountRunsList({}).$refs.pane.classList.contains('pane')).toBe(false)
+
+    const vm = mountRunsList({fillWindow: true})
+    const pane = vm.$refs.pane
+    expect(pane.classList.contains('pane')).toBe(true)
+    expect(vm.paneTop).toBe(0)
+
+    pane.getBoundingClientRect = () => ({top: 300})
+    window.dispatchEvent(new Event('resize'))
+    expect(vm.paneTop).toBe(300)
+
+    vm.$destroy()
+    pane.getBoundingClientRect = () => ({top: 500})
+    window.dispatchEvent(new Event('resize'))
+    expect(vm.paneTop).toBe(300)
+  })
 })
