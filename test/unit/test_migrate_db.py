@@ -21,6 +21,8 @@ def migrate_db():
     [
         None,
         "CREATE INDEX idx_runs_schedule ON runs (json_extract(times, '$.running'))",
+        "CREATE INDEX idx_runs_schedule ON runs (json_extract(times, '$.schedule'))"
+        " WHERE state = 'success'",
     ],
 )
 def test_migrate_2_7_0(tmp_path, migrate_db, replace_sql):
