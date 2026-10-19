@@ -185,8 +185,14 @@ export default {
   },
 
   mounted() {
-    // size the scroller to fill the rest of the window
-    this.scrollerTop = this.$refs.scroller.$el.getBoundingClientRect().top + window.scrollY
+    this.measureScroller()
+    // the body resizes with the window and with anything above the scroller
+    this.scrollerObserver = new ResizeObserver(this.measureScroller)
+    this.scrollerObserver.observe(document.body)
+  },
+
+  beforeDestroy() {
+    this.scrollerObserver.disconnect()
   },
 
   components: {
@@ -282,6 +288,11 @@ export default {
           }
         }
       this.store.state.jobsExpand = expand
+    },
+
+    // sizes the scroller to fill the rest of the window
+    measureScroller() {
+      this.scrollerTop = this.$refs.scroller.$el.getBoundingClientRect().top + window.scrollY
     },
   },
 }
