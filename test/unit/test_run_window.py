@@ -151,7 +151,7 @@ async def test_window_matches_client(tmp_path, monkeypatch, job_path_rows):
     rng = random.Random(job_path_rows)
     runs = random_runs(rng)
     run_db = make_db(tmp_path, [r for r in runs if not r.expected])
-    expected = [r for r in runs if r.expected]
+    expected = {r.run_id: r for r in runs if r.expected}
 
     for _ in range(300):
         spec = WindowSpec(
@@ -205,7 +205,7 @@ async def test_window_budget(tmp_path, monkeypatch):
     monkeypatch.setattr(run_window, "PAGE_ROWS", 2)
     monkeypatch.setattr(run_window, "SIDE_BUDGET", 4)
     spec = WindowSpec(anchor=NOW + 100, states=frozenset({"failure"}))
-    window = await query_window(run_db, [], spec, min_timestamp=None)
+    window = await query_window(run_db, {}, spec, min_timestamp=None)
     assert window.run_ids == []
     assert window.earlier == str(NOW + 17)
     assert not window.complete
@@ -223,13 +223,13 @@ async def test_edges_move_window(tmp_path):
 
     # a's group shows its latest run after the anchor and only b is earlier
     window = await query_window(
-        run_db, [], WindowSpec(anchor=NOW + 150, limit=1), min_timestamp=None
+        run_db, {}, WindowSpec(anchor=NOW + 150, limit=1), min_timestamp=None
     )
     assert window.run_ids == ["r5"]
     assert window.earlier == str(NOW)
 
     window = await query_window(
-        run_db, [], WindowSpec(anchor=NOW + 150, limit=2), min_timestamp=None
+        run_db, {}, WindowSpec(anchor=NOW + 150, limit=2), min_timestamp=None
     )
     assert window.run_ids == ["r6", "r5"]
     assert window.earlier is None
@@ -267,7 +267,7 @@ async def test_edges_step_past_ties(tmp_path, grouping, job_ids):
 
     async def window_at(anchor):
         spec = WindowSpec(anchor=anchor, grouping=grouping, job_ids=job_ids)
-        return await query_window(run_db, [], spec, min_timestamp=None)
+        return await query_window(run_db, {}, spec, min_timestamp=None)
 
     # ungrouped also stops at the later runs of the scheduled groups
     later = [20, 45, 70 + 1 / 60] if grouping else [15, 20, 45, 70 + 1 / 60]
@@ -287,17 +287,17 @@ async def test_edges_step_past_ties(tmp_path, grouping, job_ids):
 @pytest.mark.asyncio
 async def test_no_jobs_or_index(tmp_path):
     # no jobs needs no db
-    window = await query_window(None, [], WindowSpec(job_ids=frozenset()), min_timestamp=None)
+    window = await query_window(None, {}, WindowSpec(job_ids=frozenset()), min_timestamp=None)
     assert window.run_ids == []
 
     run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
     run_db._RunDB__connection.connection.execute("DROP INDEX idx_runs_schedule")
     # dropping the index after open makes the window unavailable from then on
     with pytest.raises(WindowUnavailable):
-        await query_window(run_db, [], WindowSpec(), min_timestamp=None)
+        await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
     assert not run_db.has_schedule_index
     with pytest.raises(WindowUnavailable):
-        await query_window(run_db, [], WindowSpec(), min_timestamp=None)
+        await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
 
     # other db errors pass through
     class LockedDB:
@@ -307,10 +307,11 @@ async def test_no_jobs_or_index(tmp_path):
             raise sqlite3.OperationalError("database is locked")
 
     with pytest.raises(sqlite3.OperationalError):
-        await query_window(LockedDB(), [], WindowSpec(), min_timestamp=None)
+        await query_window(LockedDB(), {}, WindowSpec(), min_timestamp=None)
 
     # a small job set doesn't need the index
     window = await query_window(
-        run_db, [], WindowSpec(job_ids=frozenset({"a"})), min_timestamp=None
+        run_db, {}, WindowSpec(job_ids=frozenset({"a"})), min_timestamp=None
     )
     assert window.run_ids == ["r1"]
+

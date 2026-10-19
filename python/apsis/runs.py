@@ -782,7 +782,7 @@ class RunStore:
 
         return await query_window(
             self.__run_db,
-            list(self.__expected_runs.values()),
+            self.__expected_runs,
             spec,
             min_timestamp=self.__min_timestamp(),
         )
