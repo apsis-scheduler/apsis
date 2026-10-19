@@ -295,8 +295,9 @@ the argv list.
 This sets the default memory limit in gigabytes for Procstar programs when no
 explicit memory limit is specified in the program's ``resources`` parameter.
 The limit is enforced using systemd slice properties. If not specified, no
-default memory limit is applied.  See :doc:`programs` for the metadata Apsis
-records about the limit.
+default memory limit is applied.  A job may decline the default with
+``mem_max_gb: unlimited``; see :doc:`programs` for details and for the
+metadata Apsis records about the limit.
 
 
 .. code:: yaml

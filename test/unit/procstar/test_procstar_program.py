@@ -366,12 +366,40 @@ def _running(resources=None, cfg=None):
 DEFAULT_CFG = {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 64}}}}
 
 
+def test_unlimited_declines_default():
+    program = Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "/usr/bin/true",
+            "resources": {"mem_max_gb": "unlimited"},
+        }
+    )
+    assert program.resources.mem_max_gb == "unlimited"
+    # JSO round trip, bound and unbound.
+    assert Program.from_jso(program.to_jso()).resources.mem_max_gb == "unlimited"
+    bound = Program.from_jso(program.bind({}).to_jso())
+    assert bound.resources.mem_max_gb == "unlimited"
+
+    running = _running({"mem_max_gb": "unlimited"}, DEFAULT_CFG)
+    assert running._spec.to_jso()["systemd_properties"]["slice"]["memory_max"] is None
+
+    with pytest.raises(SchemaError):
+        Program.from_jso(
+            {
+                "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+                "command": "/usr/bin/true",
+                "resources": {"mem_max_gb": "lots"},
+            }
+        )
+
+
 @pytest.mark.parametrize(
     ("resources", "cfg", "requested", "source"),
     [
         (None, {}, None, "none"),
         (None, DEFAULT_CFG, 64 * 10**9, "default"),
         ({"mem_max_gb": 2}, DEFAULT_CFG, 2 * 10**9, "job"),
+        ({"mem_max_gb": "unlimited"}, DEFAULT_CFG, None, "none"),
     ],
 )
 def test_memory_limit_requested(resources, cfg, requested, source):

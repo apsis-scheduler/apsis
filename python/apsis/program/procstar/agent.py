@@ -56,20 +56,25 @@ def _sudo_wrap(cfg, argv, sudo_user):
         )
 
 
+# Spelling of `resources.mem_max_gb` that declines a configured default limit.
+UNLIMITED = "unlimited"
+
 GB = 10**9
 
 
 def _parse_mem_max_gb(value):
     """
-    Parses a `mem_max_gb` value: a positive number of GB, or `None` to inherit
-    the configured default.
+    Parses a `mem_max_gb` value: a positive number of GB, `"unlimited"`, or
+    `None` to inherit the configured default.
     """
     if value is None:
         return None
+    if isinstance(value, str) and value.strip().lower() == UNLIMITED:
+        return UNLIMITED
     try:
         value = float(value)
     except (TypeError, ValueError):
-        raise SchemaError(f"mem_max_gb must be a number: {value!r}")
+        raise SchemaError(f"mem_max_gb must be a number or '{UNLIMITED}': {value!r}")
     if not value > 0:
         raise SchemaError("mem_max_gb must be positive")
     return value
@@ -85,6 +90,8 @@ def _resolve_mem_max(cfg, resources):
       `resource_defaults.mem_max_gb` in the config), or `"none"`.
     """
     mem_max_gb = resources.mem_max_gb
+    if mem_max_gb == UNLIMITED:
+        return None, "none"
     if mem_max_gb is not None:
         return int(mem_max_gb * GB), "job"
     default = get_cfg(cfg, "resource_defaults.mem_max_gb", None)
@@ -341,9 +348,9 @@ class Resources:
     Specification for resource limits for a running job.
     """
 
-    # A positive number of GB (10**9 bytes), or `None` to inherit the
-    # configured default.
-    mem_max_gb: int | float | None = None
+    # A positive number of GB (10**9 bytes), `UNLIMITED` to decline a
+    # configured default, or `None` to inherit it.
+    mem_max_gb: int | float | str | None = None
 
     def to_jso(self):
         return if_not_none("mem_max_gb", self.mem_max_gb)
@@ -360,7 +367,7 @@ class Resources:
 
 @dataclass
 class BoundResources:
-    mem_max_gb: int | float | None = None
+    mem_max_gb: int | float | str | None = None
 
     def to_jso(self):
         return if_not_none("mem_max_gb", self.mem_max_gb)
@@ -924,6 +931,8 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
         # Started before the request was recorded: only an explicit job value is
         # certain; whether a config default applied is not knowable now.
         mem_max_gb = self.program.resources.mem_max_gb
+        if mem_max_gb == UNLIMITED:
+            return None, "none"
         if mem_max_gb is not None:
             return int(mem_max_gb * GB), "job"
         return None, "unknown"

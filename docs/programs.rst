@@ -150,7 +150,8 @@ systemd and cgroups v2.
 
 `mem_max_gb` is in units of 10\ :sup:`9` bytes.  If omitted, the limit from
 `procstar.agent.resource_defaults.mem_max_gb` in the Apsis config applies, if
-any (see :ref:`config <config>`).
+any (see :ref:`config <config>`); `mem_max_gb: unlimited` declines that
+default.
 
 The run's program metadata records the request and what the agent observed:
 
