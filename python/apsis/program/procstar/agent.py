@@ -249,6 +249,30 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
     return oom
 
 
+def _timeout_applies(res, timeout_signal: str, timeout_sent_at) -> bool:
+    """
+    Decides whether a run whose timeout fired really timed out.
+
+    Sending the timeout signal only queues a request to the agent; if the
+    process had already exited and the agent was finalizing its units, the
+    signal was never delivered.  The timeout applies if the process status
+    shows the timeout signal, or if the agent's recorded stop time is not
+    before the moment the signal was sent.  If the stop time cannot be read,
+    the timeout stands.
+    """
+    status = getattr(res, "status", None)
+    if status is not None and getattr(status, "signal", None) == timeout_signal:
+        return True
+    stop = getattr(getattr(res, "times", None), "stop", None)
+    if stop is None or timeout_sent_at is None:
+        return True
+    try:
+        stop_time = ora.Time(stop)
+    except Exception:
+        return True
+    return stop_time >= timeout_sent_at
+
+
 def _oom_message(meta: dict) -> str | None:
     """
     Returns a short description of OOM evidence in `meta` to append to a
@@ -588,6 +612,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
         self.stopping = False
         self.stop_signals = []
         self.timed_out = False
+        self.timeout_sent_at = None
 
     @property
     def _spec_argv(self):
@@ -723,6 +748,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                     if not self.stopping and self.proc is not None:
                         log.info(f"{self.run_id}: timeout")
                         self.timed_out = True
+                        self.timeout_sent_at = ora.now()
                         timeout_signal = Signals[self.program.timeout.signal]
                         self.stop_signals.append(timeout_signal)
                         await self.proc.send_signal(timeout_signal)
@@ -800,6 +826,13 @@ class BaseRunningProcstarProgram(base.RunningProgram):
 
             outputs = await _make_outputs(fd_data)
             meta["stop"] = {"signals": [s.name for s in self.stop_signals]}
+
+            if self.timed_out and not _timeout_applies(
+                res, self.program.timeout.signal, self.timeout_sent_at
+            ):
+                # The process had already exited when the timeout fired.
+                log.info(f"{self.run_id}: exited before the timeout signal; not a timeout")
+                self.timed_out = False
 
             if res.status.exit_code == 0 and not self.timed_out:
                 # The process terminated successfully.

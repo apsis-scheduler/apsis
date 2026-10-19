@@ -540,3 +540,29 @@ def test_systemd_oom_kill_without_kernel_counters():
         )
     )
     assert meta["oom"]["evidence"] == "job_limit_likely"
+
+
+def test_timeout_applies():
+    import ora
+
+    from apsis.program.procstar.agent import _timeout_applies
+
+    sent = ora.Time("2026-10-19T12:00:00+00:00")
+    before = _res(
+        status={"exit_code": 0, "signal": None}, times={"stop": "2026-10-19T11:59:59.5+00:00"}
+    )
+    after = _res(
+        status={"exit_code": 0, "signal": None}, times={"stop": "2026-10-19T12:00:00.5+00:00"}
+    )
+    killed = _res(
+        status={"exit_code": None, "signal": "SIGTERM"}, times={"stop": "2026-10-19T11:59:59+00:00"}
+    )
+    # exited before the signal was sent: not a timeout
+    assert _timeout_applies(before, "SIGTERM", sent) is False
+    # still running when the signal was sent
+    assert _timeout_applies(after, "SIGTERM", sent) is True
+    # terminated by the timeout signal
+    assert _timeout_applies(killed, "SIGTERM", sent) is True
+    # cannot tell: the timeout stands
+    assert _timeout_applies(_res(status={"exit_code": 0}), "SIGTERM", sent) is True
+    assert _timeout_applies(before, "SIGTERM", None) is True
