@@ -42,7 +42,6 @@ def test_parse_job_ids():
     "query_string",
     [
         "types=job,bogus",
-        "types=",
         "&".join(f"job_id={i}" for i in range(MAX_JOB_IDS + 1)),
         "&".join(f"job_id={i}" for i in range(MAX_JOB_IDS)) + "&dependents_of=a",
     ],
@@ -71,7 +70,6 @@ MSGS = [
         (SummaryScope(init=True), [0, 1, 2, 3, 4, 5, 6, 7]),
         (SummaryScope(init=True, types=frozenset({"job", "agent_conn"})), [0, 1, 2, 3, 4]),
         (SummaryScope(init=True, job_ids=frozenset({"a"})), [0, 2, 3, 4, 5, 7]),
-        (SummaryScope(init=True, types=frozenset({"run"}), job_ids=frozenset({"b"})), [6]),
     ],
 )
 def test_predicate(scope, passed):

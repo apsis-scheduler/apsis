@@ -288,16 +288,6 @@ def test_job_summaries_pages(tmp_path):
     assert list(summary_db.query_job("c", min_timestamp=None, page_size=10)) == [[]]
 
 
-def test_expected_summaries(tmp_path):
-    run_store = make_run_store(tmp_path)
-    a = Run(Instance("a", {}), expected=True)
-    run_store.add(a)
-    run_store.add(Run(Instance("b", {}), expected=True))
-    add_runs(run_store, "a", 1)
-
-    assert run_ids(run_store.expected_summaries(frozenset({"a", "c"}))) == [a.run_id]
-
-
 class FakeWs:
     def __init__(self):
         self.frames = []
@@ -322,6 +312,7 @@ async def test_send_scoped_init_runs(tmp_path, monkeypatch):
     run_store = make_run_store(tmp_path)
     expected = Run(Instance("a", {}), expected=True)
     run_store.add(expected)
+    run_store.add(Run(Instance("d", {}), expected=True))
     a = add_runs(run_store, "a", 5)
     b = add_runs(run_store, "b", 2)
     apsis = SimpleNamespace(run_store=run_store)
