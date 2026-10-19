@@ -155,8 +155,9 @@ default.
 
 The run's program metadata records the request and what the agent observed:
 
-- `memory_limit.requested_bytes` and `memory_limit.source` (`job`, `default`
-  or `none`).
+- `memory_limit.requested_bytes` and `memory_limit.source` (`job`, `default`,
+  `none`, or `unknown` for runs started before this was recorded).  The
+  request is recorded at launch and kept across reconnects.
 - `memory_limit.observed.state`: `finite` (with `bytes`, as rounded by the
   kernel), `unlimited`, `unavailable` (agent without systemd integration) or
   `unknown` (older agent).  Only `finite` means a limit was enforced.
@@ -168,8 +169,10 @@ The run's program metadata records the request and what the agent observed:
   alongside.
 
 When a run fails and evidence points at the limit, the failure message says
-so, for example ``killed by SIGKILL (likely OOM-killed at the job memory
-limit: peak 16.0 GB, limit 16.0 GB)``.  A run whose main process exits
+so, for example ``killed by SIGKILL (OOM kill recorded in this run; likely
+caused by its 16.0 GB memory limit, peak 16.0 GB)``.  "Likely" qualifies the
+cause, not the kill: the cumulative counters cannot tie a particular kill to
+a particular OOM event.  A run whose main process exits
 successfully after a child was OOM-killed still succeeds; the evidence is in
 its metadata.
 

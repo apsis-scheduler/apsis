@@ -358,7 +358,8 @@ def _running(resources=None, cfg=None):
     if resources is not None:
         jso["resources"] = resources
     running = Program.from_jso(jso).bind({}).run("r123", cfg or {})
-    running.run_state = {"proc_id": "p0"}
+    # As at start: the request is recorded in run_state.
+    running.run_state = {"proc_id": "p0", **running._get_extra_run_state()}
     return running
 
 
@@ -433,19 +434,19 @@ def test_memory_limit_observed_states():
         (
             _acct(max_=2 * 10**9, kills=1, local_oom=1, hits=40, peak=2 * 10**9),
             "job_limit_likely",
-            "likely OOM-killed at the job memory limit: peak 2.0 GB, limit 2.0 GB",
+            "OOM kill recorded in this run; likely caused by its 2.0 GB memory limit, peak 2.0 GB",
         ),
         (
             _acct(max_=2 * 10**9, kills=1, local_oom=0, hits=0),
             "oom_kill_observed",
-            "OOM kill observed; attribution unconfirmed, host-wide OOM possible",
+            "OOM kill recorded in this run; cause not attributed, host-wide OOM possible",
         ),
         # A kill under no finite limit cannot be attributed to the job limit.
         (_acct(max_="max", kills=1, local_oom=1, hits=1), "oom_kill_observed", None),
         (
             _acct(max_=2 * 10**9, kills=0, local_oom=0, hits=3),
             "limit_hit_no_kill",
-            "memory limit hit, no kill recorded",
+            "memory limit reached, no OOM kill recorded",
         ),
         (_acct(max_=2 * 10**9), "none", None),
     ],
@@ -476,3 +477,57 @@ def test_oom_counters_missing_is_unknown():
     )
     assert meta["oom"]["evidence"] == "unknown"
     assert meta["oom"]["kill_count"] is None
+
+
+def test_kill_without_local_counters_is_still_observed():
+    running = _running({"mem_max_gb": 2}, {})
+    acct = _acct(max_=2 * 10**9, kills=1)
+    del acct["memory"]["events_local"]
+    meta = running._get_result_metadata(
+        _res(errors=[], systemd_enabled=True, cgroup_accounting=acct)
+    )
+    assert meta["oom"]["evidence"] == "oom_kill_observed"
+
+
+def test_null_memory_accounting_is_tolerated():
+    # The agent reports memory: null when the memory controller is unavailable.
+    from apsis.program.procstar.agent import _oom_message
+
+    running = _running({"mem_max_gb": 2}, {})
+    acct = {"memory": None, "cpu_stat": {"usage_usec": 1}}
+    meta = running._get_result_metadata(
+        _res(errors=[], systemd_enabled=True, cgroup_accounting=acct)
+    )
+    assert meta["memory_limit"]["observed"] == {"state": "unknown"}
+    assert meta["oom"]["evidence"] == "unknown"
+    assert _oom_message(meta) is None
+
+
+def test_requested_limit_survives_reconnect():
+    # Started under a 100 GB default, reconnected under a 128 GB default.
+    started = _running(None, {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 100}}}})
+    reconnected = _running(
+        None, {"procstar": {"agent": {"resource_defaults": {"mem_max_gb": 128}}}}
+    )
+    reconnected.run_state = started.run_state
+    meta = reconnected._get_result_metadata(_res(errors=[]))
+    assert meta["memory_limit"]["requested_bytes"] == 100 * 10**9
+    assert meta["memory_limit"]["source"] == "default"
+
+
+def test_requested_limit_unknown_for_old_run_state():
+    # Started before the request was recorded: only an explicit job value is certain.
+    running = _running(None, DEFAULT_CFG)
+    running.run_state = {"proc_id": "p0"}
+    meta = running._get_result_metadata(_res(errors=[]))
+    assert meta["memory_limit"] == {
+        "requested_bytes": None,
+        "source": "unknown",
+        "observed": {"state": "unknown"},
+    }
+
+    running = _running({"mem_max_gb": 2}, DEFAULT_CFG)
+    running.run_state = {"proc_id": "p0"}
+    meta = running._get_result_metadata(_res(errors=[]))
+    assert meta["memory_limit"]["requested_bytes"] == 2 * 10**9
+    assert meta["memory_limit"]["source"] == "job"

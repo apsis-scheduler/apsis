@@ -182,7 +182,7 @@ def _memory_limit_meta(requested_bytes, source, meta: dict) -> dict:
     if meta.get("systemd_enabled") is False:
         observed = {"state": "unavailable"}
     else:
-        max_ = (meta.get("cgroup_accounting") or {}).get("memory", {}).get("max")
+        max_ = _memory_accounting(meta).get("max")
         if isinstance(max_, int):
             observed = {"state": "finite", "bytes": max_}
         elif max_ == "max":
@@ -196,6 +196,14 @@ def _memory_limit_meta(requested_bytes, source, meta: dict) -> dict:
     }
 
 
+def _memory_accounting(meta: dict) -> dict:
+    """
+    Returns the memory section of the run's cgroup accounting, or `{}`; the
+    agent reports `null` when the memory controller is not available.
+    """
+    return (meta.get("cgroup_accounting") or {}).get("memory") or {}
+
+
 def _oom_meta(meta: dict, observed: dict) -> dict:
     """
     Summarizes OOM-related evidence from the run slice's cgroup counters.
@@ -203,16 +211,18 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
     `evidence` is an assessment, not a proof:
 
     - `job_limit_likely`: a process was OOM-killed and the slice itself ran
-      out of memory under a finite limit.
-    - `oom_kill_observed`: a process was OOM-killed but the slice did not run
-      out of memory; attribution is unconfirmed (a system-wide OOM is
-      possible).
+      out of memory under a finite limit.  The counters are cumulative, so
+      they cannot tie a particular kill to a particular OOM event.
+    - `oom_kill_observed`: a process was OOM-killed, but either the slice did
+      not run out of memory or that is not known; the cause is not attributed
+      (a system-wide OOM is possible).
     - `limit_hit_no_kill`: usage hit the limit but nothing was killed;
       allocations may still have failed inside the program.
     - `none`: counters present and zero.
-    - `unknown`: counters not reported (older agent or failed read).
+    - `unknown`: the kill counter is not reported (older agent or failed
+      read), or no kill is reported and the limit counters are missing.
     """
-    memory = (meta.get("cgroup_accounting") or {}).get("memory", {})
+    memory = _memory_accounting(meta)
     events = memory.get("events")
     local = memory.get("events_local")
     oom = {
@@ -223,12 +233,16 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
         "cleanup_incomplete": meta.get("cleanup_incomplete", False),
     }
     kills, local_oom, hits = oom["kill_count"], oom["local_oom_count"], oom["local_limit_hits"]
-    if kills is None or local_oom is None or hits is None:
+    if kills is None:
         evidence = "unknown"
-    elif kills > 0 and local_oom > 0 and observed.get("state") == "finite":
-        evidence = "job_limit_likely"
     elif kills > 0:
-        evidence = "oom_kill_observed"
+        # A recorded kill is never erased by missing attribution evidence.
+        if local_oom is not None and local_oom > 0 and observed.get("state") == "finite":
+            evidence = "job_limit_likely"
+        else:
+            evidence = "oom_kill_observed"
+    elif hits is None or local_oom is None:
+        evidence = "unknown"
     elif hits > 0:
         evidence = "limit_hit_no_kill"
     else:
@@ -244,14 +258,17 @@ def _oom_message(meta: dict) -> str | None:
     """
     evidence = (meta.get("oom") or {}).get("evidence")
     if evidence == "job_limit_likely":
-        peak = (meta.get("cgroup_accounting") or {}).get("memory", {}).get("peak")
-        limit = meta.get("memory_limit", {}).get("observed", {}).get("bytes")
+        peak = _memory_accounting(meta).get("peak")
+        limit = (meta.get("memory_limit") or {}).get("observed", {}).get("bytes")
         fmt = lambda b: "?" if b is None else f"{b / GB:.1f} GB"
-        return f"likely OOM-killed at the job memory limit: peak {fmt(peak)}, limit {fmt(limit)}"
+        return (
+            f"OOM kill recorded in this run; likely caused by its {fmt(limit)} memory limit, "
+            f"peak {fmt(peak)}"
+        )
     if evidence == "oom_kill_observed":
-        return "OOM kill observed; attribution unconfirmed, host-wide OOM possible"
+        return "OOM kill recorded in this run; cause not attributed, host-wide OOM possible"
     if evidence == "limit_hit_no_kill":
-        return "memory limit hit, no kill recorded"
+        return "memory limit reached, no OOM kill recorded"
     return None
 
 
@@ -894,9 +911,28 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
     def _spec_systemd_properties(self):
         return _make_systemd(self.cfg, resources=self.program.resources)
 
+    def _get_extra_run_state(self) -> Dict[str, Any]:
+        # Record the limit actually requested at launch, so a reconnect under a
+        # changed config default does not misreport it.
+        requested_bytes, source = _resolve_mem_max(self.cfg, self.program.resources)
+        return {"memory_limit": {"requested_bytes": requested_bytes, "source": source}}
+
+    def _requested_limit(self):
+        recorded = (self.run_state or {}).get("memory_limit")
+        if recorded is not None:
+            return recorded.get("requested_bytes"), recorded.get("source", "unknown")
+        # Started before the request was recorded: only an explicit job value is
+        # certain; whether a config default applied is not knowable now.
+        mem_max_gb = self.program.resources.mem_max_gb
+        if mem_max_gb == UNLIMITED:
+            return None, "none"
+        if mem_max_gb is not None:
+            return int(mem_max_gb * GB), "job"
+        return None, "unknown"
+
     def _get_result_metadata(self, res: Result) -> Dict[str, Any]:
         meta = super()._get_result_metadata(res)
-        requested_bytes, source = _resolve_mem_max(self.cfg, self.program.resources)
+        requested_bytes, source = self._requested_limit()
         meta["memory_limit"] = _memory_limit_meta(requested_bytes, source, meta)
         meta["oom"] = _oom_meta(meta, meta["memory_limit"]["observed"])
         return meta
