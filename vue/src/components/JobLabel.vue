@@ -1,7 +1,7 @@
 <template lang="pug">
   span.job-label(
     :class="{ clickable, selected }"
-    @click="clickable && $emit('click')"
+    @click="clickable && !textSelected() && $emit('click')"
   ) {{ label }}
 </template>
 
@@ -11,6 +11,12 @@ export default {
     label: String,
     clickable: {type: Boolean, default: false},
     selected: {type: Boolean, default: false},
+  },
+
+  methods: {
+    textSelected() {
+      return !window.getSelection().isCollapsed
+    },
   },
 }
 </script>

@@ -198,7 +198,7 @@ div
                 span.arg-value(
                   v-if="param in run.args"
                   :class="{ clickable: runControls, selected: runControls && args !== null && args[param] === run.args[param] }"
-                  @click="runControls && (args = toggleArg(args, param, run.args[param]))"
+                  @click="runControls && !textSelected() && (args = toggleArg(args, param, run.args[param]))"
                 ) {{ run.args[param] }}
             //- Else all together.
             td.col-args(v-if="argColumnStyle === 'combined'")
@@ -623,6 +623,10 @@ export default {
             || run.state === 'running'
             || run.state === 'stopping')
         && new Date(run.times.stop) < new Date()
+    },
+
+    textSelected() {
+      return !window.getSelection().isCollapsed
     },
   },
 
