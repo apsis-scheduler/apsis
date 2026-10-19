@@ -2,6 +2,15 @@ import Vue from 'vue'
 import JobsList from '@/components/JobsList'
 import store from '@/store'
 
+// jsdom has no ResizeObserver so tests run the body observer by hand
+let bodyObserver = null
+window.ResizeObserver = class {
+  constructor(callback) { this.callback = callback }
+  observe(target) { if (target === document.body) bodyObserver = this }
+  unobserve() {}
+  disconnect() { if (bodyObserver === this) bodyObserver = null }
+}
+
 function makeJob(job_id) {
   return { job_id, params: [], metadata: { labels: [], description: '' } }
 }
@@ -38,5 +47,16 @@ describe('JobsList.vue', () => {
     store.state.jobs = new Map(['a', 'a/b'].map(id => [id, makeJob(id)]))
     const vm = new (Vue.extend(JobsList))().$mount()
     expect(vm.jobRows.map(({ key }) => key)).toEqual(['a/', 'a'])
+  })
+
+  it('remeasures the scroller when anything above it resizes', () => {
+    store.state.jobs = new Map()
+    const vm = new (Vue.extend(JobsList))().$mount()
+    vm.$refs.scroller.$el.getBoundingClientRect = () => ({top: 300})
+    bodyObserver.callback()
+    expect(vm.scrollerTop).toBe(300)
+
+    vm.$destroy()
+    expect(bodyObserver).toBe(null)
   })
 })
