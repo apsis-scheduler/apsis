@@ -166,6 +166,9 @@ export function processMsgs(msgs, state) {
         break
 
       case 'run_delete':
+        // the window has to reload whatever replaces a run it sent
+        if (state.runWindow !== null && state.runWindow.runIds.has(msg.run_id))
+          state.runWindowStale = true
         if (runs === null)
           runs = new Map(state.runs)
         runs.delete(msg.run_id)
