@@ -47,6 +47,23 @@ describe('run windows', () => {
     expect(state.runWindow).toBe(null)
     expect(state.runWindowStale).toBe(false)
   })
+
+  test('deleting a run the window sent makes it stale', () => {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
+    runs.processMsgs([
+      {type: 'run_summary', run_summary: run('r1', 'scheduled')},
+      {type: 'run_window', groups: {r1: 24}, earlier: null, later: null},
+    ], state)
+    runs.processMsgs([{type: 'run_delete', run_id: 'r9'}], state)
+    expect(state.runWindowStale).toBe(false)
+
+    // rescheduling replaces r1 with r2 at the same time
+    runs.processMsgs([
+      {type: 'run_delete', run_id: 'r1'},
+      {type: 'run_summary', run_summary: run('r2', 'scheduled')},
+    ], state)
+    expect(state.runWindowStale).toBe(true)
+  })
 })
 
 describe('run window span', () => {
