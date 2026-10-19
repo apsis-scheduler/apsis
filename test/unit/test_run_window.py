@@ -104,12 +104,17 @@ def client_window(runs, spec, anchor):
         return str((outer or nearest).times["schedule"])
 
     earlier = before[: len(before) - nb]
-    later = after[na:]
+    later = None
+    if na < len(after):
+        # the later side includes the anchor so skip omitted runs tied with the outer shown one
+        outer = shown[-1].times["schedule"]
+        times = (p.times["schedule"] for p in after[na:])
+        later = str(next((t for t in times if t > outer), outer + 1))
     return (
         [r.run_id for r in shown],
         {p.run_id: n for p, n in principals if p in shown},
         edge(earlier, shown[0] if nb else None, earlier[-1] if earlier else None),
-        edge(later, shown[-1] if na else None, later[0] if later else None),
+        later,
     )
 
 
