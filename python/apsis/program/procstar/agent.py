@@ -15,7 +15,7 @@ import uuid
 
 from apsis.lib import asyn
 from apsis.lib import memo
-from apsis.lib.json import check_schema, ifkey
+from apsis.lib.json import SchemaError, check_schema, ifkey
 from apsis.lib.parse import nparse_duration
 from apsis.lib.py import or_none, nstr, get_cfg
 from apsis.procstar import get_agent_server
@@ -56,13 +56,52 @@ def _sudo_wrap(cfg, argv, sudo_user):
         )
 
 
+# Spelling of `resources.mem_max_gb` that declines a configured default limit.
+UNLIMITED = "unlimited"
+
+GB = 10**9
+
+
+def _parse_mem_max_gb(value):
+    """
+    Parses a `mem_max_gb` value: a positive number of GB, `"unlimited"`, or
+    `None` to inherit the configured default.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() == UNLIMITED:
+        return UNLIMITED
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        raise SchemaError(f"mem_max_gb must be a number or '{UNLIMITED}': {value!r}")
+    if not value > 0:
+        raise SchemaError("mem_max_gb must be positive")
+    return value
+
+
+def _resolve_mem_max(cfg, resources):
+    """
+    Resolves the memory limit to request for a run.
+
+    :return:
+      `(bytes, source)`, where `bytes` is `None` for no limit and `source` is
+      `"job"` (explicit in the program), `"default"` (from
+      `resource_defaults.mem_max_gb` in the config), or `"none"`.
+    """
+    mem_max_gb = resources.mem_max_gb
+    if mem_max_gb == UNLIMITED:
+        return None, "none"
+    if mem_max_gb is not None:
+        return int(mem_max_gb * GB), "job"
+    default = get_cfg(cfg, "resource_defaults.mem_max_gb", None)
+    if default is None:
+        return None, "none"
+    return int(float(default) * GB), "default"
+
+
 def _make_systemd(cfg, *, resources) -> procstar.spec.Proc.SystemdProperties:
-    ngb_to_bytes = or_none(lambda gb: int(gb * 10**9))
-    memory_max = ngb_to_bytes(
-        get_cfg(cfg, "resource_defaults.mem_max_gb", None)
-        if resources.mem_max_gb is None
-        else resources.mem_max_gb
-    )
+    memory_max, _ = _resolve_mem_max(cfg, resources)
     SystemdProperties = procstar.spec.Proc.SystemdProperties
     return SystemdProperties(
         slice=SystemdProperties.Slice(
@@ -121,7 +160,99 @@ def _make_metadata(proc_id, res: dict):
     except AttributeError:
         pass
 
+    # Scalar fields reported by newer agents.
+    for k in ("systemd_enabled", "scope_result", "cleanup_incomplete"):
+        if (v := getattr(res, k, None)) is not None:
+            meta[k] = v
+
     return meta
+
+
+def _memory_limit_meta(requested_bytes, source, meta: dict) -> dict:
+    """
+    Describes the memory limit requested for the run and, from the agent's
+    result metadata, the limit actually observed on the run's cgroup.
+
+    `observed.state` is `finite` (with `bytes`) when the agent reported a
+    limit, `unlimited` when it reported none, `unavailable` when the agent
+    runs without systemd cgroup integration, and `unknown` when the agent
+    predates this field or the read failed.  Only `finite` means a limit was
+    enforced.
+    """
+    if meta.get("systemd_enabled") is False:
+        observed = {"state": "unavailable"}
+    else:
+        max_ = (meta.get("cgroup_accounting") or {}).get("memory", {}).get("max")
+        if isinstance(max_, int):
+            observed = {"state": "finite", "bytes": max_}
+        elif max_ == "max":
+            observed = {"state": "unlimited"}
+        else:
+            observed = {"state": "unknown"}
+    return {
+        "requested_bytes": requested_bytes,
+        "source": source,
+        "observed": observed,
+    }
+
+
+def _oom_meta(meta: dict, observed: dict) -> dict:
+    """
+    Summarizes OOM-related evidence from the run slice's cgroup counters.
+
+    `evidence` is an assessment, not a proof:
+
+    - `job_limit_likely`: a process was OOM-killed and the slice itself ran
+      out of memory under a finite limit.
+    - `oom_kill_observed`: a process was OOM-killed but the slice did not run
+      out of memory; attribution is unconfirmed (a system-wide OOM is
+      possible).
+    - `limit_hit_no_kill`: usage hit the limit but nothing was killed;
+      allocations may still have failed inside the program.
+    - `none`: counters present and zero.
+    - `unknown`: counters not reported (older agent or failed read).
+    """
+    memory = (meta.get("cgroup_accounting") or {}).get("memory", {})
+    events = memory.get("events")
+    local = memory.get("events_local")
+    oom = {
+        "kill_count": None if events is None else events.get("oom_kill"),
+        "local_oom_count": None if local is None else local.get("oom"),
+        "local_limit_hits": None if local is None else local.get("max"),
+        "scope_result": meta.get("scope_result"),
+        "cleanup_incomplete": meta.get("cleanup_incomplete", False),
+    }
+    kills, local_oom, hits = oom["kill_count"], oom["local_oom_count"], oom["local_limit_hits"]
+    if kills is None or local_oom is None or hits is None:
+        evidence = "unknown"
+    elif kills > 0 and local_oom > 0 and observed.get("state") == "finite":
+        evidence = "job_limit_likely"
+    elif kills > 0:
+        evidence = "oom_kill_observed"
+    elif hits > 0:
+        evidence = "limit_hit_no_kill"
+    else:
+        evidence = "none"
+    oom["evidence"] = evidence
+    return oom
+
+
+def _oom_message(meta: dict) -> str | None:
+    """
+    Returns a short description of OOM evidence in `meta` to append to a
+    failure message, or `None` if there is nothing to say.
+    """
+    evidence = (meta.get("oom") or {}).get("evidence")
+    if evidence == "job_limit_likely":
+        peak = (meta.get("cgroup_accounting") or {}).get("memory", {}).get("peak")
+        limit = meta.get("memory_limit", {}).get("observed", {}).get("bytes")
+        fmt = lambda b: "?" if b is None else f"{b / GB:.1f} GB"
+        return f"likely OOM-killed at the job memory limit: peak {fmt(peak)}, limit {fmt(limit)}"
+    if evidence == "oom_kill_observed":
+        return "OOM kill observed; attribution unconfirmed, host-wide OOM possible"
+    if evidence == "limit_hit_no_kill":
+        return "memory limit hit, no kill recorded"
+    return None
 
 
 def _combine_fd_data(old, new):
@@ -193,7 +324,9 @@ class Resources:
     Specification for resource limits for a running job.
     """
 
-    mem_max_gb: int | float | None = None
+    # A positive number of GB (10**9 bytes), `UNLIMITED` to decline a
+    # configured default, or `None` to inherit it.
+    mem_max_gb: int | float | str | None = None
 
     def to_jso(self):
         return if_not_none("mem_max_gb", self.mem_max_gb)
@@ -201,9 +334,7 @@ class Resources:
     @classmethod
     def from_jso(cls, jso: dict):
         with check_schema(jso) as pop:
-            mem_max_gb = pop("mem_max_gb", type=float, default=None)
-            if mem_max_gb is not None:
-                assert mem_max_gb > 0, "mem_max_gb must be positive"
+            mem_max_gb = _parse_mem_max_gb(pop("mem_max_gb", default=None))
         return cls(mem_max_gb=mem_max_gb)
 
     def bind(self, args):
@@ -212,7 +343,7 @@ class Resources:
 
 @dataclass
 class BoundResources:
-    mem_max_gb: int | float | None = None
+    mem_max_gb: int | float | str | None = None
 
     def to_jso(self):
         return if_not_none("mem_max_gb", self.mem_max_gb)
@@ -220,7 +351,7 @@ class BoundResources:
     @classmethod
     def from_jso(cls, jso):
         with check_schema(jso or {}) as pop:
-            mem_max_gb = pop("mem_max_gb", default=None)
+            mem_max_gb = _parse_mem_max_gb(pop("mem_max_gb", default=None))
         return cls(mem_max_gb=mem_max_gb)
 
 
@@ -665,6 +796,8 @@ class BaseRunningProcstarProgram(base.RunningProgram):
                 if self.timed_out:
                     elapsed = ora.now() - start
                     message += f" (timeout after {elapsed:.0f} s)"
+                if (oom_message := _oom_message(meta)) is not None:
+                    message += f" ({oom_message})"
                 yield ProgramFailure(message, meta=meta, outputs=outputs)
 
         except asyncio.CancelledError:
@@ -760,3 +893,10 @@ class RunningProcstarProgram(BaseRunningProcstarProgram):
     @property
     def _spec_systemd_properties(self):
         return _make_systemd(self.cfg, resources=self.program.resources)
+
+    def _get_result_metadata(self, res: Result) -> Dict[str, Any]:
+        meta = super()._get_result_metadata(res)
+        requested_bytes, source = _resolve_mem_max(self.cfg, self.program.resources)
+        meta["memory_limit"] = _memory_limit_meta(requested_bytes, source, meta)
+        meta["oom"] = _oom_meta(meta, meta["memory_limit"]["observed"])
+        return meta
