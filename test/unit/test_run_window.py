@@ -236,6 +236,54 @@ async def test_edges_move_window(tmp_path):
     assert window.later is None
 
 
+@pytest.mark.parametrize("grouping", [True, False])
+@pytest.mark.parametrize("job_ids", [None, frozenset({"a"})])
+@pytest.mark.asyncio
+async def test_edges_step_past_ties(tmp_path, grouping, job_ids):
+    """
+    Following either edge through more tied groups than fit on a side moves
+    the window every time, and later skips to the next time past a tie.
+    """
+    # minutes from now and arg g, and each g group is scheduled at 10 and 15
+    times = (
+        [(t, None) for t in range(-60, -30)]
+        + [(-10, None)] * 120
+        + [(t, g) for g in range(60) for t in (10, 15)]
+        + [(t, None) for t in range(20, 60)]
+        + [(70, None)] * 30
+    )
+    runs = [
+        make_run(
+            i,
+            "a",
+            {"n": str(i)} if g is None else {"g": str(g)},
+            State.success if t < 0 else State.scheduled,
+            NOW + t * 60,
+        )
+        for i, (t, g) in enumerate(times, 1)
+    ]
+    run_db = make_db(tmp_path, runs)
+    pos = {r.run_id: (r.times["schedule"], int(r.run_id[1:])) for r in runs}
+
+    async def window_at(anchor):
+        spec = WindowSpec(anchor=anchor, grouping=grouping, job_ids=job_ids)
+        return await query_window(run_db, [], spec, min_timestamp=None)
+
+    # ungrouped also stops at the later runs of the scheduled groups
+    later = [20, 45, 70 + 1 / 60] if grouping else [15, 20, 45, 70 + 1 / 60]
+    for side, anchors in ("earlier", [-10, -55]), ("later", later):
+        window = await window_at(NOW)
+        steps = []
+        while (t := getattr(window, side)) is not None and len(steps) < 5:
+            prev = [pos[r] for r in window.run_ids]
+            window = await window_at(ora.Time(t))
+            shown = [pos[r] for r in window.run_ids]
+            # the window shows runs past the outermost shown on this side
+            assert min(shown) < min(prev) if side == "earlier" else max(shown) > max(prev)
+            steps.append((window.anchor - NOW) / 60)
+        assert steps == pytest.approx(anchors)
+
+
 @pytest.mark.asyncio
 async def test_no_jobs_or_index(tmp_path):
     # no jobs needs no db
