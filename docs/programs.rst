@@ -164,8 +164,9 @@ The run's program metadata records the request and what the agent observed:
   (a process was OOM-killed and the run's cgroup ran out of memory under a
   finite limit), `oom_kill_observed` (a kill without the cgroup running out of
   memory; a system-wide OOM is possible), `limit_hit_no_kill`,
-  `systemd_oom_kill` (systemd reports `oom-kill` for the scope while the
-  kernel counters show no kill, e.g. systemd-oomd), `none`, or `unknown`
+  `systemd_oom_kill` (systemd reports `oom-kill` for the scope while no
+  kernel OOM kill is recorded, or the kernel counters are unavailable; for
+  example systemd-oomd), `none`, or `unknown`
   when counters are not reported.  The raw counters are kept
   alongside.
 

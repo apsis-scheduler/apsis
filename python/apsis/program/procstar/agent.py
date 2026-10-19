@@ -212,8 +212,9 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
     - `limit_hit_no_kill`: usage hit the limit but nothing was killed;
       allocations may still have failed inside the program.
     - `systemd_oom_kill`: systemd reports the scope ended by an OOM kill
-      (`Result=oom-kill`) but the kernel counters show none; typically a
-      userspace OOM killer such as systemd-oomd.  Cause not attributed.
+      (`Result=oom-kill`) while no kernel OOM kill is recorded, or the kernel
+      counters are unavailable; typically a userspace OOM killer such as
+      systemd-oomd.  Cause not attributed.
     - `none`: counters present and zero.
     - `unknown`: the kill counter is not reported (older agent or failed
       read), or no kill is reported and the limit counters are missing.
