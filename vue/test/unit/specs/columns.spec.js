@@ -27,6 +27,8 @@ describe('column widths', () => {
     expect(loadWidths()).toEqual({})
     localStorage.setItem('apsis.runsList.columnWidths', '3')
     expect(loadWidths()).toEqual({})
+    localStorage.setItem('apsis.runsList.columnWidths', '[500]')
+    expect(loadWidths()).toEqual({})
 
     useStorage({getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('full') }})
     expect(loadWidths()).toEqual({})

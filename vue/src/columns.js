@@ -25,7 +25,7 @@ export const MIN_WIDTH = 40
 export function loadWidths() {
   try {
     const widths = JSON.parse(localStorage.getItem(KEY))
-    return widths !== null && typeof widths === 'object' ? widths : {}
+    return widths !== null && typeof widths === 'object' && !Array.isArray(widths) ? widths : {}
   } catch (e) {
     return {}
   }
