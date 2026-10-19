@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import RunsList from '@/components/RunsList'
+import { columnWidth, loadWidths } from '@/columns'
 import store from '@/store.js'
 
 Vue.component('router-link', { render: h => h('a') })
@@ -91,6 +92,22 @@ describe('RunsList.vue', () => {
     await vm.$nextTick()
     expect(col()).toBe(start)
     expect(mountRunsList({}).$el.querySelector('col').style.width).toBe(start)
+  })
+
+  it('keeps a width another tab saved', () => {
+    const handle = (vm, column) => vm.$el.querySelector(`th.col-${column} .col-resizer`)
+    const drag = (vm, column, dx) => {
+      handle(vm, column).dispatchEvent(new MouseEvent('mousedown', {clientX: 0}))
+      window.dispatchEvent(new MouseEvent('mousemove', {clientX: dx}))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+    }
+    const [a, b] = [mountRunsList({}), mountRunsList({})]
+    drag(a, 'job', 50)
+    drag(b, 'run', 30)
+    expect(loadWidths()).toEqual({job: columnWidth({}, 'job') + 50, run: columnWidth({}, 'run') + 30})
+
+    handle(a, 'job').dispatchEvent(new MouseEvent('dblclick'))
+    expect(loadWidths()).toEqual({run: columnWidth({}, 'run') + 30})
   })
 
   it('fills the rest of the window with the table pane only when asked', async () => {

@@ -663,7 +663,8 @@ export default {
         table.classList.remove('resizing')
         handle.classList.remove('active')
         if (width !== start) {
-          this.$set(this.widths, column, width)
+          // keeps widths other tabs saved
+          this.widths = {...loadWidths(), [column]: width}
           saveWidths(this.widths)
         }
       }
@@ -674,8 +675,10 @@ export default {
     },
 
     resetWidth(column) {
-      this.$delete(this.widths, column)
-      saveWidths(this.widths)
+      const widths = loadWidths()
+      delete widths[column]
+      this.widths = widths
+      saveWidths(widths)
     },
 
     // Sends our current state to the parent as a query object.
