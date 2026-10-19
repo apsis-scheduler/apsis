@@ -6,7 +6,7 @@ import asyncio
 import bisect
 import sqlite3
 from collections import defaultdict
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -148,20 +148,23 @@ class _Side:
         keep: Callable[[Entry], bool],
         desc: bool,
         extra: list[Entry],
+        live: Container[str] = (),
     ):
         """
         :param pages:
           Nonempty pages of entries, nearest first.
         :param extra:
           Matching entries to merge in, nearest first.
+        :param live:
+          Run IDs of `extra` entries to merge in, checked as each is reached.
         """
         # true once every entry is walked
         self.done = False
         # schedule time of the last db row walked
         self.last = None
-        self.entries = self.__walk(pages, keep, desc, extra)
+        self.entries = self.__walk(pages, keep, desc, extra, live)
 
-    async def __walk(self, pages, keep, desc, extra) -> AsyncIterator[Entry]:
+    async def __walk(self, pages, keep, desc, extra, live) -> AsyncIterator[Entry]:
         def nearer(a, b):
             return (
                 (a.sched, a.rowid) > (b.sched, b.rowid)
@@ -175,7 +178,8 @@ class _Side:
         for page in pages:
             for entry in page:
                 while nxt is not None and nearer(nxt, entry):
-                    yield nxt
+                    if nxt.run_id in live:
+                        yield nxt
                     nxt = next(extra, None)
                 if keep(entry):
                     yield entry
@@ -185,7 +189,8 @@ class _Side:
                 return
             await asyncio.sleep(0)
         while nxt is not None:
-            yield nxt
+            if nxt.run_id in live:
+                yield nxt
             nxt = next(extra, None)
         self.done = True
 
@@ -319,7 +324,7 @@ async def _later_edge(
 
 async def query_window(
     run_db: RunDB,
-    expected_runs: list[Run],
+    expected_runs: dict[str, Run],
     spec: WindowSpec,
     *,
     min_timestamp: ora.Time | None,
@@ -329,7 +334,8 @@ async def query_window(
     `spec`, for runs with a schedule time and timestamp at least `min_timestamp`.
 
     :param expected_runs:
-      Runs that are only in memory.
+      Runs that are only in memory by run ID, which runs leave as they move
+      to the db or are removed while the window is built.
     :raise WindowUnavailable:
       The window needs the schedule index and the db doesn't have it.
     """
@@ -340,10 +346,11 @@ async def query_window(
     t = str(anchor)
     job_filter = spec.job_filter
     labels = bool(job_filter.labels)
+    runs = list(expected_runs.values())
     # narrow job ID filters to the job IDs of runs they match
     job_ids = spec.job_ids
     if job_ids is None and (job_filter.path is not None or job_filter.keywords):
-        job_ids = run_db.get_job_ids() + [r.inst.job_id for r in expected_runs]
+        job_ids = run_db.get_job_ids() + [r.inst.job_id for r in runs]
         await asyncio.sleep(0)
     if job_ids is not None:
         job_ids = frozenset(j for j in job_ids if job_filter.matches_job_id(j))
@@ -351,7 +358,7 @@ async def query_window(
         spec, job_ids, float("-inf") if min_timestamp is None else dump_time(min_timestamp)
     )
     expected = []
-    for chunk in chunks(expected_runs, PAGE_ROWS):
+    for chunk in chunks(runs, PAGE_ROWS):
         expected.extend(e for e in map(_expected_entry, chunk) if keep(e))
         await asyncio.sleep(0)
     expected.sort(key=lambda e: (e.sched, e.rowid))
@@ -359,7 +366,7 @@ async def query_window(
 
     if job_ids is not None and run_db.count_job_rows(job_ids, JOB_PATH_ROWS + 1) <= JOB_PATH_ROWS:
         # load every run of the jobs and group them in memory
-        entries = list(expected)
+        entries = []
         for job_id in job_ids:
             max_rowid = 2**63 - 1
             while rows := run_db.job_page(
@@ -368,6 +375,7 @@ async def query_window(
                 entries.extend(e for e in map(Entry._make, rows) if keep(e))
                 max_rowid = rows[-1][0]
                 await asyncio.sleep(0)
+        entries.extend(e for e in expected if e.run_id in expected_runs)
         entries.sort(key=lambda e: (e.sched, e.rowid))
         i = bisect.bisect_left([e.sched for e in entries], t)
         before = _Side(chunks(entries[i - 1 :: -1] if i else [], PAGE_ROWS), _all, True, [])
@@ -396,8 +404,11 @@ async def query_window(
             keep,
             True,
             expected[i - 1 :: -1] if i else [],
+            expected_runs,
         )
-        after = _Side(_schedule_pages(run_db, t, False, labels), keep, False, expected[i:])
+        after = _Side(
+            _schedule_pages(run_db, t, False, labels), keep, False, expected[i:], expected_runs
+        )
 
         expected_groups = defaultdict(list)
         for e in expected:
@@ -416,6 +427,8 @@ async def query_window(
                 labels=job_filter.labels,
             )
             for e in expected_groups.get(key, ()):
+                if e.run_id not in expected_runs:
+                    continue
                 pos = e.sched, e.rowid
                 if sched is None or (pos < (sched, rowid) if earliest else pos > (sched, rowid)):
                     rowid, run_id, sched = e.rowid, e.run_id, e.sched
