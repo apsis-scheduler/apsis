@@ -979,6 +979,7 @@ div.runlist {
 
   &.pane {
     overflow: auto;
+    min-height: 20rem;
 
     thead {
       top: 0;
