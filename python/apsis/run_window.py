@@ -290,6 +290,33 @@ def _edge(side: _Side, found: list[tuple[Entry, int]], shown: int) -> str | None
     return side.last
 
 
+async def _later_edge(
+    side: _Side,
+    found: list[tuple[Entry, int]],
+    shown: int,
+    key_of: Callable[[Entry], str],
+    principal: Callable[[Entry, str], Awaitable[int | None]],
+) -> str | None:
+    """
+    Returns an anchor that moves the window past its later edge, or none if
+    no group is past it.
+
+    The later side includes runs at the anchor, so this skips groups tied with
+    the outermost shown run and anchors at the next group after them, or just
+    after them if the rest of the walk finds none.
+    """
+    edge = _edge(side, found, shown)
+    if edge is None or shown == 0:
+        return edge
+    for entry, _ in found[shown:]:
+        if entry.sched > edge:
+            return entry.sched
+    async for entry in side.entries:
+        if entry.sched > edge and await principal(entry, key_of(entry)) is not None:
+            return entry.sched
+    return str(ora.Time(edge) + 1)
+
+
 async def query_window(
     run_db: RunDB,
     expected_runs: list[Run],
@@ -417,7 +444,7 @@ async def query_window(
         run_ids=[e.run_id for e in shown],
         counts={f[0].run_id: f[1] for f in found_b[:nb] + found_a[:na]},
         earlier=_edge(before, found_b, nb),
-        later=_edge(after, found_a, na),
+        later=await _later_edge(after, found_a, na, key_of, principal),
         complete=all(
             s.done or len(f) >= spec.limit for s, f in ((before, found_b), (after, found_a))
         ),
