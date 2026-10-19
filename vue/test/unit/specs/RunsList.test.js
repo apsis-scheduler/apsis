@@ -43,6 +43,19 @@ describe('RunsList.vue', () => {
     }
   })
 
+  it('does not filter when the click ends a text selection', async () => {
+    const getSelection = jest.spyOn(window, 'getSelection').mockReturnValue({isCollapsed: false})
+    for (const argColumnStyle of ['combined', 'separate']) {
+      const vm = mountRunsList({argColumnStyle})
+      vm.$el.querySelector('.job-label').click()
+      vm.$el.querySelector('.col-args .run-arg, .arg-value').click()
+      await vm.$nextTick()
+      expect(vm.labels).toBe(null)
+      expect(vm.args).toBe(null)
+    }
+    getSelection.mockRestore()
+  })
+
   it('ignores clicks and highlights nothing when the filter controls are hidden', async () => {
     for (const argColumnStyle of ['combined', 'separate']) {
       const query = {args: {fruit: 'mango'}, labels: ['daily']}

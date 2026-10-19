@@ -3,7 +3,7 @@ span.run-args
   span.run-arg(
     v-for="[param, arg] in pairs"
     :class="{ clickable, selected: selected !== null && selected[param] === arg }"
-    @click="clickable && $emit('click', param, arg)"
+    @click="clickable && !textSelected() && $emit('click', param, arg)"
   )
     span.param {{ param }}
     span.eq =
@@ -25,7 +25,13 @@ export default {
     pairs() {
       return toPairs(this.args)
     },
-  }
+  },
+
+  methods: {
+    textSelected() {
+      return !window.getSelection().isCollapsed
+    },
+  },
 }
 </script>
 
