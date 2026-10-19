@@ -153,8 +153,9 @@ export function formatCompactUTCTime(str) {
   return time.format('YYYYMMDD[T]HHmmss[Z]')
 }
 
-// Converts compact UTC to full ISO-8859 UTC.
+// Converts compact UTC to full ISO-8859 UTC, or null if it's not a time.
 export function parseCompactUTCTime(str) {
-  return moment.utc(str).format()
+  const time = moment.utc(str)
+  return time.isValid() ? time.format() : null
 }
 
