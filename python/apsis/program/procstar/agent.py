@@ -249,28 +249,41 @@ def _oom_meta(meta: dict, observed: dict) -> dict:
     return oom
 
 
+# Allowance for clock differences between the agent host and Apsis when
+# comparing the agent's recorded stop time with the time the timeout signal was
+# requested.
+TIMEOUT_CLOCK_TOLERANCE = 5.0  # seconds
+
+
 def _timeout_applies(res, timeout_signal: str, timeout_sent_at) -> bool:
     """
     Decides whether a run whose timeout fired really timed out.
 
     Sending the timeout signal only queues a request to the agent; if the
     process had already exited and the agent was finalizing its units, the
-    signal was never delivered.  The timeout applies if the process status
-    shows the timeout signal, or if the agent's recorded stop time is not
-    before the moment the signal was sent.  If the stop time cannot be read,
-    the timeout stands.
+    signal was never delivered.  If the agent's recorded stop time is clearly
+    before the signal was requested (beyond `TIMEOUT_CLOCK_TOLERANCE`), the
+    process exited on its own and the timeout does not apply, whatever
+    signal terminated it (systemd may have sent the same signal after an OOM).
+    If the stop time is clearly after the request, the timeout applies.  In
+    the ambiguous window, or when the stop time cannot be read, the timeout
+    applies if the status shows the timeout signal; otherwise it stands only
+    when nothing can be read at all.
     """
     status = getattr(res, "status", None)
-    if status is not None and getattr(status, "signal", None) == timeout_signal:
-        return True
+    signalled = status is not None and getattr(status, "signal", None) == timeout_signal
     stop = getattr(getattr(res, "times", None), "stop", None)
     if stop is None or timeout_sent_at is None:
         return True
     try:
-        stop_time = ora.Time(stop)
+        delta = ora.Time(stop) - timeout_sent_at
     except Exception:
         return True
-    return stop_time >= timeout_sent_at
+    if delta < -TIMEOUT_CLOCK_TOLERANCE:
+        return False
+    if delta > TIMEOUT_CLOCK_TOLERANCE:
+        return True
+    return signalled
 
 
 def _oom_message(meta: dict) -> str | None:
