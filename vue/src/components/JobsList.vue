@@ -421,6 +421,10 @@ export default {
     flex-wrap: wrap;
     align-items: center;
     gap: 0 4px;
+
+    .name {
+      white-space: normal;
+    }
   }
 
   .job-title {
