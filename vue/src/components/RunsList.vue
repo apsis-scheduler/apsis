@@ -944,10 +944,19 @@ table.runlist {
 </style>
 
 <style lang="scss">
-// args wrap within their column instead of running into the next one
+// one arg per line, wrapping within the column
 table.runlist .col-args .run-arg {
+  display: block;
   max-width: 100%;
-  vertical-align: top;
+  line-height: 1.4;
+
+  & + .run-arg {
+    margin-left: 0;
+  }
+
+  .eq {
+    margin: 0 0.3em;
+  }
 
   .arg {
     white-space: normal;
