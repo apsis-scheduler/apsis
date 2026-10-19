@@ -70,6 +70,22 @@ describe('view summary scopes', () => {
       .toEqual([[windowScope(50)], [windowScope(20)], [windowScope(20), true]])
   })
 
+  // bad url values fall back to a window the server can send
+  for (const [url, time, limit, states] of [
+    ['show=0', 'now', 1, []],
+    ['show=abc', 'now', 50, []],
+    ['show=2000', 'now', 1000, []],
+    ['time=garbage', 'now', 50, []],
+    ['time=20261014T100000Z', '2026-10-14T10:00:00Z', 50, []],
+    ['states=bogus', 'now', 50, []],
+    ['states=failure,bogus', 'now', 50, ['failure']],
+  ])
+    test(`the runs page window for ${url}`, async () => {
+      await go('/runs?' + url)
+      const window = [['time', time], ['limit', limit], ['grouping', 1], ...states.map(s => ['state', s])]
+      expect(setSummaryScope.mock.calls).toEqual([[{window}]])
+    })
+
   test('the job page rescopes when the job changes', async () => {
     store.state.summaryTruncated = {'job/b': 20}
     await go('/job/job/a')
