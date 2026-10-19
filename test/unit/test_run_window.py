@@ -1,3 +1,4 @@
+import asyncio
 import random
 import sqlite3
 
@@ -315,3 +316,30 @@ async def test_no_jobs_or_index(tmp_path):
     )
     assert window.run_ids == ["r1"]
 
+
+@pytest.mark.parametrize("grouping", [True, False])
+@pytest.mark.parametrize("job_filter", [JobFilter(), JobFilter(path="a")])
+@pytest.mark.asyncio
+async def test_expected_run_starts_during_window(tmp_path, monkeypatch, job_filter, grouping):
+    """
+    An expected run that starts while the window is built shows once, and its
+    job's next scheduled run still shows.
+    """
+    monkeypatch.setattr(run_window, "PAGE_ROWS", 1)
+    run_db = make_db(tmp_path, [])
+    run = make_run(1, "a", {}, State.scheduled, NOW - 60, expected=True)
+    expected = {"r1": run, "r2": make_run(2, "a", {}, State.scheduled, NOW + 60, expected=True)}
+
+    async def start():
+        # the run starts at the first yield of the window build
+        await asyncio.sleep(0)
+        run.state = State.running
+        run.expected = False
+        run_db.upsert(run)
+        del expected["r1"]
+
+    task = asyncio.create_task(start())
+    spec = WindowSpec(anchor=NOW, grouping=grouping, job_filter=job_filter)
+    window = await query_window(run_db, expected, spec, min_timestamp=None)
+    await task
+    assert window.run_ids == ["r1", "r2"]
