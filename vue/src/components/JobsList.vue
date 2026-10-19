@@ -369,6 +369,9 @@ export default {
 
   > div {
     padding: 3px 12px 4px 12px;
+    // long names and params wrap inside their column
+    min-width: 0;
+    overflow-wrap: anywhere;
 
     &:last-child {
       padding-right: 2px;
