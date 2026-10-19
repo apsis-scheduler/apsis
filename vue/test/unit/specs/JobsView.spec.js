@@ -5,6 +5,9 @@ import store from '@/store'
 
 Vue.use(VueRouter)
 
+// jsdom has no ResizeObserver
+window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+
 function makeJob(job_id, labels) {
   return { job_id, params: [], metadata: { labels, description: '' } }
 }
