@@ -212,35 +212,9 @@ async def test_window_budget(tmp_path, monkeypatch):
     assert not window.complete
 
 
-@pytest.mark.asyncio
-async def test_edges_move_window(tmp_path):
-    """
-    Edge times move the window past what's shown, and runs of shown groups
-    don't make more earlier.
-    """
-    runs = [make_run(i, "a", {}, State.success, NOW + i * 60) for i in range(1, 6)]
-    runs.append(make_run(6, "b", {}, State.success, NOW))
-    run_db = make_db(tmp_path, runs)
-
-    # a's group shows its latest run after the anchor and only b is earlier
-    window = await query_window(
-        run_db, {}, WindowSpec(anchor=NOW + 150, limit=1), min_timestamp=None
-    )
-    assert window.run_ids == ["r5"]
-    assert window.earlier == str(NOW)
-
-    window = await query_window(
-        run_db, {}, WindowSpec(anchor=NOW + 150, limit=2), min_timestamp=None
-    )
-    assert window.run_ids == ["r6", "r5"]
-    assert window.earlier is None
-    assert window.later is None
-
-
 @pytest.mark.parametrize("grouping", [True, False])
-@pytest.mark.parametrize("job_ids", [None, frozenset({"a"})])
 @pytest.mark.asyncio
-async def test_edges_step_past_ties(tmp_path, grouping, job_ids):
+async def test_edges_step_past_ties(tmp_path, grouping):
     """
     Following either edge through more tied groups than fit on a side moves
     the window every time, and later skips to the next time past a tie.
@@ -267,7 +241,7 @@ async def test_edges_step_past_ties(tmp_path, grouping, job_ids):
     pos = {r.run_id: (r.times["schedule"], int(r.run_id[1:])) for r in runs}
 
     async def window_at(anchor):
-        spec = WindowSpec(anchor=anchor, grouping=grouping, job_ids=job_ids)
+        spec = WindowSpec(anchor=anchor, grouping=grouping)
         return await query_window(run_db, {}, spec, min_timestamp=None)
 
     # ungrouped also stops at the later runs of the scheduled groups

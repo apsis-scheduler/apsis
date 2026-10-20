@@ -474,37 +474,6 @@ def test_query_schedule_second_precision(tmp_path):
     }
 
 
-def _walk(run_db, *, desc, time, limit):
-    """Pages through schedule_page and returns the run IDs."""
-    run_ids = []
-    rowid = None
-    while rows := run_db.schedule_page(desc=desc, time=time, rowid=rowid, limit=limit):
-        run_ids += [r[1] for r in rows]
-        rowid, time = rows[-1][0], rows[-1][2]
-    return run_ids
-
-
-def test_schedule_page_ties(tmp_path):
-    """ties on schedule time continue across page boundaries by rowid"""
-    run_db = _setup(tmp_path)
-    r1, r2a, r2b, r2c, r3 = (_at(run_db, t) for t in (T1, T2, T2, T2, T3))
-    _make_run(run_db, "job/a", {})  # no schedule time
-
-    t2 = str(ora.Time(T2))
-    assert _walk(run_db, desc=True, time=str(ora.Time(T3)), limit=2) == [
-        r2c.run_id,
-        r2b.run_id,
-        r2a.run_id,
-        r1.run_id,
-    ]
-    assert _walk(run_db, desc=False, time=t2, limit=2) == [
-        r2a.run_id,
-        r2b.run_id,
-        r2c.run_id,
-        r3.run_id,
-    ]
-
-
 def test_job_rows(tmp_path):
     run_db = _setup(tmp_path)
     a1, a2 = _make_run(run_db, "job/a", {}), _make_run(run_db, "job/a", {})

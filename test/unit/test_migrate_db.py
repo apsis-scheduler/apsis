@@ -43,3 +43,15 @@ def test_migrate_2_7_0(tmp_path, migrate_db, replace_sql):
     # running again leaves the index alone
     migrate_db.migrate_2_7_0(db)
     assert SqliteDB.open(path).run_db.has_schedule_index
+
+
+def test_main(tmp_path, migrate_db, monkeypatch):
+    path = tmp_path / "apsis.db"
+    SqliteDB.create(path)
+    conn = SqliteDB.open(path).conn
+    conn.execute("DROP INDEX idx_runs_schedule")
+    conn.commit()
+
+    monkeypatch.setattr("sys.argv", ["migrate-db.py", str(path)])
+    migrate_db.main()
+    assert SqliteDB.open(path).run_db.has_schedule_index
