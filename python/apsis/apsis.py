@@ -489,16 +489,10 @@ class Apsis:
 
         # Check that the run is valid and get it ready.
         try:
-            job = self.jobs.get_job(run.inst.job_id)
-            validate_args(run, job.params)
-            bind(run, job, self.jobs)
+            self.__bind(run)
             # Add the stop time, if any.
             if stop_time is not None:
                 times["stop"] = stop_time
-            # Attach job labels to the run.
-            run.meta["job"] = {
-                "labels": job.meta.get("labels", []),
-            }
         except Exception as exc:
             self._run_exc(run, message=str(exc))
             return run
@@ -613,12 +607,20 @@ class Apsis:
         fresh = Run(run.inst)
         fresh.run_id = run.run_id
         try:
-            job = self._validate_run(fresh)
-            bind(fresh, job, self.jobs)
+            self.__bind(fresh)
         except Exception as exc:
             raise RunError(f"can't refresh {run.run_id}: {exc}") from exc
-        fresh.meta["job"] = {"labels": job.meta.get("labels", [])}
         return fresh
+
+    def __bind(self, run: Run) -> None:
+        """
+        Binds `run` to the current config of its job and attaches the job's
+        labels.
+        """
+        job = self.jobs.get_job(run.inst.job_id)
+        validate_args(run, job.params)
+        bind(run, job, self.jobs)
+        run.meta["job"] = {"labels": job.meta.get("labels", [])}
 
     async def __cancel_wait(self, run: Run, operation: str) -> None:
         """
