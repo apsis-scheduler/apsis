@@ -915,6 +915,24 @@ async def reschedule_runs(apsis, job_id):
         await apsis.schedule(time, inst, expected=True, stop_time=stop_time)
 
 
+async def _refresh_runs(apsis, job_id: str) -> None:
+    """
+    Refreshes scheduled and waiting runs of `job_id` that weren't rebuilt from
+    its schedules, so they pick up its current config.
+
+    A run that the current config doesn't fit keeps its old config, and its run
+    log says why.
+    """
+    _, runs = apsis.run_store.query(
+        job_id=job_id, state={State.scheduled, State.waiting}, limit_lookback=False
+    )
+    for run in [r for r in runs if not r.expected]:
+        try:
+            await apsis.refresh(run)
+        except RunError as exc:
+            apsis.run_log.info(run, str(exc))
+
+
 async def reload_jobs(apsis, *, dry_run=False):
     """
     :param dry_run:
@@ -953,6 +971,7 @@ async def reload_jobs(apsis, *, dry_run=False):
         for job_id in sorted(chg_ids):
             log.info(f"scheduling changed: {job_id}")
             await reschedule_runs(apsis, job_id)
+            await _refresh_runs(apsis, job_id)
 
         # Publish job changes.
         publish = apsis.summary_publisher.publish

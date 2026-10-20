@@ -203,12 +203,6 @@ class Client:
         """
         return self.__post("/api/v1/runs", run_id, "start")
 
-    def refresh(self, run_id):
-        """
-        Rebinds a scheduled or waiting run to the current config of its job.
-        """
-        return self.__post("/api/v1/runs", run_id, "refresh")
-
     def get_run_log(self, run_id):
         return self.__get("/api/v1/runs", run_id, "log")["run_log"]
 

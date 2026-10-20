@@ -467,17 +467,6 @@ async def run_start(request, run_id):
     return response_json({})
 
 
-@API.route("/runs/<run_id>/refresh", methods={"POST"})
-async def run_refresh(request, run_id):
-    state = request.app.apsis
-    try:
-        _, run = state.run_store.get(run_id)
-    except LookupError:
-        return error(f"unknown run {run_id}", 404)
-    await state.refresh(run)
-    return response_json({})
-
-
 @API.route("/runs/<run_id>/rerun", methods={"POST"})
 async def run_rerun(request, run_id):
     state = request.app.apsis

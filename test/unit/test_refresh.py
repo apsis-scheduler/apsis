@@ -1,5 +1,5 @@
 """
-Tests refreshing scheduled and waiting runs from the current config of their job.
+Tests that reloading jobs refreshes scheduled and waiting runs of changed jobs.
 """
 
 import asyncio
@@ -11,8 +11,8 @@ import pytest
 
 from apsis.apsis import Apsis, reload_jobs
 from apsis.config import check
-from apsis.jobs import load_jobs_dir
-from apsis.runs import Instance, Run, RunError
+from apsis.jobs import Jobs, load_jobs_dir
+from apsis.runs import Instance, RunError
 from apsis.sqlite import SqliteDB
 from apsis.states import State
 
@@ -32,7 +32,7 @@ def write_job(
     (job_dir / "job.yaml").write_text(text)
 
 
-async def make_apsis(tmp_path: Path) -> Apsis:
+async def make_apsis(tmp_path: Path) -> tuple[Apsis, SqliteDB]:
     """
     Builds an apsis instance on the jobs and DB in `tmp_path`, creating, on the
     first call, a job whose program fails and whose condition never passes.
@@ -43,18 +43,23 @@ async def make_apsis(tmp_path: Path) -> Apsis:
     if not db_path.exists():
         write_job(job_dir, success=False, ready=False)
         SqliteDB.create(db_path)
+    db = SqliteDB.open(db_path)
     cfg = check({"job_dir": str(job_dir), "database": str(db_path)}, tmp_path)
-    return Apsis(cfg, await load_jobs_dir(job_dir), SqliteDB.open(db_path))
+    return Apsis(cfg, await load_jobs_dir(job_dir), db), db
 
 
-async def finished(run: Run) -> State:
-    while not run.state.finished:
+async def finished(apsis: Apsis, run_id: str) -> State:
+    while not (state := apsis.run_store.get(run_id)[1].state).finished:
         await asyncio.sleep(0.01)
-    return run.state
+    return state
 
 
 def num_waiting(apsis: Apsis) -> int:
     return apsis.get_stats()["tasks"]["num_waiting"]
+
+
+def run_log(apsis: Apsis, run_id: str) -> list[str]:
+    return [r["message"] for r in apsis.get_run_log(run_id)]
 
 
 async def after_yield(coro: Coroutine[Any, Any, None]) -> None:
@@ -67,32 +72,31 @@ async def after_yield(coro: Coroutine[Any, Any, None]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_scheduled_run(tmp_path):
-    apsis = await make_apsis(tmp_path)
-    run_id = (await apsis.schedule(ora.now() + 0.5, Instance("job", {}))).run_id
+async def test_reload_refreshes_runs(tmp_path):
+    apsis, _ = await make_apsis(tmp_path)
+    waiting = (await apsis.schedule(None, Instance("job", {}))).run_id
+    scheduled = (await apsis.schedule(ora.now() + 0.5, Instance("job", {}))).run_id
 
     write_job(tmp_path / "jobs", success=True, ready=True)
     await reload_jobs(apsis)
-    _, run = apsis.run_store.get(run_id)
-    await apsis.refresh(run)
     apsis.start_loops()
 
-    assert await asyncio.wait_for(finished(run), 5) == State.success
+    assert await asyncio.wait_for(finished(apsis, waiting), 5) == State.success
+    assert await asyncio.wait_for(finished(apsis, scheduled), 5) == State.success
     await apsis.shut_down()
 
 
 @pytest.mark.asyncio
-async def test_refresh_errors_leave_run_unchanged(tmp_path):
-    apsis = await make_apsis(tmp_path)
-    run = await apsis.schedule(None, Instance("job", {}))
-    scheduled = await apsis.schedule(ora.now() + 3600, Instance("job", {}))
+async def test_reload_keeps_runs_that_dont_fit(tmp_path):
+    apsis, _ = await make_apsis(tmp_path)
+    _, run = apsis.run_store.get((await apsis.schedule(None, Instance("job", {}))).run_id)
+    scheduled = (await apsis.schedule(ora.now() + 3600, Instance("job", {}))).run_id
 
     write_job(tmp_path / "jobs", success=True, ready=True, params=("date",))
     await reload_jobs(apsis)
-    with pytest.raises(RunError, match="missing"):
-        await apsis.refresh(run)
     assert run.state == State.waiting
     assert not run.program.success
+    assert any("missing" in m for m in run_log(apsis, run.run_id))
     assert num_waiting(apsis) == 1
 
     await apsis.skip(run)
@@ -101,12 +105,11 @@ async def test_refresh_errors_leave_run_unchanged(tmp_path):
     await apsis.shut_down()
 
     # a scheduled run isn't on the schedule until restore
+    apsis, db = await make_apsis(tmp_path)
     write_job(tmp_path / "jobs", success=True, ready=True)
-    apsis = await make_apsis(tmp_path)
-    _, scheduled = apsis.run_store.get(scheduled.run_id)
-    with pytest.raises(RunError, match="restored"):
-        await apsis.refresh(scheduled)
-    assert not scheduled.program.success
+    await reload_jobs(apsis)
+    assert not db.run_db.get(scheduled).program.success
+    assert any("restored" in m for m in run_log(apsis, scheduled))
 
 
 @pytest.mark.asyncio
@@ -124,17 +127,18 @@ async def test_refresh_errors_leave_run_unchanged(tmp_path):
     ],
 )
 async def test_refresh_racing_override(tmp_path, op, ready, delayed, state, errors):
-    apsis = await make_apsis(tmp_path)
+    apsis, db = await make_apsis(tmp_path)
     run = await apsis.schedule(None, Instance("job", {}))
 
+    # load the new job without refreshing so the refresh below races the override
     write_job(tmp_path / "jobs", success=True, ready=ready)
-    await reload_jobs(apsis)
+    apsis.jobs = Jobs(await load_jobs_dir(tmp_path / "jobs"), db.job_db)
     override = getattr(apsis, op)(run)
     results = await asyncio.gather(
         apsis.refresh(run), after_yield(override) if delayed else override, return_exceptions=True
     )
 
     assert [isinstance(r, RunError) for r in results] == errors
-    assert await asyncio.wait_for(finished(run), 5) == state
+    assert await asyncio.wait_for(finished(apsis, run.run_id), 5) == state
     assert num_waiting(apsis) == 0
     await apsis.shut_down()

@@ -145,8 +145,8 @@ export const STATES = [
 
 export const OPERATIONS = {
   'new'         : [],
-  'scheduled'   : ['start', 'skip', 'refresh'],
-  'waiting'     : ['start', 'skip', 'refresh'],
+  'scheduled'   : ['start', 'skip'],
+  'waiting'     : ['start', 'skip'],
   'starting'    : [],
   'running'     : ['terminate', 'kill', 'stop'],
   'stopping'    : ['terminate', 'kill'],
