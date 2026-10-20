@@ -50,7 +50,7 @@ div.jobs-list
     :items="jobRows"
     key-field="key"
     :min-item-size="31"
-    :style="{ height: 'calc(100vh - ' + scrollerTop + 'px - 1rem)' }"
+    :style="{ height: 'calc(100vh - ' + scrollerTop + 'px - 1rem)', minHeight: '20rem' }"
   )
     template(slot-scope="{ item, active }")
       DynamicScrollerItem.row(
@@ -189,7 +189,6 @@ export default {
   },
 
   mounted() {
-    this.measureScroller()
     // the body resizes with the window and with anything above the scroller
     this.scrollerObserver = new ResizeObserver(this.measureScroller)
     this.scrollerObserver.observe(document.body)
@@ -309,7 +308,8 @@ export default {
 @import '@/styles/vars.scss';
 
 .controls {
-  width: 80em;
+  box-sizing: border-box;
+  max-width: 80em;
   margin-top: 1em;
   background: $global-control-background;
   padding: 12px 18px;
@@ -370,7 +370,7 @@ export default {
 
 .jobs-header, .row {
   display: grid;
-  grid-template-columns: 600px 250px minmax(600px, 1fr);
+  grid-template-columns: 600px 250px 1fr;
   align-items: center;
 
   > div {
