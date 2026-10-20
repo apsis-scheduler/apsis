@@ -1,4 +1,4 @@
-import { isEqual, pick, sortBy, toPairs } from 'lodash'
+import { isEqual, mapValues, pick, sortBy, toPairs } from 'lodash'
 
 export function joinArgs(args) {
   return toPairs(args).map(([n, v]) => n + '=' + v).join(', ')
@@ -59,6 +59,40 @@ export function clearRunState(state) {
   state.runs = new Map()
   state.jobs = new Map()
   state.agentConns = new Map()
+  state.summaryTruncated = {}
+  state.runWindow = null
+  state.runWindowStale = false
+}
+
+/**
+ * Returns true if the run window in store `state` should be reloaded, since
+ * it's missing runs it needs or, for a window at now, the time since it loaded
+ * reached half the span from its anchor to its later edge.
+ */
+export function isRunWindowStale(state, atNow) {
+  const runWindow = state.runWindow
+  if (runWindow === null)
+    return false
+  if (state.runWindowStale)
+    return true
+  const anchor = Date.parse(runWindow.anchor)
+  return atNow && state.time - runWindow.loaded >= (runWindow.end - anchor) / 2
+}
+
+/**
+ * Returns the number of runs in a group of local `runs`, adding the runs
+ * `runWindow` counted but didn't send for each member still in the group the
+ * window counted it in.
+ */
+export function groupCount(runs, runWindow) {
+  let count = runs.length
+  if (runWindow !== null)
+    for (const run of runs) {
+      const group = runWindow.groups[run.run_id]
+      if (group && group.key === run.group_key)
+        count += group.count - 1
+    }
+  return count
 }
 
 /**
@@ -110,12 +144,22 @@ export function processMsgs(msgs, state) {
 
       case 'run_summary':
       case 'run_transition':
-        if (runs === null)
-          runs = new Map(state.runs)
         let run = msg.run_summary
         // Add sort and group keys to runs in msg.
         run.group_key = groupKey(run)
         run.time_key = timeKey(run)
+        if (state.runWindow !== null) {
+          // a run window only keeps runs it sent or strictly inside the span it loaded
+          const { runIds, start, end } = state.runWindow
+          const t = Date.parse(run.time_key)
+          if (!runIds.has(run.run_id) && !(start < t && t < end))
+            break
+          const counted = state.runWindow.groups[run.run_id]
+          if (counted && counted.count > 1 && counted.key !== run.group_key)
+            state.runWindowStale = true
+        }
+        if (runs === null)
+          runs = new Map(state.runs)
         run.seq = seq
         // Build an instance key for quick determination of reruns.
         // We never change the runs, so freeze them to avoid reactivity.
@@ -124,10 +168,33 @@ export function processMsgs(msgs, state) {
         break
 
       case 'run_delete':
+        if (state.runWindow !== null && state.runWindow.runIds.has(msg.run_id))
+          state.runWindowStale = true
         if (runs === null)
           runs = new Map(state.runs)
         runs.delete(msg.run_id)
         stats.run++
+        break
+
+      case 'summary_init_done':
+        state.summaryTruncated = msg.truncated
+        break
+
+      case 'run_window':
+        const windowRuns = runs || state.runs
+        state.runWindow = Object.freeze({
+          ...msg,
+          groups: mapValues(msg.groups, (count, run_id) => {
+            const run = windowRuns.get(run_id)
+            if (run && run.group_key[0] === 'R' && count > 1)
+              state.runWindowStale = true
+            return {count, key: run ? run.group_key : null}
+          }),
+          runIds: new Set(windowRuns.keys()),
+          start: msg.earlier ? Date.parse(msg.earlier.time) : -Infinity,
+          end: msg.later ? Date.parse(msg.later.time) : Infinity,
+          loaded: Date.now(),
+        })
         break
     }
 

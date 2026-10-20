@@ -82,7 +82,7 @@ div
           button(
             style="padding: 0 4px; border-top-right-radius: 0; border-bottom-right-radius: 0;"
             v-on:click="time = groups.earlierTime"
-            :disabled="groups.earlierCount == 0"
+            :disabled="!groups.earlierMore"
           )
             TriangleIcon(
               direction="left"
@@ -93,7 +93,7 @@ div
           button(
             style="padding: 0 4px; border-top-left-radius: 0; border-bottom-left-radius: 0;"
             v-on:click="time = groups.laterTime"
-            :disabled="groups.laterCount == 0"
+            :disabled="!groups.laterMore"
           )
             TriangleIcon(
               direction="right"
@@ -162,10 +162,10 @@ div
         tr(v-else)
           td.spacer(:colspan="columns.length")
 
-        tr(v-if="(asc ? groups.earlierCount : groups.laterCount) > 0")
+        tr(v-if="asc ? groups.earlierMore : groups.laterMore")
           td.note(:colspan="columns.length")
-            | {{ asc ? groups.earlierCount : groups.laterCount }}
-            | {{ asc ? 'earlier' : 'later' }} rows not shown
+            | more
+            | {{ asc ? 'earlier' : 'later' }} rows
             button(
               v-on:click="time = asc ? groups.earlierTime : groups.laterTime"
             ) {{ asc ? 'Earlier' : 'Later' }}
@@ -236,10 +236,10 @@ div
                   :button="true"
                 )
 
-        tr(v-if="(asc ? groups.laterCount : groups.earlierCount) > 0")
+        tr(v-if="asc ? groups.laterMore : groups.earlierMore")
           td.note(:colspan="columns.length")
-            | {{ asc ? groups.laterCount : groups.earlierCount }}
-            | {{ asc ? 'later' : 'earlier' }} rows not shown
+            | more
+            | {{ asc ? 'later' : 'earlier' }} rows
             button(
               v-on:click="time = asc ? groups.laterTime : groups.earlierTime"
             ) {{ asc ? 'Later' : 'Earlier' }}
@@ -249,7 +249,7 @@ div
 <script>
 import { entries, filter, flatten, groupBy, includes, isEqual, keys, map, sortBy, sortedIndexBy, uniq } from 'lodash'
 
-import { argsToArray, arrayToArgs, matchKeywords, includesAll, OPERATIONS, toggleArg, toggleLabel } from '@/runs'
+import { argsToArray, arrayToArgs, groupCount, matchKeywords, includesAll, OPERATIONS, toggleArg, toggleLabel } from '@/runs'
 import { formatDuration, formatElapsed, formatTime } from '@/time'
 import { columnWidth, dragWidth, loadWidths, saveWidths } from '@/columns'
 import DropList from '@/components/DropList'
@@ -339,6 +339,8 @@ export default {
 
     // If true, the table scrolls in a pane that fills the rest of the window.
     fillWindow: {type: Boolean, default: false},
+    // If true, show the run window from the summary socket once it arrives.
+    windowed: {type: Boolean, default: false},
   },
 
   components: {
@@ -389,6 +391,10 @@ export default {
   },
 
   computed: {
+    runWindow() {
+      return this.windowed ? this.store.state.runWindow : null
+    },
+
     /** Runs, after filtering.  */
     runs() {
       let runs = Array.from(this.store.state.runs.values())
@@ -468,7 +474,7 @@ export default {
           const sgrp = key[0]
           const run = runs[sgrp === 'C' ? runs.length - 1 : 0]
 
-          counts[run.run_id] = runs.length
+          counts[run.run_id] = groupCount(runs, this.runWindow)
           return run
         })
 
@@ -557,6 +563,20 @@ export default {
         }
       }
 
+      let earlierMore = earlierCount > 0
+      let laterMore = laterCount > 0
+      if (this.runWindow) {
+        const { earlier, later } = this.runWindow
+        if (earlier) {
+          earlierMore = true
+          earlierTime = earlierTime || earlier.time
+        }
+        if (later) {
+          laterMore = true
+          laterTime = laterTime || later.time
+        }
+      }
+
       var nowIndex
       if (runs.length > 0 && runs[0].time_key < now && now < runs[runs.length - 1].time_key)
         nowIndex = sortedIndexBy(runs, { time_key: now }, r => r.time_key)
@@ -581,9 +601,9 @@ export default {
         nowIndex,
         time,
         earlierTime,
-        earlierCount,
+        earlierMore,
         laterTime,
-        laterCount,
+        laterMore,
       }
     },
   },

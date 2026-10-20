@@ -130,6 +130,7 @@ import RunsList from '@/components/RunsList'
 import State from '@/components/State'
 import Timestamp from '@/components/Timestamp'
 import store from '@/store'
+import { runScope, setSummaryScope } from '@/summary.js'
 import { Socket, parseHttp } from '@/websocket.js'
 
 export default {
@@ -349,6 +350,11 @@ export default {
       handler(title) {
         setTitle(...title)
       },
+    },
+
+    run(run) {
+      if (run)
+        setSummaryScope(runScope(run))
     },
 
     runState(to, from) {

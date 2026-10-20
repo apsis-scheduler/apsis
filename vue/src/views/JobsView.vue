@@ -18,6 +18,7 @@ div
 import { isEqual, isUndefined, omitBy } from 'lodash'
 
 import JobsList from '@/components/JobsList'
+import { JOBS_SCOPE, setSummaryScope } from '@/summary.js'
 
 function toPathStr(path) {
   return (
@@ -53,6 +54,10 @@ export default {
       labels: labels ? labels.split(',') : null,
       path: toPathStr(this.$route.params.path),
     }
+  },
+
+  created() {
+    setSummaryScope(JOBS_SCOPE)
   },
 
   methods: {

@@ -1,10 +1,17 @@
 import sqlite3
 import threading
+from types import SimpleNamespace
 
 import ora
+import pytest
 import ujson
 
+from apsis import procstar
+from apsis.jobs import InMemoryJobs, Job
+from apsis.run_window import WindowSpec
 from apsis.runs import Instance, Run, RunStore
+from apsis.service import summary
+from apsis.service.summary import SummaryScope, send_scoped_init
 from apsis.sqlite import SqliteDB
 from apsis.states import State
 
@@ -15,17 +22,21 @@ def make_db(tmp_path):
     return SqliteDB.open(path)
 
 
-def make_run_store(tmp_path, min_timestamp=ora.now() - 86400):
-    return RunStore(make_db(tmp_path), min_timestamp=min_timestamp)
+def make_run_store(tmp_path, lookback=86400):
+    return RunStore(make_db(tmp_path), lookback=lookback)
 
 
-def test_min_timestamp_none(tmp_path):
-    run_store = make_run_store(tmp_path, min_timestamp=None)
+def all_summaries(run_store: RunStore) -> list[str]:
+    return [s for page in run_store.summaries() for s in page]
+
+
+def test_lookback_none(tmp_path):
+    run_store = make_run_store(tmp_path, lookback=None)
 
     run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=True)
     run_store.add(run)
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     assert len(summaries) == 1
 
 
@@ -68,7 +79,7 @@ def test_no_db_lock_truncate(tmp_path):
     db_path = tmp_path / "apsis.db"
     SqliteDB.create(db_path)
     db = SqliteDB.open(db_path, timeout=5)
-    run_store = RunStore(db, min_timestamp=ora.now() - 86400)
+    run_store = RunStore(db, lookback=86400)
 
     for i in range(100):
         run = Run(Instance("test/job", {"date": f"2026-01-{i:02d}"}), expected=False)
@@ -115,7 +126,7 @@ def test_summaries_includes_expected_runs(tmp_path):
     run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=True)
     run_store.add(run)
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     assert len(summaries) == 1
 
     parsed = ujson.loads(summaries[0])
@@ -134,7 +145,7 @@ def test_summaries_includes_persisted_runs(tmp_path):
     run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     assert len(summaries) == 1
 
     parsed = ujson.loads(summaries[0])
@@ -153,7 +164,7 @@ def test_summaries_updated_on_transition(tmp_path):
     run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     parsed = ujson.loads(summaries[0])
     assert parsed["run_summary"]["state"] == "scheduled"
 
@@ -161,7 +172,7 @@ def test_summaries_updated_on_transition(tmp_path):
     run._transition(ora.now(), State.waiting)
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     parsed = ujson.loads(summaries[0])
     assert parsed["run_summary"]["state"] == "waiting"
 
@@ -186,7 +197,7 @@ def test_summaries_cover_all_runs(tmp_path):
         persisted_runs.append(run)
 
     all_runs = expected_runs + persisted_runs
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
 
     # one summary per run
     assert len(summaries) == len(all_runs)
@@ -209,6 +220,154 @@ def test_summaries_no_duplicates_for_expected_becoming_persisted(tmp_path):
     run._transition(ora.now(), State.scheduled, times={"schedule": ora.now()})
     run_store.update(run, ora.now())
 
-    summaries = list(run_store.summaries())
+    summaries = all_summaries(run_store)
     summary_run_ids = [ujson.loads(s)["run_summary"]["run_id"] for s in summaries]
     assert summary_run_ids.count(run.run_id) == 1
+
+
+def test_summaries_paged(tmp_path, monkeypatch):
+    """Summaries come in pages of at most SUMMARY_PAGE_SIZE, expected runs first."""
+    monkeypatch.setattr("apsis.runs.SUMMARY_PAGE_SIZE", 2)
+    monkeypatch.setattr("apsis.sqlite.SUMMARY_PAGE_SIZE", 2)
+    run_store = make_run_store(tmp_path)
+
+    expected_ids = set()
+    for i in range(3):
+        run = Run(Instance(f"test/expected-{i}", {}), expected=True)
+        run_store.add(run)
+        expected_ids.add(run.run_id)
+
+    persisted_ids = set()
+    for i in range(3):
+        run = Run(Instance(f"test/persisted-{i}", {}), expected=False)
+        run_store.add(run)
+        persisted_ids.add(run.run_id)
+
+    pages = [
+        [ujson.loads(s)["run_summary"]["run_id"] for s in page] for page in run_store.summaries()
+    ]
+    assert [len(p) for p in pages] == [2, 1, 2, 1]
+    assert set(pages[0] + pages[1]) == expected_ids
+    assert set(pages[2] + pages[3]) == persisted_ids
+
+
+def add_runs(run_store, job_id, count):
+    runs = []
+    for _ in range(count):
+        run = Run(Instance(job_id, {}), expected=False)
+        run_store.add(run)
+        runs.append(run)
+    return runs
+
+
+def run_ids(payloads):
+    return [ujson.loads(p)["run_summary"]["run_id"] for p in payloads]
+
+
+def test_job_summaries_pages(tmp_path):
+    run_store = make_run_store(tmp_path)
+    a = add_runs(run_store, "a", 5)
+    add_runs(run_store, "b", 2)
+
+    # an old timestamp puts a run outside the lookback window
+    conn = run_store._RunStore__summary_db._RunSummaryDB__connection.connection
+    conn.execute("UPDATE run_summary SET timestamp = 0 WHERE run_id = ?", (a[2].run_id,))
+    conn.commit()
+
+    pages = [run_ids(p) for p in run_store.job_summaries("a", page_size=2)]
+    assert pages == [[a[4].run_id, a[3].run_id], [a[1].run_id], [a[0].run_id]]
+
+    # a full page outside the lookback ends the walk
+    conn.execute("UPDATE run_summary SET timestamp = 0 WHERE run_id = ?", (a[1].run_id,))
+    conn.commit()
+    pages = [run_ids(p) for p in run_store.job_summaries("a", page_size=2)]
+    assert pages == [[a[4].run_id, a[3].run_id], []]
+
+    summary_db = run_store._RunStore__summary_db
+    pages = list(summary_db.query_job("a", min_timestamp=None, page_size=10))
+    assert run_ids(pages[0]) == [r.run_id for r in reversed(a)]
+    assert list(summary_db.query_job("c", min_timestamp=None, page_size=10)) == [[]]
+
+
+class FakeWs:
+    def __init__(self):
+        self.frames = []
+
+    async def send(self, data):
+        self.frames.append(ujson.loads(data))
+
+    def ids(self):
+        """
+        Returns the run or job ID of each message, by frame, before the done frame.
+        """
+        return [
+            [m["run_summary"]["run_id"] if "run_summary" in m else m["job"]["job_id"] for m in f]
+            for f in self.frames[:-1]
+        ]
+
+
+@pytest.mark.asyncio
+async def test_send_scoped_init_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(summary, "PAGE_ROWS", 2)
+    monkeypatch.setattr(summary, "JOB_RUN_CAP", 3)
+    run_store = make_run_store(tmp_path)
+    expected = Run(Instance("a", {}), expected=True)
+    run_store.add(expected)
+    run_store.add(Run(Instance("d", {}), expected=True))
+    a = add_runs(run_store, "a", 5)
+    b = add_runs(run_store, "b", 2)
+    apsis = SimpleNamespace(run_store=run_store)
+
+    ws = FakeWs()
+    scope = SummaryScope(init=True, types=frozenset({"run"}), job_ids=frozenset({"a", "b", "c"}))
+    await send_scoped_init(apsis, ws, scope)
+    assert ws.ids() == [
+        [expected.run_id],
+        [a[4].run_id, a[3].run_id],
+        [a[2].run_id],
+        [b[1].run_id, b[0].run_id],
+    ]
+    assert ws.frames[-1] == [{"type": "summary_init_done", "truncated": {"a": 3}}]
+
+
+@pytest.mark.asyncio
+async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
+    run_store = make_run_store(tmp_path)
+    (run,) = add_runs(run_store, "x", 1)
+    apsis = SimpleNamespace(jobs=InMemoryJobs([Job("x"), Job("y")]), run_store=run_store)
+
+    conn = SimpleNamespace(to_jso=lambda: {"conn_id": "c"})
+    with monkeypatch.context() as m:
+        m.setattr(procstar, "get_agent_server", lambda: SimpleNamespace(connections={"c": conn}))
+        ws = FakeWs()
+        scope = SummaryScope(
+            init=True, types=frozenset({"job", "agent_conn"}), job_ids=frozenset({"x", "missing"})
+        )
+        await send_scoped_init(apsis, ws, scope)
+    assert [m["job"]["job_id"] for m in ws.frames[0]] == ["x"]
+    assert ws.frames[1:] == [
+        [{"type": "agent_conn", "conn": {"conn_id": "c"}}],
+        [{"type": "summary_init_done", "truncated": {}}],
+    ]
+
+    # no job ids sends all jobs and runs, and no agent server sends no conns
+    ws = FakeWs()
+    await send_scoped_init(apsis, ws, SummaryScope(init=True))
+    assert ws.ids() == [["x", "y"], [run.run_id]]
+
+
+@pytest.mark.asyncio
+async def test_window_summaries(tmp_path):
+    run_store = make_run_store(tmp_path)
+    t = ora.now()
+    expected = Run(Instance("a", {}), expected=True)
+    expected.times["schedule"] = t + 60
+    run_store.add(expected)
+    (run,) = add_runs(run_store, "a", 1)
+    run._transition(t, State.scheduled, times={"schedule": t})
+    run_store.update(run, t)
+
+    window = await run_store.query_window(WindowSpec(anchor=t, grouping=False))
+    assert window.run_ids == [run.run_id, expected.run_id]
+    summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
+    assert run_ids(summaries) == [expected.run_id, run.run_id]

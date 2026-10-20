@@ -41,6 +41,7 @@ div
 import { filter, mapValues } from 'lodash'
 
 import store from '@/store.js'
+import { JOBS_SCOPE, setSummaryScope } from '@/summary.js'
 
 export default {
   props: [],
@@ -51,6 +52,10 @@ export default {
       timerId: undefined,
       showDisconnected: true,
     }
+  },
+
+  created() {
+    setSummaryScope(JOBS_SCOPE)
   },
 
   computed: {
