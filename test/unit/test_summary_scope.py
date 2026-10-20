@@ -1,5 +1,7 @@
 import pytest
 
+from apsis.runs import Instance, Run
+from apsis.service import messages
 from apsis.service.summary import (
     ALL_TYPES,
     MAX_JOB_IDS,
@@ -75,3 +77,7 @@ MSGS = [
 def test_predicate(scope, passed):
     predicate = make_summary_predicate(scope)
     assert [i for i, m in enumerate(MSGS) if predicate(m)] == passed
+
+
+def test_run_delete_job_id():
+    assert messages.make_run_delete(Run(Instance("a", {})))["job_id"] == "a"

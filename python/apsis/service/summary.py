@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs
 import ujson
 
@@ -8,6 +9,11 @@ from . import messages
 from apsis import procstar
 from apsis.jobs import Jobs
 from apsis.lib.itr import chunks
+
+if TYPE_CHECKING:
+    from websockets.legacy.protocol import WebSocketCommonProtocol
+
+    from apsis.apsis import Apsis
 
 # message family for each summary message type
 MSG_FAMILIES = {
@@ -99,13 +105,15 @@ def make_summary_predicate(scope: SummaryScope) -> Callable[[dict], bool]:
     return predicate
 
 
-async def _send(ws, msgs: list[str]) -> None:
+async def _send(ws: "WebSocketCommonProtocol", msgs: list[str]) -> None:
     if msgs:
         await ws.send("[" + ",".join(msgs) + "]")
     await asyncio.sleep(0)
 
 
-async def send_scoped_init(apsis, ws, scope: SummaryScope) -> None:
+async def send_scoped_init(
+    apsis: "Apsis", ws: "WebSocketCommonProtocol", scope: SummaryScope
+) -> None:
     """
     Sends the jobs, agent conns, and runs in `scope`, then a
     `summary_init_done` message whose `truncated` maps each job with runs
