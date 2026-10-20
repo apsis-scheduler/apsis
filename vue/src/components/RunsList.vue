@@ -547,10 +547,8 @@ export default {
         nowIndex,
         time,
         earlierTime,
-        earlierCount,
         earlierMore,
         laterTime,
-        laterCount,
         laterMore,
       }
     },
