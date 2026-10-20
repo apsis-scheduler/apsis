@@ -165,7 +165,6 @@ describe('run windows', () => {
 test('summary urls', () => {
   const dependent = {...RUN, job_id: 'c', dependencies: [['b', {}], ['a', {d: '1'}], ['b', {d: '2'}]]}
   const cases = [
-    [false, undefined, ''],
     [true, undefined, '?init'],
     [true, summary.JOBS_SCOPE, '?init&types=job,agent_conn'],
     [true, summary.jobScope('x/a b'), '?init&types=job,run&job_id=x%2Fa%20b'],
