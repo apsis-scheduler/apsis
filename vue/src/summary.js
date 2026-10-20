@@ -58,6 +58,8 @@ let socketUrl = null
 // true once the server closed the socket
 let socketClosed = false
 let generation = 0
+// init frames held until the init is done, or null to apply frames as they come
+let held = null
 // set when the server can't serve run windows
 let windowUnavailable = false
 
@@ -65,11 +67,12 @@ let windowUnavailable = false
  * Subscribes the store to summary messages in `scope`, or to all messages if
  * no scope is given.
  *
- * Does nothing if the scope is unchanged and `refresh` is false, or if the
- * open socket is unscoped, since that already has everything.  Otherwise
- * closes the previous socket and opens a new one, and replaces runs, jobs,
- * and agent conns once its init is done, or right away for no scope.  If the
- * server can't serve run windows, a window scope becomes no scope.
+ * Does nothing if the scope is unchanged and `refresh` is false or its init
+ * isn't done, or if the open socket is unscoped, since that already has
+ * everything.  Otherwise closes the previous socket and opens a new one, and
+ * replaces runs, jobs, and agent conns once its init is done, or right away
+ * for no scope.  If the server can't serve run windows, a window scope becomes
+ * no scope.
  */
 export function setSummaryScope(scope, refresh = false) {
   if (windowUnavailable && scope && scope.window)
@@ -77,13 +80,15 @@ export function setSummaryScope(scope, refresh = false) {
   const url = api.getSummaryUrl(true, scope)
   if (
     socket !== null && !socketClosed
-    && ((url.toString() === socketUrl && !refresh) || socketUrl === api.getSummaryUrl(true).toString())
+    && (
+      (url.toString() === socketUrl && (!refresh || held !== null))
+      || socketUrl === api.getSummaryUrl(true).toString()
+    )
   )
     return
   socketUrl = url.toString()
   socketClosed = false
-  // init frames held until the init is done, or null to apply frames as they come
-  let held = url.toString() === api.getSummaryUrl(true).toString() ? null : []
+  held = url.toString() === api.getSummaryUrl(true).toString() ? null : []
 
   // callbacks from a replaced socket are ignored
   const gen = ++generation

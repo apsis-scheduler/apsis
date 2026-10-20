@@ -49,6 +49,7 @@ describe('setSummaryScope', () => {
 
   test('refresh reopens the same scope but not no scope', () => {
     summary.setSummaryScope(summary.JOBS_SCOPE)
+    sockets[0].onMessage(frame(DONE))
     summary.setSummaryScope(summary.JOBS_SCOPE, true)
     expect(sockets.length).toBe(2)
     expect(sockets[0].close).toHaveBeenCalled()
@@ -149,6 +150,25 @@ describe('run windows', () => {
       '?init&time=2026-10-14T12%3A00%3A00%2B00%3A00&limit=20&grouping=0&path=a%2Fb'
       + '&keyword=x&keyword=y&label=l&state=failure&state=error&arg=d%3D1&arg=e'
     )
+  })
+
+  test('going back to now from an old window opens one socket', async () => {
+    const Vue = require('vue')
+    const router = require('@/router').default
+    const vm = new Vue({router, render: h => h('router-view')}).$mount()
+    await router.push('/runs?time=20261014T100000Z')
+    sockets[sockets.length - 1].onMessage(frame({
+      type: 'run_window', anchor: '2026-10-14T10:00:00+00:00', groups: {},
+      earlier: null, later: {time: '2026-10-14T10:10:00+00:00'},
+    }))
+    // the old window is past half its later span
+    store.state.time = new Date(Date.now() + 10 * 60 * 1000)
+    await router.push('/runs')
+    expect(sockets.slice(-2).map(s => s.url.search)).toEqual([
+      '?init&time=2026-10-14T10%3A00%3A00Z&limit=50&grouping=1',
+      '?init&time=now&limit=50&grouping=1',
+    ])
+    vm.$destroy()
   })
 
   test('4503 falls back to no scope', () => {
