@@ -186,6 +186,8 @@ export function processMsgs(msgs, state) {
           ...msg,
           groups: mapValues(msg.groups, (count, run_id) => {
             const run = windowRuns.get(run_id)
+            if (run && run.group_key[0] === 'R' && count > 1)
+              state.runWindowStale = true
             return {count, key: run ? run.group_key : null}
           }),
           runIds: new Set(windowRuns.keys()),

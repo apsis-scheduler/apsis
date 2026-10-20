@@ -48,6 +48,17 @@ describe('run windows', () => {
     expect(state.runWindowStale).toBe(false)
   })
 
+  test('a running run counted with others makes the window stale', () => {
+    for (const [count, stale] of [[1, false], [5, true]]) {
+      const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
+      runs.processMsgs([
+        {type: 'run_summary', run_summary: run('r1', 'running')},
+        {type: 'run_window', groups: {r1: count}, earlier: null, later: null},
+      ], state)
+      expect(state.runWindowStale).toBe(stale)
+    }
+  })
+
   test('deleting a run the window sent makes it stale', () => {
     const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
     runs.processMsgs([
