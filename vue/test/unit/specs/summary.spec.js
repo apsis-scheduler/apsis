@@ -152,7 +152,9 @@ describe('run windows', () => {
     )
   })
 
-  test('going back to now from an old window opens one socket', async () => {
+  test('going back to now from an old window opens one socket and reloads if it lands stale', async () => {
+    const past = '?init&time=2026-10-14T10%3A00%3A00Z&limit=50&grouping=1'
+    const now = '?init&time=now&limit=50&grouping=1'
     const Vue = require('vue')
     const router = require('@/router').default
     const vm = new Vue({router, render: h => h('router-view')}).$mount()
@@ -167,10 +169,12 @@ describe('run windows', () => {
     // the old window is past half its later span
     store.state.time = new Date(Date.now() + 10 * 60 * 1000)
     await router.push('/runs')
-    expect(sockets.slice(-2).map(s => s.url.search)).toEqual([
-      '?init&time=2026-10-14T10%3A00%3A00Z&limit=50&grouping=1',
-      '?init&time=now&limit=50&grouping=1',
-    ])
+    expect(sockets.slice(-2).map(s => s.url.search)).toEqual([past, now])
+    sockets[sockets.length - 1].onMessage(frame(
+      {type: 'run_summary', run_summary: {...RUN, state: 'running'}},
+      {type: 'run_window', groups: {r1: 5}, earlier: null, later: null},
+    ))
+    expect(sockets.slice(-3).map(s => s.url.search)).toEqual([past, now, now])
     vm.$destroy()
   })
 
