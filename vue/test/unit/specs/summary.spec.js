@@ -146,7 +146,7 @@ describe('run windows', () => {
       ['path', 'a/b'], ['keyword', 'x'], ['keyword', 'y'], ['label', 'l'],
       ['state', 'failure'], ['state', 'error'], ['arg', 'd=1'], ['arg', 'e'],
     ])
-    expect(api.getSummaryUrl(true, summary.windowScope(query)).search).toBe(
+    expect(api.getSummaryUrl(summary.windowScope(query)).search).toBe(
       '?init&time=2026-10-14T12%3A00%3A00%2B00%3A00&limit=20&grouping=0&path=a%2Fb'
       + '&keyword=x&keyword=y&label=l&state=failure&state=error&arg=d%3D1&arg=e'
     )
@@ -185,14 +185,14 @@ describe('run windows', () => {
 test('summary urls', () => {
   const dependent = {...RUN, job_id: 'c', dependencies: [['b', {}], ['a', {d: '1'}], ['b', {d: '2'}]]}
   const cases = [
-    [true, undefined, '?init'],
-    [true, summary.JOBS_SCOPE, '?init&types=job,agent_conn'],
-    [true, summary.jobScope('x/a b'), '?init&types=job,run&job_id=x%2Fa%20b'],
-    [true, summary.runScope(RUN), '?init&types=run&job_id=a&dependents_of=a'],
-    [true, summary.runScope(dependent), '?init&types=run&job_id=a&job_id=b&job_id=c&dependents_of=c'],
+    [undefined, '?init'],
+    [summary.JOBS_SCOPE, '?init&types=job,agent_conn'],
+    [summary.jobScope('x/a b'), '?init&types=job,run&job_id=x%2Fa%20b'],
+    [summary.runScope(RUN), '?init&types=run&job_id=a&dependents_of=a'],
+    [summary.runScope(dependent), '?init&types=run&job_id=a&job_id=b&job_id=c&dependents_of=c'],
   ]
-  for (const [init, scope, search] of cases) {
-    const url = api.getSummaryUrl(init, scope)
+  for (const [scope, search] of cases) {
+    const url = api.getSummaryUrl(scope)
     expect([url.protocol, url.search]).toEqual(['ws:', search])
   }
 })

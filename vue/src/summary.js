@@ -71,18 +71,18 @@ let windowUnavailable = false
 export function setSummaryScope(scope, refresh = false) {
   if (windowUnavailable && scope && scope.window)
     scope = undefined
-  const url = api.getSummaryUrl(true, scope)
+  const url = api.getSummaryUrl(scope)
   if (
     socket !== null && !socketClosed
     && (
       (url.toString() === socketUrl && (!refresh || held !== null))
-      || socketUrl === api.getSummaryUrl(true).toString()
+      || socketUrl === api.getSummaryUrl().toString()
     )
   )
     return
   socketUrl = url.toString()
   socketClosed = false
-  held = url.toString() === api.getSummaryUrl(true).toString() ? null : []
+  held = url.toString() === api.getSummaryUrl().toString() ? null : []
 
   // callbacks from a replaced socket are ignored
   const gen = ++generation

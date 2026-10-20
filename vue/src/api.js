@@ -52,15 +52,15 @@ export function getRunUrl(run_id) {
 }
 
 /**
- * Returns the summary websocket URL for `scope`, an object with optional
- * `types`, `job_ids` and `dependents_of` arrays, and `window`, an array of
- * run window `[param, value]` pairs.
+ * Returns the summary websocket URL with init for `scope`, an object with
+ * optional `types`, `job_ids` and `dependents_of` arrays, and `window`, an
+ * array of run window `[param, value]` pairs.
  */
-export function getSummaryUrl(init, scope = {}) {
+export function getSummaryUrl(scope = {}) {
   const url = getUrl('summary')
   url.protocol = WS_PROTOCOL
   url.hash = ''
-  const params = init ? ['init'] : []
+  const params = ['init']
   if (scope.types)
     params.push('types=' + scope.types.join(','))
   for (const job_id of scope.job_ids || [])
@@ -69,7 +69,7 @@ export function getSummaryUrl(init, scope = {}) {
     params.push('dependents_of=' + encodeURIComponent(job_id))
   for (const [param, value] of scope.window || [])
     params.push(param + '=' + encodeURIComponent(value))
-  url.search = params.length > 0 ? '?' + params.join('&') : ''
+  url.search = '?' + params.join('&')
   return url
 }
 
