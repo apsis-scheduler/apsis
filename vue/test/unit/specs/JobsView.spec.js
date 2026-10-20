@@ -48,6 +48,10 @@ describe('JobsView.vue', () => {
     await Vue.nextTick()
     expect(router.currentRoute.query.labels).toBe(undefined)
 
+    label('two', 1).click()
+    await Vue.nextTick()
+    expect(router.currentRoute.query.labels).toEqual('daily')
+
     // a url with its params in another order or left out isn't pushed again
     const push = jest.spyOn(router, 'push')
     for (const url of ['/jobs?labels=daily&keywords=one', '/jobs?labels=critical']) {
