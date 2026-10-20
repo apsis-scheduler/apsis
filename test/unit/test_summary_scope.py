@@ -2,6 +2,8 @@ import ora
 import pytest
 
 from apsis.run_window import JobFilter, WindowSpec
+from apsis.runs import Instance, Run
+from apsis.service import messages
 from apsis.service.summary import (
     ALL_TYPES,
     MAX_JOB_IDS,
@@ -128,3 +130,7 @@ def test_window_predicate():
     assert not predicate(run("a/x", {"x": "1"}, labels=()))
     assert predicate({"type": "run_delete", "run_id": "r1", "job_id": "a/x"})
     assert not predicate({"type": "job_add", "job": {"job_id": "a/z", "metadata": {}}})
+
+
+def test_run_delete_job_id():
+    assert messages.make_run_delete(Run(Instance("a", {})))["job_id"] == "a"

@@ -40,10 +40,10 @@ let generation = 0
  * clears runs, jobs, and agent conns, and opens a new socket.
  */
 export function setSummaryScope(scope) {
-  const url = api.getSummaryUrl(true, scope)
+  const url = api.getSummaryUrl(scope)
   if (
     socket !== null && !socketClosed
-    && (url.toString() === socketUrl || socketUrl === api.getSummaryUrl(true).toString())
+    && (url.toString() === socketUrl || socketUrl === api.getSummaryUrl().toString())
   )
     return
   socketUrl = url.toString()
