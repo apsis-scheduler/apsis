@@ -34,3 +34,20 @@ describe('applyRunSummary', () => {
     expect(Object.isFrozen(merged)).toBe(true)
   })
 })
+
+describe('filters', () => {
+  test('toggleLabel adds a missing label and removes a present one', () => {
+    expect(runs.toggleLabel(null, 'foo')).toEqual(['foo'])
+    expect(runs.toggleLabel(['foo'], 'bar')).toEqual(['foo', 'bar'])
+    expect(runs.toggleLabel(['foo', 'bar'], 'foo')).toEqual(['bar'])
+    expect(runs.toggleLabel(['foo'], 'foo')).toBe(null)
+  })
+
+  test('toggleArg sets a param and removes it when it already has that arg', () => {
+    expect(runs.toggleArg(null, 'fruit', 'mango')).toEqual({fruit: 'mango'})
+    expect(runs.toggleArg({fruit: 'mango'}, 'fruit', 'kiwi')).toEqual({fruit: 'kiwi'})
+    expect(runs.toggleArg({fruit: null}, 'fruit', 'kiwi')).toEqual({fruit: 'kiwi'})
+    expect(runs.toggleArg({fruit: 'mango', color: 'red'}, 'fruit', 'mango')).toEqual({color: 'red'})
+    expect(runs.toggleArg({fruit: 'mango'}, 'fruit', 'mango')).toBe(null)
+  })
+})

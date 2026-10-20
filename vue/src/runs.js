@@ -212,6 +212,23 @@ export function toggleLabel(labels, label) {
 }
 
 /**
+ * Sets `param` to `arg` in an args filter, or removes it if already set to `arg`.
+ *
+ * @param {Object<string, string | null> | null} args - the args filter, or null for none
+ * @param {string} param
+ * @param {string} arg
+ * @returns {Object<string, string | null> | null} the new filter, or null if empty
+ */
+export function toggleArg(args, param, arg) {
+  const result = {...args}
+  if (result[param] === arg)
+    delete result[param]
+  else
+    result[param] = arg
+  return Object.keys(result).length > 0 ? result : null
+}
+
+/**
  * Returns true if each member of `keywords` is a substring of `string`.
  */
 export function matchKeywords(keywords, string) {

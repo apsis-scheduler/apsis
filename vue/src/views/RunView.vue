@@ -9,7 +9,7 @@ div
         JobLabel.label(v-for="label in run.meta.job.labels" :key="label" :label="label")
 
     div.buttons.row-centered
-      State.state(:state="run.state" name)
+      State.state(ref="state" :state="run.state" name)
       OperationButton(
         v-for="operation in OPERATIONS[run.state]"
         v-if="operation !== 'stop' || (run.times && run.times.stop !== undefined && run.times.stop !== null)"
@@ -119,6 +119,7 @@ import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
 import JobWithArgs from '@/components/JobWithArgs'
 import OperationButton from '@/components/OperationButton'
+import { setFavicon, setTitle } from '@/page'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
 import { applyRunSummary, isComplete, OPERATIONS } from '@/runs'
@@ -173,6 +174,10 @@ export default {
   computed: {
     runState() {
       return this.run ? this.run.state : null
+    },
+
+    title() {
+      return [this.run_id, this.run && this.run.job_id]
     },
 
     hasOutput() {
@@ -330,6 +335,7 @@ export default {
     this.runUpdateSocket = null
 
     this.stopOutputDataUpdates()
+    setFavicon(null)
   },
 
   watch: {
@@ -338,7 +344,20 @@ export default {
       this.initRun()
     },
 
+    title: {
+      immediate: true,
+      handler(title) {
+        setTitle(...title)
+      },
+    },
+
     runState(to, from) {
+      // use the rendered state icon as the favicon
+      this.$nextTick(() => {
+        const state = this.$refs.state
+        setFavicon(state ? state.$el.querySelector('svg') : null)
+      })
+
       if (to === 'running')
         // Connect for live output data.
         this.startOutputDataUpdates()
