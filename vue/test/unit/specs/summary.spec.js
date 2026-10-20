@@ -158,8 +158,11 @@ describe('run windows', () => {
     const vm = new Vue({router, render: h => h('router-view')}).$mount()
     await router.push('/runs?time=20261014T100000Z')
     sockets[sockets.length - 1].onMessage(frame({
-      type: 'run_window', anchor: '2026-10-14T10:00:00+00:00', groups: {},
-      earlier: null, later: {time: '2026-10-14T10:10:00+00:00'},
+      type: 'run_window',
+      anchor: '2026-10-14T10:00:00+00:00',
+      groups: {},
+      earlier: null,
+      later: {time: '2026-10-14T10:10:00+00:00'},
     }))
     // the old window is past half its later span
     store.state.time = new Date(Date.now() + 10 * 60 * 1000)
