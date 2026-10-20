@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 import ora
 from urllib.parse import parse_qs
 import ujson
@@ -11,6 +12,11 @@ from apsis.jobs import Jobs
 from apsis.lib.itr import chunks
 from apsis.run_window import MAX_LIMIT, JobFilter, WindowSpec, args_match
 from apsis.states import to_state
+
+if TYPE_CHECKING:
+    from websockets.legacy.protocol import WebSocketCommonProtocol
+
+    from apsis.apsis import Apsis
 
 # message family for each summary message type
 MSG_FAMILIES = {
@@ -159,13 +165,15 @@ def make_summary_predicate(scope: SummaryScope) -> Callable[[dict], bool]:
     return predicate
 
 
-async def _send(ws, msgs: list[str]) -> None:
+async def _send(ws: "WebSocketCommonProtocol", msgs: list[str]) -> None:
     if msgs:
         await ws.send("[" + ",".join(msgs) + "]")
     await asyncio.sleep(0)
 
 
-async def _send_jobs_and_conns(apsis, ws, scope: SummaryScope) -> None:
+async def _send_jobs_and_conns(
+    apsis: "Apsis", ws: "WebSocketCommonProtocol", scope: SummaryScope
+) -> None:
     if "job" in scope.types:
         if scope.job_ids is None:
             jobs = list(apsis.jobs.get_jobs(ad_hoc=False))
@@ -187,7 +195,9 @@ async def _send_jobs_and_conns(apsis, ws, scope: SummaryScope) -> None:
         await _send(ws, [ujson.dumps(messages.make_agent_conn(c)) for c in conns])
 
 
-async def send_scoped_init(apsis, ws, scope: SummaryScope) -> None:
+async def send_scoped_init(
+    apsis: "Apsis", ws: "WebSocketCommonProtocol", scope: SummaryScope
+) -> None:
     """
     Sends the jobs, agent conns, and runs in `scope`, then a
     `summary_init_done` message whose `truncated` maps each job with runs
@@ -215,7 +225,9 @@ async def send_scoped_init(apsis, ws, scope: SummaryScope) -> None:
     await ws.send(ujson.dumps([{"type": "summary_init_done", "truncated": truncated}]))
 
 
-async def send_window_init(apsis, ws, scope: SummaryScope) -> None:
+async def send_window_init(
+    apsis: "Apsis", ws: "WebSocketCommonProtocol", scope: SummaryScope
+) -> None:
     """
     Sends the jobs and agent conns in `scope` and the runs in its window,
     then a `run_window` message describing the window.
