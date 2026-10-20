@@ -330,9 +330,6 @@ async def query_window(
       The window needs the schedule index and the db doesn't have it.
     """
     anchor = ora.now() if spec.anchor is None else spec.anchor
-    if spec.job_ids is not None and not spec.job_ids:
-        return RunWindow(anchor, [], {}, None, None)
-
     t = str(anchor)
     job_filter = spec.job_filter
     labels = bool(job_filter.labels)

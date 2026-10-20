@@ -257,11 +257,7 @@ async def test_edges_step_past_ties(tmp_path, grouping):
 
 
 @pytest.mark.asyncio
-async def test_no_jobs_or_index(tmp_path):
-    # no jobs needs no db
-    window = await query_window(None, {}, WindowSpec(job_ids=frozenset()), min_timestamp=None)
-    assert window.run_ids == []
-
+async def test_no_index(tmp_path):
     run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
     run_db.has_schedule_index = False
     with pytest.raises(WindowUnavailable):
