@@ -573,7 +573,13 @@ class Apsis:
         """
         if run.state not in {State.scheduled, State.waiting}:
             raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
-        if _bound_jso(self.__rebind(run)) == _bound_jso(run):
+        fresh = self.__rebind(run)
+        if (fresh.program, fresh.conds, fresh.actions, fresh.meta["job"]) == (
+            run.program,
+            run.conds,
+            run.actions,
+            run.meta.get("job"),
+        ):
             return
 
         if run.state == State.waiting:
@@ -929,18 +935,6 @@ async def reschedule_runs(apsis, job_id):
     schedule = list(get_insts_to_schedule(job, scheduled_time, scheduler_time))
     for time, stop_time, inst in schedule:
         await apsis.schedule(time, inst, expected=True, stop_time=stop_time)
-
-
-def _bound_jso(run: Run) -> tuple[dict, list[dict], list[dict], dict | None]:
-    """
-    Returns the program, conditions, actions, and job labels of `run` as JSO.
-    """
-    return (
-        run.program.to_jso(),
-        [c.to_jso() for c in run.conds],
-        [a.to_jso() for a in run.actions],
-        run.meta.get("job"),
-    )
 
 
 async def _refresh_runs(apsis: Apsis, job_ids: frozenset[str]) -> None:
