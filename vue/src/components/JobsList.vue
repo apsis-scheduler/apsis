@@ -364,7 +364,7 @@ export default {
 
 .jobs-header, .row {
   display: grid;
-  grid-template-columns: 600px 250px minmax(600px, 1fr);
+  grid-template-columns: 600px 250px 1fr;
   align-items: center;
 
   > div {
