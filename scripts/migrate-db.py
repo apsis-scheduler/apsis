@@ -186,15 +186,10 @@ def migrate_2_4_5(db: SqliteDB) -> None:
 
 def migrate_2_7_0(db: SqliteDB) -> None:
     """
-    Add the schedule time index backing windowed run summaries, replacing an
-    index of the same name on some other expression.
+    Add the schedule time index backing windowed run summaries.
     """
-    if db.run_db.has_schedule_index:
-        log.info("already has idx_runs_schedule")
-        return
     conn = db.conn
-    conn.execute("DROP INDEX IF EXISTS idx_runs_schedule")
-    conn.execute(f"CREATE INDEX idx_runs_schedule ON runs ({SCHEDULE_TIME_SQL})")
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_runs_schedule ON runs ({SCHEDULE_TIME_SQL})")
     log.info("created idx_runs_schedule")
     conn.commit()
 
