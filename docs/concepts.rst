@@ -150,6 +150,11 @@ You can apply the following operations, to induce transitions explicitly:
 - You can *skip* a **scheduled** or **waiting** run.  Apsis no longer waits for
   its schedule time or conditions, and transitions it to **skipped**.
 
+- You can *refresh* a **scheduled** or **waiting** run.  Apsis replaces its
+  program, conditions, and actions with its job's current ones and keeps its
+  state, and a **waiting** run checks its new conditions again from the first
+  one.
+
 - You can *stop* a **running** run.  Apsis requests that the run shut down in an
   orderly manner.  How this works depends on the run's program.  For a program
   that runs a (local or remote) UNIX process, this entails sending a termination

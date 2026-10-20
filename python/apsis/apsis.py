@@ -530,7 +530,7 @@ class Apsis:
 
         elif run.state == State.waiting:
             # Cancel the waiting task.
-            await self.__cancel_wait(run)
+            await self.__cancel_wait(run, "skip")
 
         else:
             raise RunError(f"can't skip {run.run_id} in state {run.state.name}")
@@ -549,7 +549,7 @@ class Apsis:
 
         elif run.state == State.waiting:
             # Cancel the waiting task.  It will remove itself when done.
-            await self.__cancel_wait(run)
+            await self.__cancel_wait(run, "start")
             self.run_log.info(run, "waiting run started by override")
             # Start the run.
             self._start(run)
@@ -580,9 +580,9 @@ class Apsis:
             raise RunError(f"can't refresh {run.run_id}: {exc}") from exc
 
         if run.state == State.waiting:
-            await self.__cancel_wait(run)
-            if run.state != State.waiting:
-                raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
+            await self.__cancel_wait(run, "refresh")
+        elif not self.scheduled.unschedule(run):
+            raise RunError(f"can't refresh {run.run_id} before it's restored")
 
         run.program = fresh.program
         run.conds = fresh.conds
@@ -594,14 +594,21 @@ class Apsis:
 
         if run.state == State.waiting:
             self._wait(run)
+        else:
+            await self.scheduled.schedule(run.times["schedule"], run)
 
-    async def __cancel_wait(self, run: Run) -> None:
+    async def __cancel_wait(self, run: Run, operation: str) -> None:
         """
         Cancels the waiting task of `run`, including one restarted by a
         concurrent refresh while cancelling.
+
+        :raise RunError:
+          A concurrent operation moved the run out of waiting.
         """
         while run.run_id in self.__wait_tasks:
             await self.__wait_tasks.cancel(run.run_id)
+        if run.state != State.waiting:
+            raise RunError(f"can't {operation} {run.run_id} in state {run.state.name}")
 
     async def mark(self, run, state):
         """

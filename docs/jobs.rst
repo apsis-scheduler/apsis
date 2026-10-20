@@ -263,7 +263,8 @@ As a result, these rules generally describe a run's relationship to its job:
 3. If you rerun a run, the rerun always reflects its job's current program,
    conditions, and actions.
 
-If a run is *waiting* (or in a subsequent state) and you make changes to its
-program, conditions, or actions, skip or kill the run if necessary, and rerun it
-to pick up the changes.
+If a run is *scheduled* or *waiting* and you make changes to its program,
+conditions, or actions, reload jobs and refresh the run to pick up the changes
+without creating a new run.  A run that has already started won't pick up
+changes, so kill it if necessary and rerun it.
 
