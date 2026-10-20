@@ -4,6 +4,7 @@ Tests refreshing scheduled and waiting runs from the current config of their job
 
 import asyncio
 from pathlib import Path
+from typing import Any, Coroutine
 
 import ora
 import pytest
@@ -54,6 +55,15 @@ def num_waiting(apsis: Apsis) -> int:
     return apsis.get_stats()["tasks"]["num_waiting"]
 
 
+async def after_yield(coro: Coroutine[Any, Any, None]) -> None:
+    """
+    Awaits `coro` one event loop step later, so it lands after a concurrent
+    cancel has finished the wait task but before the task leaves its group.
+    """
+    await asyncio.sleep(0)
+    await coro
+
+
 @pytest.mark.asyncio
 async def test_refresh_scheduled_run(tmp_path):
     apsis = await make_apsis(tmp_path)
@@ -99,40 +109,30 @@ async def test_refresh_errors_leave_run_unchanged(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "op, ready, state",
+    "op, ready, delayed, state, errors",
     [
-        ("start", False, State.success),
-        ("skip", False, State.skipped),
-        ("start", None, State.success),
-        ("skip", None, State.success),
+        # refresh restarts the wait before the override cancels it
+        ("start", False, False, State.success, [False, False]),
+        ("skip", False, False, State.skipped, [False, False]),
+        # refresh starts a run with no conditions before the override
+        ("start", None, False, State.success, [False, True]),
+        ("skip", None, False, State.success, [False, True]),
+        # the override lands while the cancelled wait task is leaving its group
+        ("start", False, True, State.failure, [True, False]),
     ],
 )
-async def test_refresh_racing_override(tmp_path, op, ready, state):
+async def test_refresh_racing_override(tmp_path, op, ready, delayed, state, errors):
     apsis = await make_apsis(tmp_path)
     run = await apsis.schedule(None, Instance("job", {}))
 
     write_job(tmp_path / "jobs", success=True, ready=ready)
     await reload_jobs(apsis)
-    _, result = await asyncio.gather(
-        apsis.refresh(run), getattr(apsis, op)(run), return_exceptions=True
+    override = getattr(apsis, op)(run)
+    results = await asyncio.gather(
+        apsis.refresh(run), after_yield(override) if delayed else override, return_exceptions=True
     )
 
-    # with no conditions refresh starts the run itself
-    assert isinstance(result, RunError) == (ready is None)
+    assert [isinstance(r, RunError) for r in results] == errors
     assert await asyncio.wait_for(finished(run), 5) == state
     assert num_waiting(apsis) == 0
-    await apsis.shut_down()
-
-
-@pytest.mark.asyncio
-async def test_refresh_loses_to_start(tmp_path):
-    apsis = await make_apsis(tmp_path)
-    run = await apsis.schedule(None, Instance("job", {}))
-
-    write_job(tmp_path / "jobs", success=True, ready=False)
-    await reload_jobs(apsis)
-    _, result = await asyncio.gather(apsis.start(run), apsis.refresh(run), return_exceptions=True)
-
-    assert isinstance(result, RunError)
-    assert await asyncio.wait_for(finished(run), 5) == State.failure
     await apsis.shut_down()

@@ -607,6 +607,8 @@ class Apsis:
         """
         while run.run_id in self.__wait_tasks:
             await self.__wait_tasks.cancel(run.run_id)
+            # let the done callback of the cancelled task remove it from the group
+            await asyncio.sleep(0)
         if run.state != State.waiting:
             raise RunError(f"can't {operation} {run.run_id} in state {run.state.name}")
 
