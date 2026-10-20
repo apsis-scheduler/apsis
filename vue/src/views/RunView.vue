@@ -183,11 +183,6 @@ export default {
       return this.run ? this.run.state : null
     },
 
-    // keep the previous scope until the run is known
-    summaryScope() {
-      return this.run ? runScope(this.run) : null
-    },
-
     hasOutput() {
       const state = this.runState
       return state === 'running' || state === 'stopping' || isComplete(state)
@@ -348,9 +343,9 @@ export default {
         this.fetchRun()
     },
 
-    summaryScope(scope) {
-      if (scope !== null)
-        setSummaryScope(scope)
+    run(run) {
+      if (run)
+        setSummaryScope(runScope(run))
     },
 
     runState(to, from) {
