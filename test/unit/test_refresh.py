@@ -19,12 +19,14 @@ from apsis.states import State
 # -------------------------------------------------------------------------------
 
 
-def write_job(job_dir: Path, *, success: bool, ready: bool | None, params: list[str] = []) -> None:
+def write_job(
+    job_dir: Path, *, success: bool, ready: bool | None, params: tuple[str, ...] = ()
+) -> None:
     """
     Writes a no-op job whose condition is const `ready`, or has no condition
     if `ready` is none.
     """
-    text = f"params: {params}\nprogram:\n  type: no-op\n  success: {str(success).lower()}\n"
+    text = f"params: {list(params)}\nprogram:\n  type: no-op\n  success: {str(success).lower()}\n"
     if ready is not None:
         text += f"condition:\n  type: const\n  value: {str(ready).lower()}\n"
     (job_dir / "job.yaml").write_text(text)
@@ -32,8 +34,8 @@ def write_job(job_dir: Path, *, success: bool, ready: bool | None, params: list[
 
 async def make_apsis(tmp_path: Path) -> Apsis:
     """
-    Builds an apsis instance with one job whose program fails and whose
-    condition never passes.
+    Builds an apsis instance on the jobs and DB in `tmp_path`, creating, on the
+    first call, a job whose program fails and whose condition never passes.
     """
     job_dir = tmp_path / "jobs"
     job_dir.mkdir(exist_ok=True)
@@ -85,7 +87,7 @@ async def test_refresh_errors_leave_run_unchanged(tmp_path):
     run = await apsis.schedule(None, Instance("job", {}))
     scheduled = await apsis.schedule(ora.now() + 3600, Instance("job", {}))
 
-    write_job(tmp_path / "jobs", success=True, ready=True, params=["date"])
+    write_job(tmp_path / "jobs", success=True, ready=True, params=("date",))
     await reload_jobs(apsis)
     with pytest.raises(RunError, match="missing"):
         await apsis.refresh(run)

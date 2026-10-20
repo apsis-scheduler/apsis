@@ -565,8 +565,9 @@ class Apsis:
         waiting run checks its new conditions from the first one.
 
         :raise RunError:
-          The run isn't scheduled or waiting, or its job's current config
-          doesn't bind for it.  The run is left unchanged.
+          The run isn't scheduled or waiting, a concurrent operation moved it,
+          or its job's current config doesn't bind for it.  The run is left
+          unchanged.
         """
         if run.state not in {State.scheduled, State.waiting}:
             raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")

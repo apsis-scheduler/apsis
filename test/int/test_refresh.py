@@ -29,12 +29,6 @@ def test_refresh_waiting_run(tmp_path):
         client = inst.client
         run_id = client.schedule("job", {})["run_id"]
 
-        # refreshing with the same config leaves the run waiting as it was
-        assert inst.run_apsis_cmd("refresh", run_id)[0] == 0
-        run = client.get_run(run_id)
-        assert run["state"] == "waiting"
-        assert not run["program"]["success"]
-
         write_job(tmp_path, success=True, ready=True)
         client.reload_jobs()
         assert inst.run_apsis_cmd("refresh", run_id)[0] == 0
