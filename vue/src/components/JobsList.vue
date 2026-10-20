@@ -185,7 +185,6 @@ export default {
   },
 
   mounted() {
-    this.measureScroller()
     // the body resizes with the window and with anything above the scroller
     this.scrollerObserver = new ResizeObserver(this.measureScroller)
     this.scrollerObserver.observe(document.body)
