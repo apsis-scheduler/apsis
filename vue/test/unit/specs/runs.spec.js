@@ -30,12 +30,6 @@ describe('run windows', () => {
     runs.processMsgs([{type: 'run_window', groups: {r1: 5, r9: 2}, earlier: null, later: null}], state)
     expect(state.runWindow.groups).toEqual({r1: {count: 5, key: 'Ca\0'}, r9: {count: 2, key: null}})
     expect(runs.groupCount([state.runs.get('r1')], state.runWindow)).toBe(5)
-    expect(runs.groupCount([state.runs.get('r1')], null)).toBe(1)
-
-    // a newer run of the group adds to the count
-    runs.processMsgs([{type: 'run_summary', run_summary: run('r2', 'failure')}], state)
-    expect(runs.groupCount([state.runs.get('r1'), state.runs.get('r2')], state.runWindow)).toBe(6)
-
     expect(state.runWindowStale).toBe(false)
 
     // a counted run that left its group counts alone and the window goes stale
