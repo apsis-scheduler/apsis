@@ -24,8 +24,7 @@ export const MIN_WIDTH = 40
  */
 export function loadWidths() {
   try {
-    const widths = JSON.parse(localStorage.getItem(KEY))
-    return widths !== null && typeof widths === 'object' && !Array.isArray(widths) ? widths : {}
+    return JSON.parse(localStorage.getItem(KEY)) || {}
   } catch (e) {
     return {}
   }
@@ -45,16 +44,13 @@ export function saveWidths(widths) {
 }
 
 /**
- * Returns the width of `column`, the saved one if valid else its default.
+ * Returns the width of `column`, the saved one if any else its default.
  *
  * @param {Object<string, number>} widths - saved widths by column name
  * @param {string} column - column name, e.g. "job" or "arg:date"
  */
 export function columnWidth(widths, column) {
-  const width = widths[column]
-  if (Number.isFinite(width))
-    return Math.max(MIN_WIDTH, width)
-  return DEFAULT_WIDTHS[column.startsWith('arg:') ? 'arg' : column]
+  return widths[column] || DEFAULT_WIDTHS[column.startsWith('arg:') ? 'arg' : column]
 }
 
 /**
