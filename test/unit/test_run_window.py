@@ -174,7 +174,6 @@ async def test_window_matches_client(tmp_path, monkeypatch, job_path_rows):
             ),
         )
         window = await query_window(run_db, expected, spec, min_timestamp=MIN_TIMESTAMP)
-        assert window.complete
         assert (
             window.run_ids,
             window.counts,
@@ -199,7 +198,7 @@ def test_select_window(before, after, limit, shown):
 @pytest.mark.asyncio
 async def test_window_budget(tmp_path, monkeypatch):
     """
-    The walk budget gives an incomplete window whose edge picks up where the walk stopped.
+    The walk budget gives a window whose edge picks up where the walk stopped.
     """
     runs = [make_run(i, "a", {"i": str(i)}, State.success, NOW + i) for i in range(1, 21)]
     run_db = make_db(tmp_path, runs)
@@ -209,7 +208,6 @@ async def test_window_budget(tmp_path, monkeypatch):
     window = await query_window(run_db, {}, spec, min_timestamp=None)
     assert window.run_ids == []
     assert window.earlier == str(NOW + 17)
-    assert not window.complete
 
 
 @pytest.mark.parametrize("grouping", [True, False])

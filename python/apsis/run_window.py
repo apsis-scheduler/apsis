@@ -112,8 +112,6 @@ class RunWindow:
     # anchors that move the window past each edge, or none if no group is past it
     earlier: str | None
     later: str | None
-    # true unless the walk budget cut off shown runs
-    complete: bool
 
 
 class WindowUnavailable(RuntimeError):
@@ -341,7 +339,7 @@ async def query_window(
     """
     anchor = ora.now() if spec.anchor is None else spec.anchor
     if spec.job_ids is not None and not spec.job_ids:
-        return RunWindow(anchor, [], {}, None, None, True)
+        return RunWindow(anchor, [], {}, None, None)
 
     t = str(anchor)
     job_filter = spec.job_filter
@@ -458,7 +456,4 @@ async def query_window(
         counts={f[0].run_id: f[1] for f in found_b[:nb] + found_a[:na]},
         earlier=_edge(before, found_b, nb),
         later=await _later_edge(after, found_a, na, key_of, principal),
-        complete=all(
-            s.done or len(f) >= spec.limit for s, f in ((before, found_b), (after, found_a))
-        ),
     )

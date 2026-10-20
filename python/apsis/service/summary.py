@@ -232,11 +232,8 @@ async def send_window_init(apsis, ws, scope: SummaryScope) -> None:
     msg = {
         "type": "run_window",
         "anchor": str(window.anchor),
-        "limit": spec.limit,
-        "grouping": spec.grouping,
         "groups": window.counts if spec.grouping else {},
         "earlier": None if window.earlier is None else {"time": window.earlier},
         "later": None if window.later is None else {"time": window.later},
-        "complete": window.complete,
     }
     await ws.send(ujson.dumps([msg]))
