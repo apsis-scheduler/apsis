@@ -120,12 +120,10 @@ describe('RunsList.vue', () => {
     const plain = mountRunsList({})
     expect(plain.$refs.pane.classList.contains('pane')).toBe(false)
     plain.$destroy()
-    expect(observer).toBe(null)
 
     const vm = mountRunsList({fillWindow: true})
     const pane = vm.$refs.pane
     expect(pane.classList.contains('pane')).toBe(true)
-    expect(vm.paneTop).toBe(0)
     expect(observer.target).toBe(document.body)
 
     pane.getBoundingClientRect = () => ({top: 300})

@@ -616,7 +616,6 @@ export default {
 
   mounted() {
     if (this.fillWindow) {
-      this.measurePane()
       // the body resizes with the window and with anything above the pane
       this.paneObserver = new ResizeObserver(this.measurePane)
       this.paneObserver.observe(document.body)
