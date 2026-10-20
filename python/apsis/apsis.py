@@ -530,7 +530,7 @@ class Apsis:
 
         elif run.state == State.waiting:
             # Cancel the waiting task.
-            await self.__wait_tasks.cancel(run.run_id)
+            await self.__cancel_wait(run)
 
         else:
             raise RunError(f"can't skip {run.run_id} in state {run.state.name}")
@@ -549,13 +549,59 @@ class Apsis:
 
         elif run.state == State.waiting:
             # Cancel the waiting task.  It will remove itself when done.
-            await self.__wait_tasks.cancel(run.run_id)
+            await self.__cancel_wait(run)
             self.run_log.info(run, "waiting run started by override")
             # Start the run.
             self._start(run)
 
         else:
             raise RunError(f"can't start {run.run_id} in state {run.state.name}")
+
+    async def refresh(self, run: Run) -> None:
+        """
+        Rebinds a scheduled or waiting run to the current config of its job.
+
+        Replaces the run's program, conditions, actions, and job labels.  A
+        waiting run checks its new conditions from the first one.
+
+        :raise RunError:
+          The run isn't scheduled or waiting, or its job's current config
+          doesn't bind for it.  The run is left unchanged.
+        """
+        if run.state not in {State.scheduled, State.waiting}:
+            raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
+
+        fresh = Run(run.inst)
+        fresh.run_id = run.run_id
+        try:
+            job = self._validate_run(fresh)
+            bind(fresh, job, self.jobs)
+        except Exception as exc:
+            raise RunError(f"can't refresh {run.run_id}: {exc}") from exc
+
+        if run.state == State.waiting:
+            await self.__cancel_wait(run)
+            if run.state != State.waiting:
+                raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
+
+        run.program = fresh.program
+        run.conds = fresh.conds
+        run.actions = fresh.actions
+        run.meta["job"] = {"labels": job.meta.get("labels", [])}
+        self.run_store.update(run, now())
+        self.summary_publisher.publish(messages.make_run_transition(run))
+        self.run_log.info(run, "refreshed from job config")
+
+        if run.state == State.waiting:
+            self._wait(run)
+
+    async def __cancel_wait(self, run: Run) -> None:
+        """
+        Cancels the waiting task of `run`, including one restarted by a
+        concurrent refresh while cancelling.
+        """
+        while run.run_id in self.__wait_tasks:
+            await self.__wait_tasks.cancel(run.run_id)
 
     async def mark(self, run, state):
         """

@@ -92,6 +92,19 @@ def main():
     cmd = parser.add_command("skip", cmd_skip, description="Skips a scheduled or waiting run.")
     cmd.add_argument("run_id", metavar="RUN-ID ...", nargs="+")
 
+    # --- command: refresh --------------------------------------------
+
+    def cmd_refresh(client, args):
+        for run_id in args.run_id:
+            client.refresh(run_id)
+
+    cmd = parser.add_command(
+        "refresh",
+        cmd_refresh,
+        description="Rebinds a scheduled or waiting run to the current config of its job.",
+    )
+    cmd.add_argument("run_id", metavar="RUN-ID ...", nargs="+")
+
     # --- command: job ------------------------------------------------
 
     def cmd_job(client, args):
