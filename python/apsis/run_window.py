@@ -4,7 +4,6 @@ Windows of runs around a schedule time, as shown in the web UI runs list.
 
 import asyncio
 import bisect
-import sqlite3
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass
@@ -196,16 +195,9 @@ class _Side:
 def _schedule_pages(run_db: RunDB, anchor: str, desc: bool, labels: bool) -> Iterator[list[Entry]]:
     time, rowid = anchor, None
     while True:
-        try:
-            rows = run_db.schedule_page(
-                desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels
-            )
-        except sqlite3.OperationalError as exc:
-            if "no such index" not in str(exc):
-                raise
-            # the index was dropped after open
-            run_db.has_schedule_index = False
-            raise WindowUnavailable() from exc
+        rows = run_db.schedule_page(
+            desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels
+        )
         if not rows:
             break
         yield [Entry._make(r) for r in rows]

@@ -1,6 +1,5 @@
 import asyncio
 import random
-import sqlite3
 
 import ora
 import pytest
@@ -264,23 +263,9 @@ async def test_no_jobs_or_index(tmp_path):
     assert window.run_ids == []
 
     run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
-    run_db._RunDB__connection.connection.execute("DROP INDEX idx_runs_schedule")
-    # dropping the index after open makes the window unavailable from then on
+    run_db.has_schedule_index = False
     with pytest.raises(WindowUnavailable):
         await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
-    assert not run_db.has_schedule_index
-    with pytest.raises(WindowUnavailable):
-        await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
-
-    # other db errors pass through
-    class LockedDB:
-        has_schedule_index = True
-
-        def schedule_page(self, **kw_args):
-            raise sqlite3.OperationalError("database is locked")
-
-    with pytest.raises(sqlite3.OperationalError):
-        await query_window(LockedDB(), {}, WindowSpec(), min_timestamp=None)
 
     # a small job set doesn't need the index
     window = await query_window(
