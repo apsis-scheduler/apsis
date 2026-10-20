@@ -140,7 +140,6 @@ export function processMsgs(msgs, state) {
           const t = Date.parse(run.time_key)
           if (!runIds.has(run.run_id) && !(start < t && t < end))
             break
-          // the rest of a counted group that this run left was never sent
           const counted = state.runWindow.groups[run.run_id]
           if (counted && counted.count > 1 && counted.key !== run.group_key)
             state.runWindowStale = true
@@ -155,7 +154,6 @@ export function processMsgs(msgs, state) {
         break
 
       case 'run_delete':
-        // the window has to reload whatever replaces a run it sent
         if (state.runWindow !== null && state.runWindow.runIds.has(msg.run_id))
           state.runWindowStale = true
         if (runs === null)
@@ -169,7 +167,6 @@ export function processMsgs(msgs, state) {
         break
 
       case 'run_window':
-        // remember each counted run's group so a run that leaves it drops its count
         const windowRuns = runs || state.runs
         state.runWindow = Object.freeze({
           ...msg,

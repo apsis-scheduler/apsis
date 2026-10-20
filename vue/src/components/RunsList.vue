@@ -508,7 +508,6 @@ export default {
         }
       }
 
-      // the server window can have more runs past either edge
       let earlierMore = earlierCount > 0
       let laterMore = laterCount > 0
       if (this.runWindow) {
