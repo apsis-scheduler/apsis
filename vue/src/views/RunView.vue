@@ -121,7 +121,7 @@ import JobWithArgs from '@/components/JobWithArgs'
 import OperationButton from '@/components/OperationButton'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
-import { isComplete, OPERATIONS } from '@/runs'
+import { applyRunSummary, isComplete, OPERATIONS } from '@/runs'
 import RunArgs from '@/components/RunArgs'
 import RunDependencies from '@/components/RunDependencies'
 import RunElapsed from '@/components/RunElapsed'
@@ -157,6 +157,7 @@ export default {
       },
       OPERATIONS,
       run: null,
+      runSummary: null,
       runLog: null,
       outputMetadata: null,
       outputData: null,
@@ -170,14 +171,6 @@ export default {
   },
 
   computed: {
-    /**
-     * The update sequence of the run summary in the store, for detecting updates.
-     */
-    updateSeq() {
-      const run = store.state.runs.get(this.run_id)
-      return run ? run.seq : undefined
-    },
-
     runState() {
       return this.run ? this.run.state : null
     },
@@ -196,17 +189,20 @@ export default {
     join,
 
     fetchRun() {
-      const url = api.getRunUrl(this.run_id)
+      const run_id = this.run_id
+      const url = api.getRunUrl(run_id)
       fetch(url)
         .then(async (response) => {
-          if (response.ok) {
-            const run = (await response.json()).runs[this.run_id]
-            this.run = Object.freeze(run)
-          }
+          const run = response.ok ? (await response.json()).runs[run_id] : null
+          // drop the response if the view moved on to another run
+          if (run_id !== this.run_id)
+            return
+          if (response.ok)
+            this.run = this.runSummary === null ? Object.freeze(run) : applyRunSummary(run, this.runSummary)
           else if (response.status === 404)
             this.run = undefined
           else
-            store.state.errors.add('fetch ' + url + ' ' + response.status + ' ' + await response.text())
+            store.state.errors.push('fetch ' + url + ' ' + response.status + ' ' + await response.text())
         })
     },
 
@@ -223,6 +219,11 @@ export default {
         msg => {
           msg = JSON.parse(msg.data)
           console.log('run msg:', Object.keys(msg).join(' '))
+          if (msg.run) {
+            this.runSummary = msg.run
+            if (this.run)
+              this.run = applyRunSummary(this.run, msg.run)
+          }
           if (msg.meta)
             this.meta = msg.meta
           if (msg.run_log)
@@ -303,6 +304,7 @@ export default {
       // Don't treat this as a missing run (this.run === undefined) until the
       // single run API can't find it.
       this.run = store.state.runs.get(this.run_id) || null
+      this.runSummary = null
 
       this.outputMetadata = null
       this.outputData = null
@@ -334,12 +336,6 @@ export default {
     // Reset state on nav from one run to another.
     '$route'(to, from) {
       this.initRun()
-    },
-
-    // When the update sequence number changes, reload the whole run.
-    updateSeq(seq, previous) {
-      if (!this.run || this.run.seq !== seq)
-        this.fetchRun()
     },
 
     runState(to, from) {
