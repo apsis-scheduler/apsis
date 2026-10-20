@@ -971,6 +971,9 @@ async def reload_jobs(apsis, *, dry_run=False):
         for job_id in sorted(chg_ids):
             log.info(f"scheduling changed: {job_id}")
             await reschedule_runs(apsis, job_id)
+
+        # refresh runs only after every changed job is rescheduled
+        for job_id in sorted(chg_ids):
             await _refresh_runs(apsis, job_id)
 
         # Publish job changes.
