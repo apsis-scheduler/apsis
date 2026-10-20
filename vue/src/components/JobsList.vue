@@ -302,7 +302,8 @@ export default {
 @import '@/styles/vars.scss';
 
 .controls {
-  width: 80em;
+  box-sizing: border-box;
+  max-width: 80em;
   margin-top: 1em;
   background: $global-control-background;
   padding: 12px 18px;
