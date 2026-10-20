@@ -2,8 +2,8 @@ const KEY = 'apsis.runsList.columnWidths'
 
 // default pixel widths, "arg" covers each "arg:<param>" column
 const DEFAULT_WIDTHS = {
-  job: 320,
-  args: 260,
+  job: 240,
+  args: 160,
   arg: 160,
   run: 100,
   state: 72,
