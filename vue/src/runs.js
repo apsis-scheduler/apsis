@@ -51,18 +51,6 @@ export function clearRunState(state) {
 }
 
 /**
- * Returns true if `runWindow` sent `run` or `run` is strictly inside the time
- * span it loaded.  Unsent runs at an edge time are already in the edge or
- * group counts.
- */
-function inRunWindow(runWindow, run) {
-  if (runWindow.runIds.has(run.run_id))
-    return true
-  const t = Date.parse(run.time_key)
-  return runWindow.start < t && t < runWindow.end
-}
-
-/**
  * Returns true if the run window in store `state` should be reloaded, since
  * it's missing runs it needs or, for a window at now, the time since it loaded
  * reached half the span from its anchor to its later edge.
@@ -148,8 +136,10 @@ export function processMsgs(msgs, state) {
         run.group_key = groupKey(run)
         run.time_key = timeKey(run)
         if (state.runWindow !== null) {
-          // a run window only keeps runs in the span it loaded
-          if (!inRunWindow(state.runWindow, run))
+          // a run window only keeps runs it sent or strictly inside the span it loaded
+          const { runIds, start, end } = state.runWindow
+          const t = Date.parse(run.time_key)
+          if (!runIds.has(run.run_id) && !(start < t && t < end))
             break
           // the rest of a counted group that this run left was never sent
           const counted = state.runWindow.groups[run.run_id]
