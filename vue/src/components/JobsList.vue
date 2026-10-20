@@ -50,7 +50,7 @@ div.jobs-list
     :items="jobRows"
     key-field="key"
     :min-item-size="31"
-    :style="{ height: 'calc(100vh - ' + scrollerTop + 'px - 1rem)' }"
+    :style="{ height: 'calc(100vh - ' + scrollerTop + 'px - 1rem)', minHeight: '20rem' }"
   )
     template(slot-scope="{ item, active }")
       DynamicScrollerItem.row(
