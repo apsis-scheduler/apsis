@@ -62,8 +62,7 @@ export function isRunWindowStale(state, atNow) {
   if (state.runWindowStale)
     return true
   const anchor = Date.parse(runWindow.anchor)
-  return atNow && anchor < runWindow.end
-    && state.time - runWindow.loaded >= (runWindow.end - anchor) / 2
+  return atNow && state.time - runWindow.loaded >= (runWindow.end - anchor) / 2
 }
 
 /**

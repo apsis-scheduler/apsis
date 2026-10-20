@@ -119,9 +119,8 @@ test('isRunWindowStale', () => {
   expect(runs.isRunWindowStale(at('2026-10-14T11:30:00Z'), true)).toBe(true)
   expect(runs.isRunWindowStale(at('2026-10-14T11:30:00Z'), false)).toBe(false)
 
-  // an open or empty later side never goes stale with time
+  // an open later side never goes stale with time
   expect(runs.isRunWindowStale(at('2026-10-15T00:00:00Z', {anchor, end: Infinity, loaded}), true)).toBe(false)
-  expect(runs.isRunWindowStale(at('2026-10-15T00:00:00Z', {anchor, end: Date.parse(anchor), loaded}), true)).toBe(false)
 
   // a window anchored well before the client clock is fresh when it arrives
   const state = {runs: new Map(), runWindow: null, runWindowStale: false, time: new Date()}
