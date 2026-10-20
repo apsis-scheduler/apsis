@@ -53,8 +53,6 @@ class Store {
     agentConns: new Map(),
   }
 
-  _tickTimer = null
-
   setTime(time) {
     this.state.time = time || new Date()
     this.state.timeStr = formatTime(this.state.time, this.state.timeZone)
@@ -75,7 +73,6 @@ class Store {
 
   _tick() {
     window.clearTimeout(this._tickTimer)
-    this._tickTimer = null
     // stop ticking while the page is hidden
     if (document.hidden)
       return
