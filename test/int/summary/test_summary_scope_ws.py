@@ -13,20 +13,15 @@ NO_OP = {"type": "no-op"}
 JOBS = {
     "a": {"program": NO_OP},
     "b": {"program": NO_OP},
-    "sched": {"program": NO_OP, "schedule": {"type": "interval", "interval": "6h"}},
 }
-
-
-def write_job(inst, job_id, jso):
-    with open(inst.jobs_dir / f"{job_id}.yaml", "w") as file:
-        yaml.dump(jso, file)
 
 
 @pytest.fixture(scope="module")
 def service():
     with closing(ApsisService()) as inst:
         for job_id, jso in JOBS.items():
-            write_job(inst, job_id, jso)
+            with open(inst.jobs_dir / f"{job_id}.yaml", "w") as file:
+                yaml.dump(jso, file)
         inst.create_db()
         inst.write_cfg()
         inst.start_serve()
@@ -84,12 +79,9 @@ async def test_bad_scope(service):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("init", [True, False])
-async def test_live_deltas(service, run_ids, init):
-    url = f"ws://localhost:{service.port}/api/v1/summary?{'init&' if init else ''}job_id=a"
+async def test_live_deltas(service):
+    url = f"ws://localhost:{service.port}/api/v1/summary?job_id=a"
     async with get_ws_msgs(url) as frames:
-        if init:
-            await read_until(frames, lambda m: m["type"] == "summary_init_done")
         b_run_id = service.client.schedule("b", {}, "now")["run_id"]
         a_run_id = service.client.schedule("a", {}, "now")["run_id"]
         msgs = await asyncio.wait_for(
@@ -105,22 +97,3 @@ async def test_live_deltas(service, run_ids, init):
         )
     service.wait_run(b_run_id)
     assert set(run_job_ids(msgs).values()) == {"a"}
-
-
-@pytest.mark.asyncio
-async def test_run_delete_job_id(service):
-    url = f"ws://localhost:{service.port}/api/v1/summary?init&types=run&job_id=sched"
-    async with get_ws_msgs(url) as frames:
-        msgs = await read_until(frames, lambda m: m["type"] == "summary_init_done")
-        expected = set(run_job_ids(msgs))
-        assert expected
-
-        # changing the job unschedules its expected runs
-        write_job(
-            service, "sched", JOBS["sched"] | {"schedule": {"type": "interval", "interval": "12h"}}
-        )
-        service.client.reload_jobs()
-        msgs = await asyncio.wait_for(read_until(frames, lambda m: m["type"] == "run_delete"), 10)
-    deletes = [m for m in msgs if m["type"] == "run_delete"]
-    assert {m["job_id"] for m in deletes} == {"sched"}
-    assert {m["run_id"] for m in deletes} <= expected

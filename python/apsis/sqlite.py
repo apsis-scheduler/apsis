@@ -8,7 +8,6 @@ import logging
 import ora
 from pathlib import Path
 import sqlalchemy as sa
-import sqlite3
 from typing import Iterable
 import ujson
 from typing import Iterator
@@ -343,20 +342,12 @@ class RunDB:
 
     def __check_schedule_index(self) -> bool:
         """
-        Returns true if idx_runs_schedule exists and serves schedule time queries.
+        Returns true if idx_runs_schedule exists.
         """
-        try:
-            plan = self.__connection.connection.execute(
-                "EXPLAIN QUERY PLAN SELECT rowid FROM runs INDEXED BY idx_runs_schedule"
-                f" WHERE {SCHEDULE_TIME_SQL} < ''"
-            ).fetchall()
-        except sqlite3.OperationalError as exc:
-            # a partial index has no query solution
-            if "no such index" not in str(exc) and "no query solution" not in str(exc):
-                raise
-            return False
-        # an index on some other expression can only scan
-        return plan[0][3].startswith("SEARCH")
+        row = self.__connection.connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_runs_schedule'"
+        ).fetchone()
+        return row is not None
 
     @staticmethod
     def __build_where(

@@ -16,22 +16,11 @@ def migrate_db():
     return module
 
 
-@pytest.mark.parametrize(
-    "replace_sql",
-    [
-        None,
-        "CREATE INDEX idx_runs_schedule ON runs (json_extract(times, '$.running'))",
-        "CREATE INDEX idx_runs_schedule ON runs (json_extract(times, '$.schedule'))"
-        " WHERE state = 'success'",
-    ],
-)
-def test_migrate_2_7_0(tmp_path, migrate_db, replace_sql):
+def test_migrate_2_7_0(tmp_path, migrate_db):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
     conn = SqliteDB.open(path).conn
     conn.execute("DROP INDEX idx_runs_schedule")
-    if replace_sql is not None:
-        conn.execute(replace_sql)
     conn.commit()
 
     db = SqliteDB.open(path)

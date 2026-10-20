@@ -4,7 +4,6 @@ Windows of runs around a schedule time, as shown in the web UI runs list.
 
 import asyncio
 import bisect
-import sqlite3
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass
@@ -112,12 +111,10 @@ class RunWindow:
     # anchors that move the window past each edge, or none if no group is past it
     earlier: str | None
     later: str | None
-    # true unless the walk budget cut off shown runs
-    complete: bool
 
 
 class WindowUnavailable(RuntimeError):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("runs schedule index missing")
 
 
@@ -164,8 +161,15 @@ class _Side:
         self.last = None
         self.entries = self.__walk(pages, keep, desc, extra, live)
 
-    async def __walk(self, pages, keep, desc, extra, live) -> AsyncIterator[Entry]:
-        def nearer(a, b):
+    async def __walk(
+        self,
+        pages: Iterator[list[Entry]],
+        keep: Callable[[Entry], bool],
+        desc: bool,
+        extra: list[Entry],
+        live: Container[str],
+    ) -> AsyncIterator[Entry]:
+        def nearer(a: Entry, b: Entry) -> bool:
             return (
                 (a.sched, a.rowid) > (b.sched, b.rowid)
                 if desc
@@ -198,16 +202,9 @@ class _Side:
 def _schedule_pages(run_db: RunDB, anchor: str, desc: bool, labels: bool) -> Iterator[list[Entry]]:
     time, rowid = anchor, None
     while True:
-        try:
-            rows = run_db.schedule_page(
-                desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels
-            )
-        except sqlite3.OperationalError as exc:
-            if "no such index" not in str(exc):
-                raise
-            # the index was dropped after open
-            run_db.has_schedule_index = False
-            raise WindowUnavailable() from exc
+        rows = run_db.schedule_page(
+            desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels
+        )
         if not rows:
             break
         yield [Entry._make(r) for r in rows]
@@ -340,9 +337,6 @@ async def query_window(
       The window needs the schedule index and the db doesn't have it.
     """
     anchor = ora.now() if spec.anchor is None else spec.anchor
-    if spec.job_ids is not None and not spec.job_ids:
-        return RunWindow(anchor, [], {}, None, None, True)
-
     t = str(anchor)
     job_filter = spec.job_filter
     labels = bool(job_filter.labels)
@@ -392,7 +386,7 @@ async def query_window(
                 run_id = e.run_id
             groups[key] = run_id, count + 1
 
-        async def stats(entry, key):
+        async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             return groups[key]
 
     else:
@@ -414,7 +408,7 @@ async def query_window(
         for e in expected:
             expected_groups[key_of(e)].append(e)
 
-        async def stats(entry, key):
+        async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             sgrp = key[0]
             states = GROUP_STATES[sgrp] if spec.states is None else GROUP_STATES[sgrp] & spec.states
             earliest = sgrp == "S"
@@ -458,7 +452,4 @@ async def query_window(
         counts={f[0].run_id: f[1] for f in found_b[:nb] + found_a[:na]},
         earlier=_edge(before, found_b, nb),
         later=await _later_edge(after, found_a, na, key_of, principal),
-        complete=all(
-            s.done or len(f) >= spec.limit for s, f in ((before, found_b), (after, found_a))
-        ),
     )

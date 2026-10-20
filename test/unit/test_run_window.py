@@ -1,6 +1,5 @@
 import asyncio
 import random
-import sqlite3
 
 import ora
 import pytest
@@ -174,7 +173,6 @@ async def test_window_matches_client(tmp_path, monkeypatch, job_path_rows):
             ),
         )
         window = await query_window(run_db, expected, spec, min_timestamp=MIN_TIMESTAMP)
-        assert window.complete
         assert (
             window.run_ids,
             window.counts,
@@ -199,7 +197,7 @@ def test_select_window(before, after, limit, shown):
 @pytest.mark.asyncio
 async def test_window_budget(tmp_path, monkeypatch):
     """
-    The walk budget gives an incomplete window whose edge picks up where the walk stopped.
+    The walk budget gives a window whose edge picks up where the walk stopped.
     """
     runs = [make_run(i, "a", {"i": str(i)}, State.success, NOW + i) for i in range(1, 21)]
     run_db = make_db(tmp_path, runs)
@@ -209,7 +207,6 @@ async def test_window_budget(tmp_path, monkeypatch):
     window = await query_window(run_db, {}, spec, min_timestamp=None)
     assert window.run_ids == []
     assert window.earlier == str(NOW + 17)
-    assert not window.complete
 
 
 @pytest.mark.parametrize("grouping", [True, False])
@@ -260,29 +257,11 @@ async def test_edges_step_past_ties(tmp_path, grouping):
 
 
 @pytest.mark.asyncio
-async def test_no_jobs_or_index(tmp_path):
-    # no jobs needs no db
-    window = await query_window(None, {}, WindowSpec(job_ids=frozenset()), min_timestamp=None)
-    assert window.run_ids == []
-
+async def test_no_index(tmp_path):
     run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
-    run_db._RunDB__connection.connection.execute("DROP INDEX idx_runs_schedule")
-    # dropping the index after open makes the window unavailable from then on
+    run_db.has_schedule_index = False
     with pytest.raises(WindowUnavailable):
         await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
-    assert not run_db.has_schedule_index
-    with pytest.raises(WindowUnavailable):
-        await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
-
-    # other db errors pass through
-    class LockedDB:
-        has_schedule_index = True
-
-        def schedule_page(self, **kw_args):
-            raise sqlite3.OperationalError("database is locked")
-
-    with pytest.raises(sqlite3.OperationalError):
-        await query_window(LockedDB(), {}, WindowSpec(), min_timestamp=None)
 
     # a small job set doesn't need the index
     window = await query_window(

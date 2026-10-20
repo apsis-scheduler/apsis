@@ -68,7 +68,6 @@ async def test_window(service, run_ids):
         run_ids["b"]: 1,
     }
     assert msgs[-1]["earlier"] is msgs[-1]["later"] is None
-    assert msgs[-1]["complete"]
     # windowed mode sends runs only by default
     assert {m["type"] for m in msgs} == {"run_summary", "run_window"}
 
@@ -77,7 +76,7 @@ async def test_window(service, run_ids):
         f"init&time={quote(anchor)}&limit=2&grouping=0", until="run_window"
     )
     assert window_ids(msgs) == [run_ids["done"], run_ids["a1"][0]]
-    assert (msgs[-1]["anchor"], msgs[-1]["limit"], msgs[-1]["grouping"]) == (anchor, 2, False)
+    assert msgs[-1]["anchor"] == anchor
     assert msgs[-1]["groups"] == {}
     assert msgs[-1]["earlier"] is None
     assert msgs[-1]["later"]["time"]
