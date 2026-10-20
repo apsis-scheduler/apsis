@@ -252,8 +252,8 @@ any changes to programs, conditions, and actions.
 When Apsis reloads jobs, it also updates the other scheduled and waiting runs of
 each changed job, like runs scheduled by hand and reruns, to the job's current
 program, conditions, and actions, and a waiting run checks its updated
-conditions again from the first one.  If a run's args no longer fit the changed
-job, the run keeps what it had and its run log says why.  A restart doesn't do
+conditions again from the first one.  If the changed job no longer fits a run,
+the run keeps what it had and its run log says why.  A restart doesn't do
 this, so a run restored after a restart keeps what it had until a reload changes
 its job.
 
@@ -263,8 +263,9 @@ As a result, these rules generally describe a run's relationship to its job:
    scheduled in the past are of course not affected by subsequent changes to the
    job's schedules.
 
-2. A run's program, conditions, and actions reflect its job as of the last jobs
-   reload before the run started.
+2. A run that hasn't started yet reflects its job's current program,
+   conditions, and actions, unless the job changed while Apsis was down or the
+   change didn't fit the run.
 
 3. If you rerun a run, the rerun always reflects its job's current program,
    conditions, and actions.

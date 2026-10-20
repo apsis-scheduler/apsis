@@ -90,6 +90,12 @@ class ScheduledRuns:
     def __len__(self):
         return len(self.__heap)
 
+    def get_runs(self) -> list[Run]:
+        """
+        Returns the runs that are scheduled and haven't started yet.
+        """
+        return list(self.__scheduled)
+
     def get_stats(self):
         return {
             "num_heap": len(self.__heap),

@@ -1,6 +1,7 @@
 import asyncio
 from functools import partial
 import gc
+import itertools
 import logging
 import math
 from mmap import PAGESIZE
@@ -561,17 +562,48 @@ class Apsis:
         """
         Rebinds a scheduled or waiting run to the current config of its job.
 
-        Replaces the run's program, conditions, actions, and job labels.  A
-        waiting run checks its new conditions from the first one.
+        Replaces the run's program, conditions, actions, and job labels, and
+        does nothing if they haven't changed.  A waiting run checks its new
+        conditions from the first one.
 
         :raise RunError:
           The run isn't scheduled or waiting, a concurrent operation moved it,
-          or its job's current config doesn't bind for it.  The run is left
-          unchanged.
+          or its job's current config doesn't bind for it.  The run keeps its
+          old config.
         """
         if run.state not in {State.scheduled, State.waiting}:
             raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
+        if _bound_jso(self.__rebind(run)) == _bound_jso(run):
+            return
 
+        if run.state == State.waiting:
+            await self.__cancel_wait(run, "refresh")
+        elif not self.scheduled.unschedule(run):
+            raise RunError(f"can't refresh {run.run_id}, it isn't on the schedule")
+
+        try:
+            # bind again against the jobs loaded now
+            fresh = self.__rebind(run)
+            run.program = fresh.program
+            run.conds = fresh.conds
+            run.actions = fresh.actions
+            run.meta["job"] = fresh.meta["job"]
+            self.run_store.update(run, now())
+            self.summary_publisher.publish(messages.make_run_transition(run))
+            self.run_log.info(run, "refreshed from job config")
+        finally:
+            if run.state == State.waiting:
+                self._wait(run)
+            else:
+                await self.scheduled.schedule(run.times["schedule"], run)
+
+    def __rebind(self, run: Run) -> Run:
+        """
+        Returns a new run like `run`, bound to the current config of its job.
+
+        :raise RunError:
+          The job's current config doesn't bind for `run`.
+        """
         fresh = Run(run.inst)
         fresh.run_id = run.run_id
         try:
@@ -579,24 +611,8 @@ class Apsis:
             bind(fresh, job, self.jobs)
         except Exception as exc:
             raise RunError(f"can't refresh {run.run_id}: {exc}") from exc
-
-        if run.state == State.waiting:
-            await self.__cancel_wait(run, "refresh")
-        elif not self.scheduled.unschedule(run):
-            raise RunError(f"can't refresh {run.run_id} before it's restored")
-
-        run.program = fresh.program
-        run.conds = fresh.conds
-        run.actions = fresh.actions
-        run.meta["job"] = {"labels": job.meta.get("labels", [])}
-        self.run_store.update(run, now())
-        self.summary_publisher.publish(messages.make_run_transition(run))
-        self.run_log.info(run, "refreshed from job config")
-
-        if run.state == State.waiting:
-            self._wait(run)
-        else:
-            await self.scheduled.schedule(run.times["schedule"], run)
+        fresh.meta["job"] = {"labels": job.meta.get("labels", [])}
+        return fresh
 
     async def __cancel_wait(self, run: Run, operation: str) -> None:
         """
@@ -915,22 +931,39 @@ async def reschedule_runs(apsis, job_id):
         await apsis.schedule(time, inst, expected=True, stop_time=stop_time)
 
 
-async def _refresh_runs(apsis, job_id: str) -> None:
+def _bound_jso(run: Run) -> tuple[dict, list[dict], list[dict], dict | None]:
     """
-    Refreshes scheduled and waiting runs of `job_id` that weren't rebuilt from
-    its schedules, so they pick up its current config.
+    Returns the program, conditions, actions, and job labels of `run` as JSO.
+    """
+    return (
+        run.program.to_jso(),
+        [c.to_jso() for c in run.conds],
+        [a.to_jso() for a in run.actions],
+        run.meta.get("job"),
+    )
+
+
+async def _refresh_runs(apsis: Apsis, job_ids: frozenset[str]) -> None:
+    """
+    Refreshes waiting and scheduled runs of `job_ids` that weren't rebuilt from
+    their schedules, so they pick up their job's current config.
 
     A run that the current config doesn't fit keeps its old config, and its run
     log says why.
     """
-    _, runs = apsis.run_store.query(
-        job_id=job_id, state={State.scheduled, State.waiting}, limit_lookback=False
-    )
-    for run in [r for r in runs if not r.expected]:
-        try:
-            await apsis.refresh(run)
-        except RunError as exc:
-            apsis.run_log.info(run, str(exc))
+    run_ids = [
+        r.run_id
+        for r in itertools.chain(apsis.run_store.get_active_runs(), apsis.scheduled.get_runs())
+        if r.inst.job_id in job_ids and not r.expected
+    ]
+    for run_id in run_ids:
+        # get the run again
+        _, run = apsis.run_store.get(run_id)
+        if run.state in {State.scheduled, State.waiting}:
+            try:
+                await apsis.refresh(run)
+            except RunError as exc:
+                apsis.run_log.info(run, str(exc))
 
 
 async def reload_jobs(apsis, *, dry_run=False):
@@ -973,8 +1006,7 @@ async def reload_jobs(apsis, *, dry_run=False):
             await reschedule_runs(apsis, job_id)
 
         # refresh runs only after every changed job is rescheduled
-        for job_id in sorted(chg_ids):
-            await _refresh_runs(apsis, job_id)
+        await _refresh_runs(apsis, chg_ids)
 
         # Publish job changes.
         publish = apsis.summary_publisher.publish
