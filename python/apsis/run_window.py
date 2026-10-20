@@ -114,7 +114,7 @@ class RunWindow:
 
 
 class WindowUnavailable(RuntimeError):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("runs schedule index missing")
 
 
@@ -161,8 +161,15 @@ class _Side:
         self.last = None
         self.entries = self.__walk(pages, keep, desc, extra, live)
 
-    async def __walk(self, pages, keep, desc, extra, live) -> AsyncIterator[Entry]:
-        def nearer(a, b):
+    async def __walk(
+        self,
+        pages: Iterator[list[Entry]],
+        keep: Callable[[Entry], bool],
+        desc: bool,
+        extra: list[Entry],
+        live: Container[str],
+    ) -> AsyncIterator[Entry]:
+        def nearer(a: Entry, b: Entry) -> bool:
             return (
                 (a.sched, a.rowid) > (b.sched, b.rowid)
                 if desc
@@ -379,7 +386,7 @@ async def query_window(
                 run_id = e.run_id
             groups[key] = run_id, count + 1
 
-        async def stats(entry, key):
+        async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             return groups[key]
 
     else:
@@ -401,7 +408,7 @@ async def query_window(
         for e in expected:
             expected_groups[key_of(e)].append(e)
 
-        async def stats(entry, key):
+        async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             sgrp = key[0]
             states = GROUP_STATES[sgrp] if spec.states is None else GROUP_STATES[sgrp] & spec.states
             earliest = sgrp == "S"
