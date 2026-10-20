@@ -932,12 +932,6 @@ table.runlist {
     white-space: nowrap;
     color: $global-light-color;
     font-size: 90%;
-
-    & > span:not(.col-resizer) {
-      // Absolutely no idea why this is necessary.
-      position: relative;
-      top: -4px;
-    }
   }
 
   .col-elapsed {
