@@ -133,15 +133,15 @@ describe('run windows', () => {
     grouping: true, show: 50, time: 'now', asc: false,
   }
 
-  test('query to window params', () => {
-    expect(summary.queryToWindowParams(QUERY))
+  test('query to window scope', () => {
+    expect(summary.windowScope(QUERY).window)
       .toEqual([['time', 'now'], ['limit', 50], ['grouping', 1]])
     const query = {
       ...QUERY,
       path: 'a/b', keywords: ['x', 'y'], labels: ['l'], states: ['failure', 'error'],
       args: {d: '1', e: null}, grouping: false, show: 20, time: '2026-10-14T12:00:00+00:00',
     }
-    expect(summary.queryToWindowParams(query)).toEqual([
+    expect(summary.windowScope(query).window).toEqual([
       ['time', '2026-10-14T12:00:00+00:00'], ['limit', 20], ['grouping', 0],
       ['path', 'a/b'], ['keyword', 'x'], ['keyword', 'y'], ['label', 'l'],
       ['state', 'failure'], ['state', 'error'], ['arg', 'd=1'], ['arg', 'e'],

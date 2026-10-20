@@ -26,11 +26,9 @@ export function runScope(run) {
 }
 
 /**
- * Returns run window params for a RunsList query.
- *
- * @returns an array of `[param, value]` pairs
+ * Returns the summary scope for the run window of a RunsList query.
  */
-export function queryToWindowParams(query) {
+export function windowScope(query) {
   const params = [
     ['time', query.time],
     ['limit', query.show],
@@ -46,11 +44,7 @@ export function queryToWindowParams(query) {
     params.push(['state', state])
   for (const [param, value] of Object.entries(query.args || {}))
     params.push(['arg', value === null ? param : param + '=' + value])
-  return params
-}
-
-export function windowScope(query) {
-  return {window: queryToWindowParams(query)}
+  return {window: params}
 }
 
 let socket = null
