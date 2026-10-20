@@ -980,12 +980,12 @@ table.runlist {
 // the table scrolls sideways on its own instead of the whole page
 div.runlist {
   overflow-x: auto;
-  // keeps the operations menu next to its row when scrolled
-  position: relative;
 
   &.pane {
     overflow: auto;
     min-height: 20rem;
+    // keeps the operations menu next to its row when scrolled
+    position: relative;
 
     thead {
       top: 0;
