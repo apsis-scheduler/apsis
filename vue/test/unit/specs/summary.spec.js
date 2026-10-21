@@ -13,6 +13,8 @@ jest.mock('@/websocket.js', () => {
 
 const RUN = {run_id: 'r1', job_id: 'a', args: {}, state: 'success', times: {schedule: '2026-10-14T00:00:00Z'}}
 
+const DONE = {type: 'summary_init_done', truncated: {}}
+
 function frame(...msgs) {
   return {data: JSON.stringify(msgs)}
 }
@@ -54,25 +56,45 @@ describe('setSummaryScope', () => {
     expect(sockets[1].open).toHaveBeenCalled()
   })
 
-  test('new scope closes, clears, and opens', () => {
+  test('new scope closes, opens, and replaces the store once its init is done', () => {
     summary.setSummaryScope(summary.jobScope('a'))
     sockets[0].onMessage(frame({type: 'run_summary', run_summary: {...RUN}}))
-    expect(store.state.runs.size).toBe(1)
+    expect(store.state.runs.size).toBe(0)
+    sockets[0].onMessage(frame(DONE))
+    expect(Array.from(store.state.runs.keys())).toEqual(['r1'])
 
     summary.setSummaryScope(summary.jobScope('b'))
     expect(sockets[0].close).toHaveBeenCalled()
-    expect(store.state.runs.size).toBe(0)
     expect(sockets.length).toBe(2)
     expect(sockets[1].url.search).toBe('?init&types=job,run&job_id=b')
     expect(sockets[1].open).toHaveBeenCalled()
+    sockets[1].onConnect()
+    sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r2', job_id: 'b'}}))
+    expect(Array.from(store.state.runs.keys())).toEqual(['r1'])
+    sockets[1].onMessage(frame(DONE))
+    expect(Array.from(store.state.runs.keys())).toEqual(['r2'])
+    // after init, frames apply as they come
+    sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r3', job_id: 'b'}}))
+    expect(store.state.runs.size).toBe(2)
+  })
+
+  test('no scope clears on connect and applies frames as they come', () => {
+    summary.setSummaryScope(summary.jobScope('a'))
+    sockets[0].onMessage(frame({type: 'run_summary', run_summary: {...RUN}}, DONE))
+    summary.setSummaryScope()
+    expect(store.state.runs.size).toBe(1)
+    sockets[1].onConnect()
+    expect(store.state.runs.size).toBe(0)
+    sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r2'}}))
+    expect(store.state.runs.size).toBe(1)
   })
 
   test('replaced socket is ignored', () => {
     summary.setSummaryScope(summary.jobScope('a'))
     summary.setSummaryScope(summary.jobScope('b'))
-    sockets[0].onMessage(frame({type: 'run_summary', run_summary: {...RUN}}))
+    sockets[0].onMessage(frame({type: 'run_summary', run_summary: {...RUN}}, DONE))
     expect(store.state.runs.size).toBe(0)
-    sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, job_id: 'b'}}))
+    sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, job_id: 'b'}}, DONE))
     expect(store.state.runs.size).toBe(1)
   })
 

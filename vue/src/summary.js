@@ -30,14 +30,17 @@ let socketUrl = null
 // true once the server closed the socket
 let socketClosed = false
 let generation = 0
+// init frames held until the init is done, or null to apply frames as they come
+let held = null
 
 /**
  * Subscribes the store to summary messages in `scope`, or to all messages if
  * no scope is given.
  *
  * Does nothing if the scope is unchanged or the open socket is unscoped,
- * since that already has everything.  Otherwise closes the previous socket,
- * clears runs, jobs, and agent conns, and opens a new socket.
+ * since that already has everything.  Otherwise closes the previous socket
+ * and opens a new one, and replaces runs, jobs, and agent conns once its init
+ * is done, or right away for no scope.
  */
 export function setSummaryScope(scope) {
   const url = api.getSummaryUrl(scope)
@@ -48,6 +51,7 @@ export function setSummaryScope(scope) {
     return
   socketUrl = url.toString()
   socketClosed = false
+  held = url.toString() === api.getSummaryUrl().toString() ? null : []
 
   // callbacks from a replaced socket are ignored
   const gen = ++generation
@@ -55,18 +59,30 @@ export function setSummaryScope(scope) {
 
   if (socket !== null)
     socket.close()
-  clearRunState(store.state)
 
   socket = new Socket(
     url,
     // onMessage
     msg => {
-      if (current())
-        processMsgs(JSON.parse(msg.data), store.state)
+      if (!current())
+        return
+      const msgs = JSON.parse(msg.data)
+      if (held === null)
+        processMsgs(msgs, store.state)
+      else {
+        held.push(msgs)
+        if (msgs.some(m => m.type === 'summary_init_done')) {
+          clearRunState(store.state)
+          processMsgs([].concat(...held), store.state)
+          held = null
+        }
+      }
     },
     // onConnect
     () => {
       if (current()) {
+        if (held === null)
+          clearRunState(store.state)
         store.state.errors.pop('connection error')
         store.state.errors.pop('websocket closed: refresh the page')
       }
