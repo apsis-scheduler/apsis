@@ -129,8 +129,15 @@ describe('setSummaryScope', () => {
 
 describe('run windows', () => {
   const QUERY = {
-    path: null, keywords: null, labels: null, states: null, args: null,
-    grouping: true, show: 50, time: 'now', asc: false,
+    path: null,
+    keywords: null,
+    labels: null,
+    states: null,
+    args: null,
+    grouping: true,
+    show: 50,
+    time: 'now',
+    asc: false,
   }
 
   test('query to window scope', () => {
@@ -138,8 +145,14 @@ describe('run windows', () => {
       .toEqual([['time', 'now'], ['limit', 50], ['grouping', 1]])
     const query = {
       ...QUERY,
-      path: 'a/b', keywords: ['x', 'y'], labels: ['l'], states: ['failure', 'error'],
-      args: {d: '1', e: null}, grouping: false, show: 20, time: '2026-10-14T12:00:00+00:00',
+      path: 'a/b',
+      keywords: ['x', 'y'],
+      labels: ['l'],
+      states: ['failure', 'error'],
+      args: {d: '1', e: null},
+      grouping: false,
+      show: 20,
+      time: '2026-10-14T12:00:00+00:00',
     }
     expect(summary.windowScope(query).window).toEqual([
       ['time', '2026-10-14T12:00:00+00:00'], ['limit', 20], ['grouping', 0],
