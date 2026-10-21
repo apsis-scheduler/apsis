@@ -128,7 +128,7 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
     apsis.start_loops()
 
     # Shut down on signals; this is the correct way to request shutdown.
-    def on_shutdown(signum, stack_frame):
+    def on_shutdown(signum):
         if signum == signal.SIGINT:
             # If this was actually from the keyboard, there'll be a ^C to the
             # console without a newline; add it.
@@ -153,8 +153,8 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
         asyncio.ensure_future(stop())
 
     log.info("setting signal handlers")
-    signal.signal(signal.SIGINT, on_shutdown)  # instead of KeyboardInterrupt
-    signal.signal(signal.SIGTERM, on_shutdown)
+    loop.add_signal_handler(signal.SIGINT, on_shutdown, signal.SIGINT)  # instead of KeyboardInterrupt
+    loop.add_signal_handler(signal.SIGTERM, on_shutdown, signal.SIGTERM)
 
     log.info("service ready to run")
     try:
