@@ -461,6 +461,7 @@ class BaseRunningProcstarProgram(base.RunningProgram):
             env=procstar.spec.Proc.Env(
                 vars={
                     "APSIS_RUN_ID": self.run_id,
+                    "APSIS_JOB_ID": self.job_id,
                     **{f"{APSIS_ARG_ENV_PREFIX}{k}": v for k, v in self.args.items()},
                 },
                 # Inherit the entire environment from procstar, since it probably
