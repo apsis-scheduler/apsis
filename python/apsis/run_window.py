@@ -33,7 +33,7 @@ GROUP_STATES = {g: frozenset(s for s, x in STATE_GROUPS.items() if x == g) for g
 
 MAX_LIMIT = 1000
 # db rows per page
-PAGE_ROWS = 2000
+PAGE_ROWS = 500
 # most db rows walked on each side of the anchor
 SIDE_BUDGET = 200_000
 # job filtered windows with at most this many runs load them all through the job index
@@ -405,7 +405,9 @@ async def query_window(
         )
 
         expected_groups = defaultdict(list)
-        for e in expected:
+        for n, e in enumerate(expected, 1):
+            if n % PAGE_ROWS == 0:
+                await asyncio.sleep(0)
             expected_groups[key_of(e)].append(e)
 
         async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
