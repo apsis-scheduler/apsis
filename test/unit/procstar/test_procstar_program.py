@@ -117,11 +117,20 @@ def test_systemd_properties():
         )
 
 
-def _spec_env(bound, args=None, run_id="r123", cfg={}):
-    """Runs `bound`, applies run args (as `_start` does), returns the proc spec env."""
+def _spec_env(bound, args=None, run_id="r123", job_id="job1", cfg={}):
+    """Runs `bound`, applies job ID and run args (as `_start` does), returns the proc spec env."""
     running = bound.run(run_id, cfg)
     running.args = args or {}
+    running.job_id = job_id
     return running._spec.to_jso()["env"]["vars"]
+
+
+def test_job_id_env_var():
+    """The run's job ID is exposed to the process as APSIS_JOB_ID."""
+    bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
+
+    env = _spec_env(bound, job_id="data/medallion/athena telemetry pull")
+    assert env["APSIS_JOB_ID"] == "data/medallion/athena telemetry pull"
 
 
 def test_run_args_env_vars():
@@ -220,9 +229,9 @@ def test_run_args_env_inherits():
 
 
 def test_no_run_args_env():
-    """Without bound args, only APSIS_RUN_ID is set (no APSIS_ARG_* vars)."""
+    """Without bound args, only APSIS_RUN_ID and APSIS_JOB_ID are set (no APSIS_ARG_* vars)."""
     bound = ProcstarProgram(argv=["/usr/bin/echo", "hi"]).bind({})
-    assert _spec_env(bound) == {"APSIS_RUN_ID": "r123"}
+    assert _spec_env(bound) == {"APSIS_RUN_ID": "r123", "APSIS_JOB_ID": "job1"}
 
 
 def test_run_args_not_in_jso():
