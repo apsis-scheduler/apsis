@@ -18,8 +18,7 @@ function windowScope(show) {
 }
 
 function makeRun(run_id) {
-  return {run_id, job_id: 'job/' + run_id, args: {}, state: 'new', times: {},
-          dependencies: [['dep/' + run_id, {}]]}
+  return {run_id, job_id: 'job/' + run_id, args: {}, state: 'new', times: {}, dependencies: [['dep/' + run_id, {}]]}
 }
 
 // resolves the oldest pending run fetch with `run`

@@ -18,11 +18,6 @@ if TYPE_CHECKING:
 
     from apsis.apsis import Apsis
 
-if TYPE_CHECKING:
-    from websockets.legacy.protocol import WebSocketCommonProtocol
-
-    from apsis.apsis import Apsis
-
 # message family for each summary message type
 MSG_FAMILIES = {
     "job": "job",

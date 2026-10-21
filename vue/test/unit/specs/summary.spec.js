@@ -82,7 +82,7 @@ describe('setSummaryScope', () => {
     sockets[1].onConnect()
     sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r2', job_id: 'b'}}))
     expect(Array.from(store.state.runs.keys())).toEqual(['r1'])
-    sockets[1].onMessage(frame({type: 'run_window', groups: {}, earlier: null, later: null}))
+    sockets[1].onMessage(frame(DONE))
     expect(Array.from(store.state.runs.keys())).toEqual(['r2'])
     // after init, frames apply as they come
     sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r3', job_id: 'b'}}))
