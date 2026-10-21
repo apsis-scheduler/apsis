@@ -82,7 +82,7 @@ describe('setSummaryScope', () => {
     sockets[1].onConnect()
     sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r2', job_id: 'b'}}))
     expect(Array.from(store.state.runs.keys())).toEqual(['r1'])
-    sockets[1].onMessage(frame({type: 'run_window', groups: {}, earlier: null, later: null}))
+    sockets[1].onMessage(frame(DONE))
     expect(Array.from(store.state.runs.keys())).toEqual(['r2'])
     // after init, frames apply as they come
     sockets[1].onMessage(frame({type: 'run_summary', run_summary: {...RUN, run_id: 'r3', job_id: 'b'}}))
@@ -129,8 +129,15 @@ describe('setSummaryScope', () => {
 
 describe('run windows', () => {
   const QUERY = {
-    path: null, keywords: null, labels: null, states: null, args: null,
-    grouping: true, show: 50, time: 'now', asc: false,
+    path: null,
+    keywords: null,
+    labels: null,
+    states: null,
+    args: null,
+    grouping: true,
+    show: 50,
+    time: 'now',
+    asc: false,
   }
 
   test('query to window scope', () => {
@@ -138,8 +145,14 @@ describe('run windows', () => {
       .toEqual([['time', 'now'], ['limit', 50], ['grouping', 1]])
     const query = {
       ...QUERY,
-      path: 'a/b', keywords: ['x', 'y'], labels: ['l'], states: ['failure', 'error'],
-      args: {d: '1', e: null}, grouping: false, show: 20, time: '2026-10-14T12:00:00+00:00',
+      path: 'a/b',
+      keywords: ['x', 'y'],
+      labels: ['l'],
+      states: ['failure', 'error'],
+      args: {d: '1', e: null},
+      grouping: false,
+      show: 20,
+      time: '2026-10-14T12:00:00+00:00',
     }
     expect(summary.windowScope(query).window).toEqual([
       ['time', '2026-10-14T12:00:00+00:00'], ['limit', 20], ['grouping', 0],
