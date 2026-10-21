@@ -119,12 +119,28 @@ _JINJA_ENV = jinja2.Environment(
 )
 
 
+def _is_literal(ast: jinja2.nodes.Template) -> bool:
+    """
+    Returns true if parsed template `ast` contains only literal text.
+    """
+    return all(
+        isinstance(node, jinja2.nodes.Output)
+        and all(isinstance(n, jinja2.nodes.TemplateData) for n in node.nodes)
+        for node in ast.body
+    )
+
+
 @memoize
-def _get_template(template):
+def _get_template(template: str) -> jinja2.Template | str:
+    """
+    Returns the compiled Jinja2 template for `template`, or its rendered text
+    if it contains only literal text.
+    """
     try:
-        return _JINJA_ENV.from_string(template)
+        compiled = _JINJA_ENV.from_string(template)
     except jinja2.TemplateSyntaxError as exc:
         raise SyntaxError(str(exc))
+    return compiled.render() if _is_literal(_JINJA_ENV.parse(template)) else compiled
 
 
 def is_template(string):
@@ -145,7 +161,7 @@ def template_expand(template, args):
       The template references a name not in `args`.
     """
     template = _get_template(str(template))
-    return template.render(args)
+    return template if isinstance(template, str) else template.render(args)
 
 
 def arg_to_bool(arg):

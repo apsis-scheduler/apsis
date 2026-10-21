@@ -189,6 +189,7 @@ class RunningProgram:
 
     def __init__(self, run_id):
         self.run_id = run_id
+        self.job_id = None
         self.args = {}
 
     @property
