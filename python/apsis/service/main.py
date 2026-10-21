@@ -153,7 +153,8 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
         asyncio.ensure_future(stop())
 
     log.info("setting signal handlers")
-    loop.add_signal_handler(signal.SIGINT, on_shutdown, signal.SIGINT)  # instead of KeyboardInterrupt
+    # instead of KeyboardInterrupt
+    loop.add_signal_handler(signal.SIGINT, on_shutdown, signal.SIGINT)
     loop.add_signal_handler(signal.SIGTERM, on_shutdown, signal.SIGTERM)
 
     log.info("service ready to run")
