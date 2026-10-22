@@ -32,8 +32,6 @@ MAX_JOB_IDS = 500
 # runs read per db page and jobs per websocket send
 PAGE_ROWS = 500
 JOB_CHUNK = 100
-# newest runs sent per job
-JOB_RUN_CAP = 10000
 
 
 @dataclass(frozen=True)
@@ -116,8 +114,7 @@ async def send_scoped_init(
 ) -> None:
     """
     Sends the jobs, agent conns, and runs in `scope`, then a
-    `summary_init_done` message whose `truncated` maps each job with runs
-    beyond the newest `JOB_RUN_CAP` to the number sent.
+    `summary_init_done` message.
     """
     if "job" in scope.types:
         if scope.job_ids is None:
@@ -139,7 +136,6 @@ async def send_scoped_init(
             conns = ()
         await _send(ws, [ujson.dumps(messages.make_agent_conn(c)) for c in conns])
 
-    truncated = {}
     if "run" in scope.types:
         if scope.job_ids is None:
             for page in apsis.run_store.summaries():
@@ -147,14 +143,7 @@ async def send_scoped_init(
         else:
             await _send(ws, apsis.run_store.expected_summaries(scope.job_ids))
             for job_id in sorted(scope.job_ids):
-                count = 0
                 for page in apsis.run_store.job_summaries(job_id, page_size=PAGE_ROWS):
-                    if count + len(page) > JOB_RUN_CAP:
-                        page = page[: JOB_RUN_CAP - count]
-                        truncated[job_id] = JOB_RUN_CAP
                     await _send(ws, page)
-                    count += len(page)
-                    if job_id in truncated:
-                        break
 
-    await ws.send(ujson.dumps([{"type": "summary_init_done", "truncated": truncated}]))
+    await ws.send(ujson.dumps([{"type": "summary_init_done"}]))
