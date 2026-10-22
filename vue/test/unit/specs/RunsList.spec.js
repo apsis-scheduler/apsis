@@ -27,8 +27,8 @@ describe('RunsList run window', () => {
     processMsgs([{
       type: 'run_window',
       groups: {r1: 4, r2: 3},
-      earlier: {time: '2026-10-14T10:00:00+00:00'},
-      later: {time: '2026-10-14T12:00:00+00:00'},
+      earlier: {time: '2026-10-14T10:00:00+00:00', stopped: false},
+      later: {time: '2026-10-14T12:00:00+00:00', stopped: false},
     }], store.state)
     // a newer run of a after init
     processMsgs(summaries(run('r4', 'a', 'success', '11')), store.state)
@@ -40,6 +40,18 @@ describe('RunsList run window', () => {
     expect(g.counts).toEqual({r2: 3, r4: 5})
     expect([g.earlierMore, g.earlierTime]).toEqual([true, '2026-10-14T10:00:00+00:00'])
     expect([g.laterMore, g.laterTime]).toEqual([true, '2026-10-14T12:00:00+00:00'])
+    expect([g.earlierStopped, g.laterStopped]).toEqual([false, false])
+  })
+
+  test('windowed marks an edge where the server walk stopped', () => {
+    processMsgs([{
+      type: 'run_window',
+      groups: {r1: 4, r2: 3},
+      earlier: {time: '2026-10-14T10:00:00+00:00', stopped: true},
+      later: null,
+    }], store.state)
+    const g = groups(true)
+    expect([g.earlierMore, g.earlierStopped, g.laterMore]).toEqual([true, true, false])
   })
 
   test('windowed shows no more runs once the server window has no edges', () => {

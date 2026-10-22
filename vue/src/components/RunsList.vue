@@ -164,7 +164,7 @@ div
 
         tr(v-if="asc ? groups.earlierMore : groups.laterMore")
           td.note(:colspan="columns.length")
-            | more
+            | {{ (asc ? groups.earlierStopped : groups.laterStopped) ? 'stopped looking for' : 'more' }}
             | {{ asc ? 'earlier' : 'later' }} rows
             button(
               v-on:click="time = asc ? groups.earlierTime : groups.laterTime"
@@ -238,7 +238,7 @@ div
 
         tr(v-if="asc ? groups.laterMore : groups.earlierMore")
           td.note(:colspan="columns.length")
-            | more
+            | {{ (asc ? groups.laterStopped : groups.earlierStopped) ? 'stopped looking for' : 'more' }}
             | {{ asc ? 'later' : 'earlier' }} rows
             button(
               v-on:click="time = asc ? groups.laterTime : groups.earlierTime"
@@ -565,13 +565,18 @@ export default {
 
       let earlierMore = earlierCount > 0
       let laterMore = laterCount > 0
+      // true if the server walk stopped at an edge without finding more runs
+      let earlierStopped = false
+      let laterStopped = false
       if (this.runWindow) {
         const { earlier, later } = this.runWindow
         if (earlier) {
+          earlierStopped = !earlierMore && earlier.stopped
           earlierMore = true
           earlierTime = earlierTime || earlier.time
         }
         if (later) {
+          laterStopped = !laterMore && later.stopped
           laterMore = true
           laterTime = laterTime || later.time
         }
@@ -602,8 +607,10 @@ export default {
         time,
         earlierTime,
         earlierMore,
+        earlierStopped,
         laterTime,
         laterMore,
+        laterStopped,
       }
     },
   },
