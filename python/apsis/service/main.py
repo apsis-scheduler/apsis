@@ -11,6 +11,7 @@ from apsis import __version__
 from apsis.apsis import Apsis
 from apsis.exc import JobsDirErrors
 from apsis.jobs import load_jobs_dir
+from apsis.lib.api import error
 from apsis.lib.asyn import cancel_task
 from apsis.sqlite import SqliteDB
 from . import api, control, procstar
@@ -58,6 +59,25 @@ app.config.RESPONSE_TIMEOUT = 180
 # more forgiving for when slow browsers can't keep up with websocket messages
 app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
+
+
+@app.middleware("request")
+async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
+    """
+    Sets `request.ctx.user` from the proxy's X-Remote-User header on a unix
+    socket, or to none over TCP where anyone can send the header.
+
+    :return:
+      A 401 response if the header is missing or empty on a unix socket.
+    """
+    if not request.app.authenticated:
+        request.ctx.user = None
+        return
+    user = request.headers.get("X-Remote-User", "").split("@", 1)[0].lower()
+    if not user:
+        return error("missing X-Remote-User", 401)
+    request.ctx.user = user
+
 
 app.blueprint(api.API, url_prefix="/api/v1")
 app.blueprint(control.API, url_prefix="/api/control")
@@ -128,6 +148,7 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
     # Flag to indicate whether to restart after shutting down.
     app.restart = False
     app.running = True  # FIXME: ??  Remove?
+    app.authenticated = unix is not None
 
     # Set up the HTTP server.
     log.info("starting HTTP service")

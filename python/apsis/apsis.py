@@ -37,6 +37,13 @@ log = logging.getLogger(__name__)
 # -------------------------------------------------------------------------------
 
 
+def by_user(msg: str, user: str | None) -> str:
+    """
+    Returns `msg` with " by `user`" appended, or unchanged if `user` is none.
+    """
+    return msg if user is None else f"{msg} by {user}"
+
+
 class Apsis:
     """
     The gestalt scheduling application.
@@ -459,7 +466,9 @@ class Apsis:
 
     # FIXME: Move the API elsewhere.
 
-    async def schedule(self, time, inst, *, expected=False, stop_time=None):
+    async def schedule(
+        self, time, inst, *, expected=False, stop_time=None, user: str | None = None
+    ):
         """
         Creates and schedules a new run.
 
@@ -470,6 +479,8 @@ class Apsis:
           is run now, instead of scheduled.
         :param stop_time:
           If not none, time at which to stop the program.
+        :param user:
+          If not none, user who scheduled the run, recorded in the run log.
         :return:
           The run, either scheduled or error.
         """
@@ -504,7 +515,7 @@ class Apsis:
 
         # Transition to scheduled.
         msg = f"scheduled: {'now' if time is None else time}"
-        self.run_log.record(run, msg)
+        self.run_log.record(run, by_user(msg, user))
         if stop_time is not None:
             self.run_log.record(run, f"stop time: {stop_time}")
 
@@ -519,7 +530,7 @@ class Apsis:
 
         return run
 
-    async def skip(self, run):
+    async def skip(self, run, *, user: str | None = None):
         """
         Skips a scheduled or waiting run.
 
@@ -535,29 +546,30 @@ class Apsis:
         else:
             raise RunError(f"can't skip {run.run_id} in state {run.state.name}")
 
-        self.run_log.info(run, "skipped")
+        self.run_log.info(run, by_user("skipped", user))
         self._transition(run, State.skipped)
 
-    async def start(self, run):
+    async def start(self, run, *, user: str | None = None):
         """
         Immediately starts a scheduled or waiting run.
         """
+        by = "override" if user is None else user
         if run.state == State.scheduled:
             self.scheduled.unschedule(run)
-            self.run_log.info(run, "scheduled run started by override")
+            self.run_log.info(run, f"scheduled run started by {by}")
             self._wait(run)
 
         elif run.state == State.waiting:
             # Cancel the waiting task.  It will remove itself when done.
             await self.__wait_tasks.cancel(run.run_id)
-            self.run_log.info(run, "waiting run started by override")
+            self.run_log.info(run, f"waiting run started by {by}")
             # Start the run.
             self._start(run)
 
         else:
             raise RunError(f"can't start {run.run_id} in state {run.state.name}")
 
-    async def mark(self, run, state):
+    async def mark(self, run, state, *, user: str | None = None):
         """
         Transitions a run to a different finished `state`.
 
@@ -573,8 +585,9 @@ class Apsis:
         elif state == run.state:
             raise RunError(f"run {run.run_id} already in state {state.name}")
         else:
-            self._transition(run, state, force=True, reason=f"marked as {state.name}")
-            self.run_log.info(run, f"marked as {state.name}")
+            msg = by_user(f"marked as {state.name}", user)
+            self._transition(run, state, force=True, reason=msg)
+            self.run_log.info(run, msg)
 
     def get_run_log(self, run_id):
         """
@@ -584,7 +597,7 @@ class Apsis:
         self.run_store.get(run_id)
         return self.__db.run_log_db.query(run_id=run_id)
 
-    async def rerun(self, run, *, time=None):
+    async def rerun(self, run, *, time=None, user: str | None = None):
         """
         Creates a rerun of `run`.
 
@@ -594,11 +607,13 @@ class Apsis:
         """
         # Create the new run.
         log.info(f"rerun: {run.run_id} at {time or 'now'}")
-        new_run = await self.schedule(time, run.inst, stop_time=run.times.get("stop", None))
-        self.run_log.info(new_run, f"scheduled as rerun of {run.run_id}")
+        new_run = await self.schedule(
+            time, run.inst, stop_time=run.times.get("stop", None), user=user
+        )
+        self.run_log.info(new_run, by_user(f"scheduled as rerun of {run.run_id}", user))
         return new_run
 
-    async def stop_run(self, run):
+    async def stop_run(self, run, *, user: str | None = None):
         """
         Transitions `run` to stopping, and requests its program to stop in a
         new task.
@@ -623,7 +638,7 @@ class Apsis:
             raise RuntimeError(f"no running program for {run.run_id}")
 
         # Transition to stopping.
-        self.run_log.record(run, "stopping")
+        self.run_log.record(run, by_user("stopping", user))
         self._transition(run, State.stopping, run_state=run.run_state | {"stopping": True})
 
         async def stop():
@@ -634,7 +649,7 @@ class Apsis:
 
         self.__stopping_tasks.add(run.run_id, stop())
 
-    async def send_signal(self, run, signal):
+    async def send_signal(self, run, signal, *, user: str | None = None):
         """
         :raise RuntimeError:
           `run` is not running.
@@ -646,7 +661,7 @@ class Apsis:
         if running_program is None:
             raise RuntimeError("no running program to send signal to")
 
-        self.run_log.info(run, f"sending {signal.name}")
+        self.run_log.info(run, by_user(f"sending {signal.name}", user))
         try:
             await running_program.signal(signal)
         except Exception:
@@ -859,10 +874,12 @@ async def reschedule_runs(apsis, job_id):
         await apsis.schedule(time, inst, expected=True, stop_time=stop_time)
 
 
-async def reload_jobs(apsis, *, dry_run=False):
+async def reload_jobs(apsis, *, dry_run=False, user: str | None = None):
     """
     :param dry_run:
       If true, determine changes but don't apply them.
+    :param user:
+      If not none, user who requested the reload, included in the log.
     :return:
       Job IDs that have been removed, job IDs that have been added, and job IDs
       that have changed.
@@ -872,7 +889,7 @@ async def reload_jobs(apsis, *, dry_run=False):
     job_db = apsis.jobs._Jobs__job_db
 
     # Reload the contents of the jobs dir.
-    log.info(f"reloading jobs from {jobs0.path}")
+    log.info(by_user(f"reloading jobs from {jobs0.path}", user))
     jobs1 = await load_jobs_dir(jobs0.path)
 
     # Diff them.
