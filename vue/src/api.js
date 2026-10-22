@@ -89,6 +89,10 @@ export function getSubmitRunBody(job_id, args, time) {
   }
 }
 
+export function getWhoamiUrl() {
+  return getUrl('whoami')
+}
+
 export function getUrlForOperation(operation, run_id) {
   switch (operation) {
     case 'skip': return getSkipUrl(run_id)

@@ -57,6 +57,7 @@ def test_user_unix():
             websockets.sync.client.unix_connect(str(inst.sock_path), "ws://apsis/api/v1/summary")
         assert exc.value.response.status_code == 401
         assert client.get("/api/control/debug", headers=USER).status_code == 403
+        assert client.get("/api/v1/whoami", headers=USER).json() == {"user": "alice"}
 
         assert skip_later_run(client) == [
             "scheduled: 2100-01-01T00:00:00+00:00 by alice",
@@ -89,3 +90,4 @@ def test_user_tcp():
         assert client.post(f"/api/v1/runs/{run_id}/start", headers=USER).status_code == 200
         log = client.get(f"/api/v1/runs/{run_id}/log", headers=USER).json()["run_log"]
         assert "scheduled run started by override" in [r["message"] for r in log]
+        assert client.get("/api/v1/whoami", headers=USER).json() == {"user": None}

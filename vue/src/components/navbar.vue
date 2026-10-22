@@ -18,12 +18,14 @@ nav
 
   .spacer(style="flex-basis: 100%")
 
+  .item(v-if="user") {{ user }}
   clock.item 
   TimeZoneSelect.tz.item
 
 </template>
 
 <script>
+import * as api from '../api'
 import Clock from './Clock.vue'
 import TimeZoneSelect from './TimeZoneSelect'
 
@@ -32,7 +34,21 @@ export default {
   components: {
     Clock,
     TimeZoneSelect,
-  }
+  },
+
+  data() {
+    return {
+      user: null,
+    }
+  },
+
+  created() {
+    fetch(api.getWhoamiUrl())
+      .then(async (response) => {
+        if (response.ok)
+          this.user = (await response.json()).user
+      })
+  },
 }
 </script>
 
