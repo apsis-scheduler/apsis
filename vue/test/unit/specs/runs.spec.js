@@ -52,16 +52,6 @@ describe('filters', () => {
   })
 })
 
-describe('processMsgs', () => {
-  test('summary init done sets truncation', () => {
-    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map()}
-    runs.processMsgs([{type: 'summary_init_done', truncated: {a: 10000}}], state)
-    expect(state.summaryTruncated).toEqual({a: 10000})
-    runs.clearRunState(state)
-    expect(state.summaryTruncated).toEqual({})
-  })
-})
-
 describe('run windows', () => {
   const run = (run_id, state) => ({
     run_id, job_id: 'a', args: {}, state, times: {schedule: '2026-10-14T00:00:00+00:00'},

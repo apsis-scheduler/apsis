@@ -59,7 +59,6 @@ export function clearRunState(state) {
   state.runs = new Map()
   state.jobs = new Map()
   state.agentConns = new Map()
-  state.summaryTruncated = {}
   state.runWindow = null
   state.runWindowStale = false
 }
@@ -174,10 +173,6 @@ export function processMsgs(msgs, state) {
           runs = new Map(state.runs)
         runs.delete(msg.run_id)
         stats.run++
-        break
-
-      case 'summary_init_done':
-        state.summaryTruncated = msg.truncated
         break
 
       case 'run_window':

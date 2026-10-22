@@ -309,7 +309,6 @@ class FakeWs:
 @pytest.mark.asyncio
 async def test_send_scoped_init_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(summary, "PAGE_ROWS", 2)
-    monkeypatch.setattr(summary, "JOB_RUN_CAP", 3)
     run_store = make_run_store(tmp_path)
     expected = Run(Instance("a", {}), expected=True)
     run_store.add(expected)
@@ -324,10 +323,11 @@ async def test_send_scoped_init_runs(tmp_path, monkeypatch):
     assert ws.ids() == [
         [expected.run_id],
         [a[4].run_id, a[3].run_id],
-        [a[2].run_id],
+        [a[2].run_id, a[1].run_id],
+        [a[0].run_id],
         [b[1].run_id, b[0].run_id],
     ]
-    assert ws.frames[-1] == [{"type": "summary_init_done", "truncated": {"a": 3}}]
+    assert ws.frames[-1] == [{"type": "summary_init_done"}]
 
 
 @pytest.mark.asyncio
@@ -347,7 +347,7 @@ async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
     assert [m["job"]["job_id"] for m in ws.frames[0]] == ["x"]
     assert ws.frames[1:] == [
         [{"type": "agent_conn", "conn": {"conn_id": "c"}}],
-        [{"type": "summary_init_done", "truncated": {}}],
+        [{"type": "summary_init_done"}],
     ]
 
     # no job ids sends all jobs and runs, and no agent server sends no conns
