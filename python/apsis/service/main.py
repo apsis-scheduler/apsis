@@ -5,6 +5,7 @@ import sanic
 import sanic.response
 import sanic.router
 import signal
+import socket
 
 from apsis import __version__
 from apsis.apsis import Apsis
@@ -92,11 +93,26 @@ def build_apsis(cfg):
     return Apsis(cfg, jobs, db)
 
 
+def bind_unix(path: Path) -> socket.socket:
+    """
+    Removes any existing socket file at `path`, then binds a unix socket there
+    that only its owner and group can connect to.
+    """
+    if path.is_socket():
+        path.unlink()
+    sock = socket.socket(socket.AF_UNIX)
+    sock.bind(str(path))
+    path.chmod(0o660)
+    return sock
+
+
 # FIXME: Get host, port from config.
-def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
+def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | None = None):
     """
     Runs the Apsis service.
 
+    :param unix:
+      Path of a unix socket to serve on instead of `host` and `port`.
     :return:
       True if the service should be restarted on exit.
     """
@@ -115,12 +131,8 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
-    server = app.create_server(
-        host=host,
-        port=port,
-        debug=debug,
-        return_asyncio_server=True,
-    )
+    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
+    server = app.create_server(**addr, debug=debug, return_asyncio_server=True)
     server_task = asyncio.ensure_future(server)
 
     # Get Apsis running.

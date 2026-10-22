@@ -181,7 +181,9 @@ def main():
             f"GC {'enabled' if gc.isenabled() else 'disabled'}; threshold: {gc.get_threshold()}"
         )
 
-        restart = apsis.service.main.serve(cfg, host=args.host, port=args.port, debug=args.debug)
+        restart = apsis.service.main.serve(
+            cfg, host=args.host, port=args.port, debug=args.debug, unix=args.unix
+        )
 
         if restart:
             # Start all over.
@@ -204,6 +206,13 @@ def main():
         type=int,
         default=DEFAULT_PORT,
         help=f"server port [def: {DEFAULT_PORT}]",
+    )
+    cmd.add_argument(
+        "--unix",
+        metavar="PATH",
+        type=Path,
+        default=None,
+        help="serve on a unix socket at PATH instead of HOST and PORT",
     )
     cmd.add_argument(
         "--config",
