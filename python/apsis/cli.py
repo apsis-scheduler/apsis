@@ -52,13 +52,11 @@ def main():
     parser.add_argument(
         "--host",
         metavar="HOST",
-        default=addr.host,
         help=f"connect to HOST [def: {addr.host}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        default=addr.port,
         help=f"connect to PORT [def: {addr.port}]",
     )
 
@@ -455,7 +453,10 @@ def main():
     # -------------------------------------------------------------
 
     args = parser.parse_args()
-    client = apsis.service.client.Client((args.host, args.port))
+    explicit = args.host is not None or args.port is not None
+    client = apsis.service.client.Client(
+        (args.host or addr.host, args.port or addr.port) if explicit else None
+    )
     con = apsis.cmdline.get_console()
 
     try:

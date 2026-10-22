@@ -40,18 +40,19 @@ def main():
     parser.add_argument(
         "--host",
         metavar="HOST",
-        default=addr.host,
         help=f"connect to HOST [def: {addr.host}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        default=addr.port,
         help=f"connect to PORT [def: {addr.port}]",
     )
 
     def get_client(args):
-        return apsis.service.client.Client((args.host, args.port))
+        explicit = args.host is not None or args.port is not None
+        return apsis.service.client.Client(
+            (args.host or addr.host, args.port or addr.port) if explicit else None
+        )
 
     # -------------------------------------------------------------
     # command: check-db
@@ -236,8 +237,9 @@ def main():
     # command: version
 
     def cmd_version(args):
-        version = get_client(args).version()["version"]
-        con.print(f"server address: {addr.host}:{addr.port}")
+        client = get_client(args)
+        version = client.version()["version"]
+        con.print(f"server address: {client.base_url.removeprefix('http://')}")
         con.print(f"server version: {version}")
         con.print(f"client version: {apsis.__version__}")
 
