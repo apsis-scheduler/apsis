@@ -197,7 +197,8 @@ def test_select_window(before, after, limit, shown):
 @pytest.mark.asyncio
 async def test_window_budget(tmp_path, monkeypatch):
     """
-    The walk budget gives a window whose edge picks up where the walk stopped.
+    The walk budget gives a window whose edge picks up where the walk stopped
+    and is marked stopped, unless a group past the edge was found.
     """
     runs = [make_run(i, "a", {"i": str(i)}, State.success, NOW + i) for i in range(1, 21)]
     run_db = make_db(tmp_path, runs)
@@ -207,6 +208,13 @@ async def test_window_budget(tmp_path, monkeypatch):
     window = await query_window(run_db, {}, spec, min_timestamp=None)
     assert window.run_ids == []
     assert window.earlier == str(NOW + 17)
+    assert window.earlier_stopped
+
+    window = await query_window(
+        run_db, {}, WindowSpec(anchor=NOW + 100, limit=2), min_timestamp=None
+    )
+    assert len(window.run_ids) == 2
+    assert window.earlier is not None and not window.earlier_stopped
 
 
 @pytest.mark.parametrize("grouping", [True, False])

@@ -111,6 +111,9 @@ class RunWindow:
     # anchors that move the window past each edge, or none if no group is past it
     earlier: str | None
     later: str | None
+    # whether each edge is only where the walk budget ran out
+    earlier_stopped: bool = False
+    later_stopped: bool = False
 
 
 class WindowUnavailable(RuntimeError):
@@ -157,6 +160,8 @@ class _Side:
         """
         # true once every entry is walked
         self.done = False
+        # true if the walk ended at the budget
+        self.stopped = False
         # schedule time of the last db row walked
         self.last = None
         self.entries = self.__walk(pages, keep, desc, extra, live)
@@ -190,6 +195,7 @@ class _Side:
             scanned += len(page)
             self.last = page[-1].sched
             if scanned >= SIDE_BUDGET:
+                self.stopped = True
                 return
             await asyncio.sleep(0)
         while nxt is not None:
@@ -454,4 +460,6 @@ async def query_window(
         counts={f[0].run_id: f[1] for f in found_b[:nb] + found_a[:na]},
         earlier=_edge(before, found_b, nb),
         later=await _later_edge(after, found_a, na, key_of, principal),
+        earlier_stopped=before.stopped and len(found_b) == nb,
+        later_stopped=after.stopped and len(found_a) == na,
     )
