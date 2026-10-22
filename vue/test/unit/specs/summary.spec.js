@@ -13,7 +13,7 @@ jest.mock('@/websocket.js', () => {
 
 const RUN = {run_id: 'r1', job_id: 'a', args: {}, state: 'success', times: {schedule: '2026-10-14T00:00:00Z'}}
 
-const DONE = {type: 'summary_init_done', truncated: {}}
+const DONE = {type: 'summary_init_done'}
 
 function frame(...msgs) {
   return {data: JSON.stringify(msgs)}

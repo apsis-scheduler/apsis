@@ -53,11 +53,8 @@ describe('view summary scopes', () => {
   })
 
   test('the job page rescopes when the job changes', async () => {
-    store.state.summaryTruncated = {'job/b': 20}
     await go('/job/job/a')
-    expect(vm.$el.textContent).not.toContain('Showing the newest')
     await go('/job/job/b')
-    expect(vm.$el.textContent).toContain('Showing the newest 20 runs.')
     expect(setSummaryScope.mock.calls).toEqual([[jobScope('job/a')], [jobScope('job/b')]])
   })
 
