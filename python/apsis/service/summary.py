@@ -234,7 +234,11 @@ async def send_window_init(
         "type": "run_window",
         "anchor": str(window.anchor),
         "groups": window.counts if spec.grouping else {},
-        "earlier": None if window.earlier is None else {"time": window.earlier},
-        "later": None if window.later is None else {"time": window.later},
+        "earlier": None
+        if window.earlier is None
+        else {"time": window.earlier, "stopped": window.earlier_stopped},
+        "later": None
+        if window.later is None
+        else {"time": window.later, "stopped": window.later_stopped},
     }
     await ws.send(ujson.dumps([msg]))
