@@ -16,7 +16,6 @@ div.component
     div(v-html="markdown(job.metadata.description)")
 
   Frame(title="Runs")
-    div(v-if="truncated") Showing the newest {{ truncated }} runs.
     RunsList(
       :query="{job_id: job_id, show: 20}" 
       :show-job="false"
@@ -184,10 +183,6 @@ export default {
   computed: {
     job() {
       return store.state.jobs.get(this.job_id)
-    },
-
-    truncated() {
-      return store.state.summaryTruncated[this.job_id]
     },
 
     params() {

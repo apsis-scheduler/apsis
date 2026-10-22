@@ -64,7 +64,7 @@ async def test_job_scope(service, run_ids):
     msgs = await service.read_summary("init&job_id=a")
     assert job_ids(msgs) == ["a"]
     assert run_job_ids(msgs) == {r: "a" for r in run_ids["a"]}
-    assert msgs[-1] == {"type": "summary_init_done", "truncated": {}}
+    assert msgs[-1] == {"type": "summary_init_done"}
 
 
 @pytest.mark.asyncio
