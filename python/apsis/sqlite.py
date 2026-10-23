@@ -735,13 +735,11 @@ class RunSummaryDB:
 
         Each page reads the next `page_size` runs of the job in its own
         transaction and keeps those with timestamp at least `min_timestamp`.
-        Run IDs grow with creation time, so the walk stops after a full page
-        with no runs in the lookback, and misses older runs that were updated
-        within it.
         """
         stmt = sa.text("""
-            SELECT r.rowid, CASE WHEN s.timestamp >= :min_ts THEN s.payload END
-            FROM runs r LEFT JOIN run_summary s ON s.run_id = r.run_id
+            SELECT r.rowid, s.payload
+            FROM runs r
+            LEFT JOIN run_summary s ON s.run_id = r.run_id AND r.timestamp >= :min_ts
             WHERE r.job_id = :job_id AND r.rowid < :max_rowid
             ORDER BY r.rowid DESC
             LIMIT :limit
@@ -757,7 +755,7 @@ class RunSummaryDB:
                 rows = conn.execute(stmt, params).fetchall()
             payloads = [p for _, p in rows if p is not None]
             yield payloads
-            if len(rows) < page_size or not payloads:
+            if len(rows) < page_size:
                 break
             params["max_rowid"] = rows[-1][0]
 
