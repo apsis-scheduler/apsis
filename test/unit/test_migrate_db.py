@@ -16,22 +16,28 @@ def migrate_db():
     return module
 
 
+def indexes(path: Path) -> set[str]:
+    rows = SqliteDB.open(path).conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+    return {name for (name,) in rows}
+
+
 def test_migrate_2_7_0(tmp_path, migrate_db):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
+    assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
     conn = SqliteDB.open(path).conn
     conn.execute("DROP INDEX idx_runs_schedule")
+    conn.execute("DROP INDEX idx_runs_job_cover")
     conn.commit()
 
     db = SqliteDB.open(path)
     assert not db.run_db.has_schedule_index
     migrate_db.migrate_2_7_0(db)
-    db = SqliteDB.open(path)
-    assert db.run_db.has_schedule_index
+    assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
-    # running again leaves the index alone
+    # running again leaves the indexes alone
     migrate_db.migrate_2_7_0(db)
-    assert SqliteDB.open(path).run_db.has_schedule_index
+    assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
 
 def test_main(tmp_path, migrate_db, monkeypatch):

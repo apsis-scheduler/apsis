@@ -302,6 +302,14 @@ sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 # not a scan and sort
 # rowid is the immutable run number so it is a stable cursor
 sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
+# covers a job's run IDs and timestamps so a job walk reads no run rows
+sa.Index(
+    "idx_runs_job_cover",
+    TBL_RUNS.c.job_id,
+    TBL_RUNS.c.rowid,
+    TBL_RUNS.c.run_id,
+    TBL_RUNS.c.timestamp,
+)
 
 # schedule time of a run, written the same as idx_runs_schedule
 SCHEDULE_TIME_SQL = "json_extract(times, '$.schedule')"
