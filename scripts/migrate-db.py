@@ -186,11 +186,15 @@ def migrate_2_4_5(db: SqliteDB) -> None:
 
 def migrate_2_7_0(db: SqliteDB) -> None:
     """
-    Add the schedule time index backing windowed run summaries.
+    Add the indexes backing job scoped and windowed run summaries.
     """
     conn = db.conn
     conn.execute(f"CREATE INDEX IF NOT EXISTS idx_runs_schedule ON runs ({SCHEDULE_TIME_SQL})")
     log.info("created idx_runs_schedule")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runs_job_cover ON runs (job_id, rowid, run_id, timestamp)"
+    )
+    log.info("created idx_runs_job_cover")
     conn.commit()
 
 
