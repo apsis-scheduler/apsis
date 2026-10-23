@@ -271,17 +271,17 @@ def test_job_summaries_pages(tmp_path):
 
     # an old timestamp puts a run outside the lookback window
     conn = run_store._RunStore__summary_db._RunSummaryDB__connection.connection
-    conn.execute("UPDATE run_summary SET timestamp = 0 WHERE run_id = ?", (a[2].run_id,))
+    conn.execute("UPDATE runs SET timestamp = 0 WHERE run_id = ?", (a[2].run_id,))
     conn.commit()
 
     pages = [run_ids(p) for p in run_store.job_summaries("a", page_size=2)]
     assert pages == [[a[4].run_id, a[3].run_id], [a[1].run_id], [a[0].run_id]]
 
-    # a full page outside the lookback ends the walk
-    conn.execute("UPDATE run_summary SET timestamp = 0 WHERE run_id = ?", (a[1].run_id,))
+    # a full page outside the lookback doesn't end the walk
+    conn.execute("UPDATE runs SET timestamp = 0 WHERE run_id = ?", (a[1].run_id,))
     conn.commit()
     pages = [run_ids(p) for p in run_store.job_summaries("a", page_size=2)]
-    assert pages == [[a[4].run_id, a[3].run_id], []]
+    assert pages == [[a[4].run_id, a[3].run_id], [], [a[0].run_id]]
 
     summary_db = run_store._RunStore__summary_db
     pages = list(summary_db.query_job("a", min_timestamp=None, page_size=10))
