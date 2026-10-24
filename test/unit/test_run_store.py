@@ -359,7 +359,7 @@ def test_lookback_window_follows_now(tmp_path, monkeypatch):
         return (
             {r.run_id for r in store.query(job_id="job")[1]},
             store.count_runs(job_id="job"),
-            len(list(store.summaries())),
+            sum(map(len, store.summaries())),
         )
 
     assert visible() == ({run.run_id}, 1, 1)
