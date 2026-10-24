@@ -48,6 +48,7 @@ export default {
         if (response.ok)
           this.user = (await response.json()).user
       })
+      .catch(err => { console.log(err) })
   },
 }
 </script>
