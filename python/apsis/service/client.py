@@ -64,6 +64,7 @@ def get_url() -> str:
 
 
 AUTH_ERROR = "not authenticated, get a Kerberos ticket and check KRB5CCNAME"
+NO_KERBEROS_ERROR = "not authenticated, install requests-gssapi for Kerberos"
 
 
 def has_ticket() -> bool:
@@ -146,11 +147,10 @@ class Client:
         """
         self.__base = get_url() if address is None else "http://{}:{}".format(*address)
         self.__auth = (
-            HTTPSPNEGOAuth(
-                mutual_authentication=DISABLED,
-                opportunistic_auth=urlsplit(self.__base).scheme == "https",
-            )
-            if HTTPSPNEGOAuth is not None and has_ticket()
+            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True)
+            if urlsplit(self.__base).scheme == "https"
+            and HTTPSPNEGOAuth is not None
+            and has_ticket()
             else None
         )
 
@@ -177,7 +177,13 @@ class Client:
     def __send(self, method: str, url: str, **kw: Any) -> requests.Response:
         resp = requests.request(method, url, auth=self.__auth, **kw)
         if resp.status_code == 401:
-            raise APIError(401, AUTH_ERROR, {})
+            try:
+                jso = resp.json()
+                error = jso["error"]
+            except Exception:
+                jso = {}
+                error = AUTH_ERROR if HTTPSPNEGOAuth is not None else NO_KERBEROS_ERROR
+            raise APIError(401, error, jso)
         return resp
 
     def __request(self, method, *path, timeout=None, data=None, query=None, **kw_query):

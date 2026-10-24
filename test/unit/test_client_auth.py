@@ -10,13 +10,20 @@ from websockets.asyncio.server import serve
 import apsis.cli
 import apsis.ctl
 from apsis.service import DEFAULT_PORT
-from apsis.service.client import AUTH_ERROR, APIError, Client, get_negotiate_headers, get_ws_msgs
+from apsis.service.client import (
+    AUTH_ERROR,
+    NO_KERBEROS_ERROR,
+    APIError,
+    Client,
+    get_negotiate_headers,
+    get_ws_msgs,
+)
 
 
-def _response(status: int) -> requests.Response:
+def _response(status: int, content: bytes = b"{}") -> requests.Response:
     resp = requests.Response()
     resp.status_code = status
-    resp._content = b"{}"
+    resp._content = content
     return resp
 
 
@@ -28,6 +35,7 @@ def _response(status: int) -> requests.Response:
     ],
 )
 def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url):
+    monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
     monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
     monkeypatch.setenv("APSIS_HOST", "other:6000")
     urls = []
@@ -77,7 +85,7 @@ def test_ctl_serve_binds_serve_defaults(monkeypatch):
     monkeypatch.setattr("apsis.config.load", lambda path: {})
     binds = []
     monkeypatch.setattr(
-        "apsis.service.main.serve", lambda cfg, host, port, debug: binds.append((host, port))
+        "apsis.service.main.serve", lambda cfg, host, port, debug, **kw: binds.append((host, port))
     )
     monkeypatch.setattr("sys.argv", ["apsisctl", "serve"])
     with pytest.raises(SystemExit):
@@ -112,15 +120,15 @@ def _gss_error(**kw):
 
 
 @pytest.mark.parametrize(
-    "url, creds, opportunistic",
+    "url, creds, authed",
     [
         ("https://apsis.example.com", _creds(1), True),
-        ("https://apsis.example.com", _creds(0), None),
-        ("https://apsis.example.com", _gss_error, None),
+        ("https://apsis.example.com", _creds(0), False),
+        ("https://apsis.example.com", _gss_error, False),
         ("http://apsis.example.com", _creds(1), False),
     ],
 )
-def test_spnego_auth_with_requests_gssapi(monkeypatch, url, creds, opportunistic):
+def test_spnego_auth_with_requests_gssapi(monkeypatch, url, creds, authed):
     gssapi = pytest.importorskip("gssapi")
     requests_gssapi = pytest.importorskip("requests_gssapi")
     monkeypatch.setenv("APSIS_URL", url)
@@ -131,12 +139,32 @@ def test_spnego_auth_with_requests_gssapi(monkeypatch, url, creds, opportunistic
     )
     Client().stats()
     (auth,) = auths
-    if opportunistic is None:
-        assert auth is None
-    else:
+    if authed:
         assert isinstance(auth, requests_gssapi.HTTPSPNEGOAuth)
-        assert auth.opportunistic_auth == opportunistic
+        assert auth.opportunistic_auth
         assert auth.mutual_authentication == requests_gssapi.DISABLED
+    else:
+        assert auth is None
+
+
+def test_cli_spnego_failure_logs_nothing(monkeypatch, capsys, caplog):
+    gssapi = pytest.importorskip("gssapi")
+    pytest.importorskip("requests_gssapi")
+    monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
+    monkeypatch.setattr(gssapi, "Credentials", _creds(1))
+    monkeypatch.setattr(gssapi, "SecurityContext", _gss_error)
+
+    def send(adapter, request, **kw):
+        resp = _response(401)
+        resp.request = request
+        return resp
+
+    monkeypatch.setattr("requests.adapters.HTTPAdapter.send", send)
+    monkeypatch.setattr("sys.argv", ["apsis", "job", "j"])
+    with pytest.raises(SystemExit):
+        apsis.cli.main()
+    assert AUTH_ERROR in " ".join(capsys.readouterr().out.split())
+    assert [r for r in caplog.records if r.name.startswith("requests_gssapi")] == []
 
 
 def test_no_kerberos_without_gssapi_packages(monkeypatch):
@@ -147,20 +175,27 @@ def test_no_kerberos_without_gssapi_packages(monkeypatch):
     spec.loader.exec_module(client)
     auths = []
     monkeypatch.setattr(
-        "requests.request", lambda method, url, auth, **kw: auths.append(auth) or _response(200)
+        "requests.request", lambda method, url, auth, **kw: auths.append(auth) or _response(401)
     )
-    client.Client(("localhost", 1)).stats()
+    with pytest.raises(client.APIError) as exc:
+        client.Client(("localhost", 1)).stats()
+    assert str(exc.value) == NO_KERBEROS_ERROR
     assert auths == [None]
     assert client.get_negotiate_headers("wss://apsis.example.com/x") == {}
 
 
 @pytest.mark.parametrize("get", [Client.get_outputs, lambda c, r: c.get_output(r, "output")])
-def test_raw_gets_raise_auth_error(monkeypatch, get):
-    monkeypatch.setattr("requests.request", lambda method, url, **kw: _response(401))
+@pytest.mark.parametrize(
+    "content, error",
+    [(b"{}", AUTH_ERROR), (b'{"error": "missing X-Remote-User"}', "missing X-Remote-User")],
+)
+def test_raw_gets_raise_auth_error(monkeypatch, get, content, error):
+    monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
+    monkeypatch.setattr("requests.request", lambda method, url, **kw: _response(401, content))
     with pytest.raises(APIError) as exc:
         get(Client(("localhost", 1)), "r1")
     assert exc.value.status == 401
-    assert str(exc.value) == AUTH_ERROR
+    assert str(exc.value) == error
 
 
 def test_negotiate_header_only_for_wss(monkeypatch):
