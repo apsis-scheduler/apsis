@@ -60,6 +60,8 @@ async def on_rename_job_history(request):
     except RenameJobError as exc:
         log.warning(f"not moving runs of {old_job_id}: {exc}")
         return error(exc)
+    except Exception as exc:
+        return error(f"move stopped, rerun it: {exc}", status=500)
     else:
         return response_json({"runs": count})
 

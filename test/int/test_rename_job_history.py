@@ -132,7 +132,7 @@ def test_rename_job_history_checks_jobs(inst):
     trigger = "CREATE TRIGGER fail BEFORE UPDATE ON run_summary BEGIN SELECT RAISE(ABORT, 'x'); END"
     with closing(sqlite3.connect(inst.db_path)) as db, db:
         db.execute(trigger)
-    with pytest.raises(APIError) as exc:
+    with pytest.raises(APIError, match="move stopped, rerun it") as exc:
         inst.client.rename_job_history("team/other", "team/sub/other")
     assert exc.value.status == 500
     assert any(

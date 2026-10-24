@@ -951,10 +951,10 @@ async def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
         # error runs can have bad args
         valid = [s for s in State if s != State.error]
         latest = apsis.run_store.get_latest_run(old_job_id, state=valid)
-        if latest is None and apsis.run_store.get_latest_run(old_job_id) is None:
-            raise RenameJobError(f"{old_job_id} has no runs to move")
-        args = None if latest is None else frozenset(latest.inst.args)
-        if args is not None and args != new_job.params:
+        if latest is None:
+            if apsis.run_store.get_latest_run(old_job_id) is None:
+                raise RenameJobError(f"{old_job_id} has no runs to move")
+        elif (args := frozenset(latest.inst.args)) != new_job.params:
             raise RenameJobError(
                 f"{new_job_id} has params {sorted(new_job.params)}"
                 f" but the latest run of {old_job_id} has args {sorted(args)}"
@@ -975,7 +975,7 @@ async def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
                     apsis.summary_publisher.publish(msg)
                 await asyncio.sleep(0)
         except BaseException:
-            log.error(
+            log.exception(
                 f"stopped after moving {count} runs from {old_job_id} to {new_job_id}, rerun it"
             )
             raise

@@ -422,8 +422,8 @@ class RunStore:
         self.__active_runs: dict[str, Run] = {}
 
         # Publisher for run transitions.  Messages are `Message` objects;
-        # `state` is none if the run is removed, and `args` is none to wake
-        # every condition waiting on the job.
+        # `state` is none if the run is removed, and `args` is none to make
+        # dependencies on the job check again.
         self.publisher = Publisher()
 
     def __query_run_db(self, *args, min_timestamp=None, **kwargs) -> list[Run]:
