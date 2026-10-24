@@ -33,6 +33,15 @@ def test_serve_unix():
             assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
 
 
+def test_summary_tcp():
+    with ApsisService() as inst:
+        with websockets.sync.client.connect(f"ws://127.0.0.1:{inst.port}/api/v1/summary") as ws:
+            run_id = inst.client.schedule_adhoc("now", {"program": {"type": "no-op"}})["run_id"]
+            msgs = json.loads(ws.recv(timeout=10))
+            assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
+        assert any("/summary 127.0.0.1:" in l for l in inst.get_log_lines())
+
+
 def test_serve_unix_refuses_running_server():
     with ApsisService(unix=True) as inst:
         proc = subprocess.run(
