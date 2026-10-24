@@ -95,10 +95,11 @@ def has_ticket() -> bool:
 def get_negotiate_headers(url: str) -> dict[str, str]:
     """
     Returns an SPNEGO `Authorization` header for the host of a wss `url`, or
-    no headers if the URL isn't wss, there's no ticket, or the token fails.
+    no headers if the URL isn't wss, requests-gssapi is missing, there's no
+    ticket, or the token fails.
     """
     parts = urlsplit(url)
-    if parts.scheme != "wss" or not has_ticket():
+    if parts.scheme != "wss" or HTTPSPNEGOAuth is None or not has_ticket():
         return {}
     try:
         name = gssapi.Name(f"HTTP@{parts.hostname}", gssapi.NameType.hostbased_service)

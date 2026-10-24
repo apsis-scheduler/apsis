@@ -199,8 +199,9 @@ def test_raw_gets_raise_auth_error(monkeypatch, get, content, error):
     assert str(exc.value) == error
 
 
-def test_negotiate_header_only_for_wss(monkeypatch):
+def test_negotiate_header_only_for_wss_with_requests_gssapi(monkeypatch):
     gssapi = pytest.importorskip("gssapi")
+    pytest.importorskip("requests_gssapi")
     monkeypatch.setattr(gssapi, "Credentials", _creds(1))
 
     class Context:
@@ -213,11 +214,14 @@ def test_negotiate_header_only_for_wss(monkeypatch):
     monkeypatch.setattr(gssapi, "SecurityContext", Context)
     assert get_negotiate_headers("ws://apsis.example.com/x") == {}
     assert get_negotiate_headers("wss://apsis.example.com/x") == {"Authorization": "Negotiate dG9r"}
+    monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", None)
+    assert get_negotiate_headers("wss://apsis.example.com/x") == {}
 
 
 @pytest.mark.parametrize("failing", ["Credentials", "SecurityContext"])
 def test_negotiate_header_dropped_on_gss_error(monkeypatch, failing):
     gssapi = pytest.importorskip("gssapi")
+    pytest.importorskip("requests_gssapi")
     monkeypatch.setattr(gssapi, "Credentials", _creds(1))
     monkeypatch.setattr(gssapi, failing, _gss_error)
     assert get_negotiate_headers("wss://apsis.example.com/x") == {}
