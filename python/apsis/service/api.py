@@ -140,6 +140,11 @@ async def stats(request):
     return response_json(stats)
 
 
+@API.route("/whoami")
+async def whoami(request: sanic.Request) -> sanic.HTTPResponse:
+    return response_json({"user": request.ctx.user})
+
+
 # -------------------------------------------------------------------------------
 # Jobs
 
