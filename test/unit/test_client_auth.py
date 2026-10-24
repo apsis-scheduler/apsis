@@ -110,6 +110,7 @@ def test_ctl_serve_binds_serve_defaults(monkeypatch):
 def test_ws_scheme_follows_base_url(monkeypatch, host, base):
     http, ws, netloc = base
     monkeypatch.setenv("APSIS_HOST", host)
+    monkeypatch.setattr("apsis.service.client.has_ticket", lambda: False)
     client = Client()
     assert client._Client__url("/api/v1/runs") == f"{http}://{netloc}/api/v1/runs"
     assert client._Client__url("/api/v1/runs", ws=True) == f"{ws}://{netloc}/api/v1/runs"
@@ -201,6 +202,17 @@ def test_raw_gets_raise_auth_error(monkeypatch, get, content, error):
     with pytest.raises(APIError) as exc:
         get(Client(("localhost", 1)), "r1")
     assert exc.value.status == 401
+    assert str(exc.value) == error
+
+
+@pytest.mark.parametrize(
+    "content, error", [(b"<html>", "unknown error"), (b'{"error": "boom"}', "boom")]
+)
+def test_request_raises_server_error(monkeypatch, content, error):
+    monkeypatch.setattr("requests.request", lambda method, url, **kw: _response(500, content))
+    with pytest.raises(APIError) as exc:
+        Client(("localhost", 1)).stats()
+    assert exc.value.status == 500
     assert str(exc.value) == error
 
 
