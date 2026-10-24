@@ -16,7 +16,7 @@ import websockets.client
 
 try:
     import gssapi
-    from requests_gssapi import DISABLED, HTTPSPNEGOAuth
+    from requests_gssapi import DISABLED, SPNEGO, HTTPSPNEGOAuth
 except ImportError:
     gssapi = HTTPSPNEGOAuth = None
 
@@ -97,8 +97,7 @@ def get_negotiate_headers(url: str) -> dict[str, str]:
         return {}
     try:
         name = gssapi.Name(f"HTTP@{parts.hostname}", gssapi.NameType.hostbased_service)
-        mech = gssapi.Mechanism.from_sasl_name("SPNEGO")
-        token = gssapi.SecurityContext(name=name, mech=mech, usage="initiate").step()
+        token = gssapi.SecurityContext(name=name, mech=SPNEGO, usage="initiate").step()
     except gssapi.exceptions.GSSError as exc:
         logging.debug(f"no negotiate token for {parts.hostname}: {exc}")
         return {}

@@ -202,12 +202,12 @@ def test_raw_gets_raise_auth_error(monkeypatch, get, content, error):
 
 def test_negotiate_header_only_for_wss_with_requests_gssapi(monkeypatch):
     gssapi = pytest.importorskip("gssapi")
-    pytest.importorskip("requests_gssapi")
+    requests_gssapi = pytest.importorskip("requests_gssapi")
     monkeypatch.setattr(gssapi, "Credentials", _creds(1))
 
     class Context:
-        def __init__(self, **kw):
-            pass
+        def __init__(self, mech: Any, **kw: Any):
+            assert mech == requests_gssapi.SPNEGO
 
         def step(self) -> bytes:
             return b"tok"
