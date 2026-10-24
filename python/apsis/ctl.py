@@ -40,18 +40,17 @@ def main():
     parser.add_argument(
         "--host",
         metavar="HOST",
-        help=f"connect to HOST over http instead of APSIS_URL [def: {addr.host}]",
+        help=f"connect to HOST over http [def: {addr.host}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        help=f"connect to PORT over http instead of APSIS_URL [def: {addr.port}]",
+        help=f"connect to PORT over http [def: {addr.port}]",
     )
 
     def get_client(args):
-        explicit = args.host is not None or args.port is not None
         return apsis.service.client.Client(
-            (args.host or addr.host, args.port or addr.port) if explicit else None
+            apsis.service.client.get_explicit_address(args.host, args.port)
         )
 
     # -------------------------------------------------------------

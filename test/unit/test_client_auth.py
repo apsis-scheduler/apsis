@@ -33,13 +33,13 @@ def _response(status: int, content: bytes = b"{}") -> requests.Response:
     "flags, url, error",
     [
         ([], "https://apsis.example.com/api/v1/jobs/j", AUTH_ERROR),
-        (["--host", "h"], "http://h:6000/api/v1/jobs/j", NO_HTTPS_ERROR),
+        (["--host", "h"], f"http://h:{DEFAULT_PORT}/api/v1/jobs/j", NO_HTTPS_ERROR),
     ],
 )
 def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
     monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
-    monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
-    monkeypatch.setenv("APSIS_HOST", "other:6000")
+    monkeypatch.setattr("apsis.service.client.has_ticket", lambda: False)
+    monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
     urls = []
     monkeypatch.setattr(
         "requests.request", lambda method, url, **kw: urls.append(url) or _response(401)
@@ -60,12 +60,15 @@ def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
             "https://apsis.example.com/api/control/version",
             "server address: https://apsis.example.com",
         ),
-        (["--host", "h", "version"], "http://h:6000/api/control/version", "server address: h:6000"),
+        (
+            ["--port", "6000", "version"],
+            "http://localhost:6000/api/control/version",
+            "server address: localhost:6000",
+        ),
     ],
 )
 def test_ctl_client_url(monkeypatch, capsys, argv, url, out):
-    monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
-    monkeypatch.setenv("APSIS_HOST", "other:6000")
+    monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
     urls = []
     body = {"version": "v"}
     monkeypatch.setattr(
@@ -83,7 +86,7 @@ def test_ctl_client_url(monkeypatch, capsys, argv, url, out):
 
 
 def test_ctl_serve_binds_serve_defaults(monkeypatch):
-    monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
+    monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
     monkeypatch.setattr("apsis.config.load", lambda path: {})
     binds = []
     monkeypatch.setattr(
@@ -96,16 +99,16 @@ def test_ctl_serve_binds_serve_defaults(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "var, value, base",
+    "host, base",
     [
-        ("APSIS_URL", "https://apsis.example.com/", ("https", "wss", "apsis.example.com")),
-        ("APSIS_HOST", "other:6000", ("http", "ws", "other:6000")),
+        ("https://apsis.example.com/", ("https", "wss", "apsis.example.com")),
+        ("other:6000", ("http", "ws", "other:6000")),
+        ("other", ("http", "ws", f"other:{DEFAULT_PORT}")),
     ],
 )
-def test_ws_scheme_follows_base_url(monkeypatch, var, value, base):
+def test_ws_scheme_follows_base_url(monkeypatch, host, base):
     http, ws, netloc = base
-    monkeypatch.delenv("APSIS_URL", raising=False)
-    monkeypatch.setenv(var, value)
+    monkeypatch.setenv("APSIS_HOST", host)
     client = Client()
     assert client._Client__url("/api/v1/runs") == f"{http}://{netloc}/api/v1/runs"
     assert client._Client__url("/api/v1/runs", ws=True) == f"{ws}://{netloc}/api/v1/runs"
@@ -133,7 +136,7 @@ def _gss_error(**kw: Any) -> NoReturn:
 def test_spnego_auth_with_requests_gssapi(monkeypatch, url, creds, authed):
     gssapi = pytest.importorskip("gssapi")
     requests_gssapi = pytest.importorskip("requests_gssapi")
-    monkeypatch.setenv("APSIS_URL", url)
+    monkeypatch.setenv("APSIS_HOST", url)
     monkeypatch.setattr(gssapi, "Credentials", creds)
     auths = []
     monkeypatch.setattr(
@@ -152,7 +155,7 @@ def test_spnego_auth_with_requests_gssapi(monkeypatch, url, creds, authed):
 def test_cli_spnego_failure_logs_nothing(monkeypatch, capsys, caplog):
     gssapi = pytest.importorskip("gssapi")
     pytest.importorskip("requests_gssapi")
-    monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
+    monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
     monkeypatch.setattr(gssapi, "Credentials", _creds(1))
     monkeypatch.setattr(gssapi, "SecurityContext", _gss_error)
 

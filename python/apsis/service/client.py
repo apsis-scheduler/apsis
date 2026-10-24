@@ -31,11 +31,11 @@ Address = namedtuple("Address", ("host", "port"))
 
 def get_address() -> Address:
     """
-    Returns the configured host and port where Apsis runs.
+    Returns the configured host and port where Apsis runs, or the defaults if
+    APSIS_HOST is a URL.
     """
-    try:
-        loc = os.environ["APSIS_HOST"]
-    except KeyError:
+    loc = os.environ.get("APSIS_HOST")
+    if loc is None or "://" in loc:
         host, port = "localhost", apsis.service.DEFAULT_PORT
     else:
         try:
@@ -50,13 +50,24 @@ def get_address() -> Address:
 
 def get_url() -> str:
     """
-    Returns the base URL where Apsis runs, from APSIS_URL if set, else from
-    the host and port of `get_address`.
+    Returns the base URL where Apsis runs, from APSIS_HOST if it's a URL, else
+    from `get_address` over http.
     """
-    try:
-        return os.environ["APSIS_URL"].rstrip("/")
-    except KeyError:
-        return "http://{}:{}".format(*get_address())
+    loc = os.environ.get("APSIS_HOST", "")
+    if "://" in loc:
+        return loc.rstrip("/")
+    return "http://{}:{}".format(*get_address())
+
+
+def get_explicit_address(host: str | None, port: str | None) -> Address | None:
+    """
+    Returns the address for an explicit `host` or `port`, filling in the other
+    from `get_address`, or none if neither is given.
+    """
+    if host is None and port is None:
+        return None
+    addr = get_address()
+    return Address(host or addr.host, port or addr.port)
 
 
 AUTH_ERROR = "not authenticated, get a Kerberos ticket and check KRB5CCNAME"
