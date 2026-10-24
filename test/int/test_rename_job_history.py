@@ -77,3 +77,8 @@ def test_rename_job_history_checks_jobs(inst):
     with pytest.raises(APIError, match="unknown job ID") as exc:
         inst.client.rename_job_history(OLD_JOB_ID, "team/missing")
     assert exc.value.status == 404
+
+    # a typo in the old job id moves nothing
+    with pytest.raises(APIError, match="no runs of job") as exc:
+        inst.client.rename_job_history("team/reprot", NEW_JOB_ID)
+    assert exc.value.status == 404

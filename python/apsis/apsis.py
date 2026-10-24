@@ -924,9 +924,10 @@ def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
     apsis.jobs.get_job(new_job_id)
 
     unfinished = [s for s in State if not s.finished]
-    _, runs = apsis.run_store.query(job_id=old_job_id, state=unfinished, limit_lookback=False)
-    if len(runs) > 0:
+    if apsis.run_store.count_runs(job_id=old_job_id, state=unfinished, limit_lookback=False) > 0:
         raise ValueError(f"job has unfinished runs: {old_job_id}")
+    if apsis.run_store.count_runs(job_id=old_job_id, limit_lookback=False) == 0:
+        raise LookupError(f"no runs of job: {old_job_id}")
 
     count = apsis.run_store.rename_job(old_job_id, new_job_id)
     log.info(f"moved {count} runs from {old_job_id} to {new_job_id}")

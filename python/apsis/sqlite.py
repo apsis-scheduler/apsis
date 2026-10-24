@@ -521,9 +521,18 @@ class RunDB:
 
     def rename_job(self, old_job_id: str, new_job_id: str) -> int:
         """
-        Moves all runs of `old_job_id` to `new_job_id` and returns how many moved.
+        Moves runs of `old_job_id` and their summaries to `new_job_id` and returns how many moved.
         """
         con = self.__connection.connection
+        # summaries go first since they find their runs by the old job id
+        con.execute(
+            """
+            UPDATE run_summary
+            SET payload = json_replace(payload, '$.run_summary.job_id', ?)
+            WHERE run_id IN (SELECT run_id FROM runs WHERE job_id = ?)
+            """,
+            (new_job_id, old_job_id),
+        )
         count = con.execute(
             "UPDATE runs SET job_id = ? WHERE job_id = ?", (new_job_id, old_job_id)
         ).rowcount
@@ -701,20 +710,6 @@ class RunSummaryDB:
                 payload = excluded.payload
             """,
             (run.run_id, dump_time(run.timestamp), payload),
-        )
-        self.__connection.connection.commit()
-
-    def rename_job(self, old_job_id: str, new_job_id: str) -> None:
-        """
-        Sets the job ID to `new_job_id` in the summaries of runs of `old_job_id`.
-        """
-        self.__connection.connection.execute(
-            """
-            UPDATE run_summary
-            SET payload = json_replace(payload, '$.run_summary.job_id', ?)
-            WHERE run_id IN (SELECT run_id FROM runs WHERE job_id = ?)
-            """,
-            (new_job_id, old_job_id),
         )
         self.__connection.connection.commit()
 
