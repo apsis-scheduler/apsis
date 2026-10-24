@@ -40,12 +40,12 @@ def main():
     parser.add_argument(
         "--host",
         metavar="HOST",
-        help=f"connect to HOST [def: APSIS_URL or {addr.host}]",
+        help=f"connect to HOST over http instead of APSIS_URL [def: APSIS_URL or {addr.host}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        help=f"connect to PORT [def: APSIS_URL or {addr.port}]",
+        help=f"connect to PORT over http instead of APSIS_URL [def: APSIS_URL or {addr.port}]",
     )
 
     def get_client(args):
