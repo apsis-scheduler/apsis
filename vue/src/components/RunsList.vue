@@ -188,13 +188,26 @@ div
                 v-for="label in run.labels || []"
                 :label="label"
                 :key="label"
+                :clickable="jobControls"
+                :selected="jobControls && labels !== null && labels.includes(label)"
+                @click="labels = toggleLabel(labels, label)"
               )
 
             template(v-if="argColumnStyle === 'separate'")
-              td(v-for="param in params") {{ run.args[param] || '' }}
+              td(v-for="param in params")
+                span.arg-value(
+                  v-if="param in run.args"
+                  :class="{ clickable: runControls, selected: runControls && args !== null && args[param] === run.args[param] }"
+                  @click="runControls && !textSelected() && (args = toggleArg(args, param, run.args[param]))"
+                ) {{ run.args[param] }}
             //- Else all together.
             td.col-args(v-if="argColumnStyle === 'combined'")
-              RunArgs(:args="run.args")
+              RunArgs(
+                :args="run.args"
+                :clickable="runControls"
+                :selected="runControls ? args : null"
+                @click="(param, arg) => args = toggleArg(args, param, arg)"
+              )
 
             td.col-run
               Run(:run-id="run.run_id")
@@ -236,7 +249,7 @@ div
 <script>
 import { entries, filter, flatten, groupBy, includes, isEqual, keys, map, sortBy, sortedIndexBy, uniq } from 'lodash'
 
-import { argsToArray, arrayToArgs, matchKeywords, includesAll, OPERATIONS } from '@/runs'
+import { argsToArray, arrayToArgs, matchKeywords, includesAll, OPERATIONS, toggleArg, toggleLabel } from '@/runs'
 import { formatDuration, formatElapsed, formatTime } from '@/time'
 import DropList from '@/components/DropList'
 import HamburgerMenu from '@/components/HamburgerMenu'
@@ -562,6 +575,8 @@ export default {
     formatElapsed,
     arrayToArgs,
     argsToArray,
+    toggleArg,
+    toggleLabel,
 
     // Sends our current state to the parent as a query object.
     emitQuery() {
@@ -608,6 +623,10 @@ export default {
             || run.state === 'running'
             || run.state === 'stopping')
         && new Date(run.times.stop) < new Date()
+    },
+
+    textSelected() {
+      return !window.getSelection().isCollapsed
     },
   },
 
@@ -723,6 +742,16 @@ table.runlist {
 
   .col-job, .col-args, .col-arg {
     text-align: left;
+  }
+
+  .arg-value {
+    &.clickable {
+      cursor: pointer;
+    }
+
+    &.selected {
+      background: $global-select-background;
+    }
   }
 
   .col-run, .col-state, .col-operations {
