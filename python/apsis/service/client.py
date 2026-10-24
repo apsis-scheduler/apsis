@@ -16,13 +16,9 @@ import websockets.client
 
 try:
     import gssapi
-except ImportError:
-    gssapi = None
-
-try:
     from requests_gssapi import DISABLED, HTTPSPNEGOAuth
 except ImportError:
-    HTTPSPNEGOAuth = None
+    gssapi = HTTPSPNEGOAuth = None
 
 import apsis.service
 from apsis.runs import run_number
@@ -81,11 +77,9 @@ def get_auth_error(url: str) -> str:
 
 def has_ticket() -> bool:
     """
-    Returns true if gssapi is installed and the user has unexpired Kerberos
-    credentials to initiate a context with.
+    Returns true if the user has unexpired Kerberos credentials to initiate a
+    context with.
     """
-    if gssapi is None:
-        return False
     try:
         return gssapi.Credentials(usage="initiate").lifetime != 0
     except gssapi.exceptions.GSSError:
