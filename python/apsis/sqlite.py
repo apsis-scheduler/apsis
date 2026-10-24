@@ -519,20 +519,6 @@ class RunDB:
             assert con.total_changes == changes + 1
             con.commit()
 
-    def get_latest_runs(self, job_id: str) -> list[tuple[str, dict[str, str], State]]:
-        """
-        Returns the run ID, args and state of the latest run of `job_id` with each distinct args.
-        """
-        rows = self.__connection.connection.execute(
-            """
-            SELECT run_id, args, state FROM runs
-            WHERE rowid IN (SELECT max(rowid) FROM runs WHERE job_id = ? GROUP BY args)
-            ORDER BY rowid DESC
-            """,
-            (job_id,),
-        ).fetchall()
-        return [(run_id, ujson.loads(args), State[state]) for run_id, args, state in rows]
-
     def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> list[str]:
         """
         Moves up to `limit` runs of `old_job_id` and their summaries to `new_job_id`, returning run IDs.
@@ -545,19 +531,23 @@ class RunDB:
         if len(rows) == 0:
             return []
         marks = ",".join("?" * len(rows))
-        con.execute(
-            f"""
-            UPDATE run_summary
-            SET payload = json_replace(payload, '$.run_summary.job_id', ?)
-            WHERE run_id IN ({marks})
-            """,
-            (new_job_id, *(run_id for _, run_id in rows)),
-        )
-        con.execute(
-            f"UPDATE runs SET job_id = ? WHERE rowid IN ({marks})",
-            (new_job_id, *(rowid for rowid, _ in rows)),
-        )
-        con.commit()
+        try:
+            con.execute(
+                f"""
+                UPDATE run_summary
+                SET payload = json_replace(payload, '$.run_summary.job_id', ?)
+                WHERE run_id IN ({marks})
+                """,
+                (new_job_id, *(run_id for _, run_id in rows)),
+            )
+            con.execute(
+                f"UPDATE runs SET job_id = ? WHERE rowid IN ({marks})",
+                (new_job_id, *(rowid for rowid, _ in rows)),
+            )
+            con.commit()
+        except BaseException:
+            con.rollback()
+            raise
         return [run_id for _, run_id in rows]
 
     def get(self, run_id):

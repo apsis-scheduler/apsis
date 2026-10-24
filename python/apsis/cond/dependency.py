@@ -115,7 +115,7 @@ class Dependency(RunStoreCondition):
         # Wait for a matching run to transition into a matching state.
         relevant_states = self.exist | self.states if self.exist else self.states
         with run_store.publisher.subscription(
-            predicate=lambda m: m.job_id == self.job_id and m.args == self.args
+            predicate=lambda m: m.job_id == self.job_id and m.args in (None, self.args)
         ) as sub:
             while True:
                 _, runs = run_store.query(

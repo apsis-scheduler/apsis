@@ -60,7 +60,7 @@ def test_rename_job_history(inst):
     assert inst.wait_run(down_id, wait_states=("new", "scheduled"))["state"] == "waiting"
 
     # the run scheduled for later still belongs to the old job
-    with pytest.raises(APIError, match=f"{later_id} scheduled, skip them or wait for them"):
+    with pytest.raises(APIError, match=f"{later_id} scheduled, skip or stop them"):
         client.rename_job_history(OLD_JOB_ID, NEW_JOB_ID)
     assert any("not moving runs of team/report" in line for line in inst.get_log_lines())
 
@@ -112,12 +112,15 @@ def test_rename_job_history_checks_jobs(inst):
     move_job(inst, new_job="params: [date]\n" + JOB)
     with pytest.raises(APIError, match="team/missing isn't loaded"):
         inst.client.rename_job_history(OLD_JOB_ID, "team/missing")
+    adhoc_id = inst.client.schedule_adhoc("now", {"program": {"type": "no-op"}})["job_id"]
+    with pytest.raises(APIError, match="is an ad hoc job"):
+        inst.client.rename_job_history(OLD_JOB_ID, adhoc_id)
 
     # a typo in the old job id moves nothing
     with pytest.raises(APIError, match="team/reprot has no runs to move"):
         inst.client.rename_job_history("team/reprot", NEW_JOB_ID)
 
-    with pytest.raises(APIError, match=r"has args \[\] but team/sub/report has params \['date'\]"):
+    with pytest.raises(APIError, match=r"doesn't fit team/sub/report: missing args \(date\)"):
         inst.client.rename_job_history(OLD_JOB_ID, NEW_JOB_ID)
 
     resp = requests.post(f"http://localhost:{inst.port}/api/control/rename_job_history", json={})
