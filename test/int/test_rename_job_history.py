@@ -51,6 +51,10 @@ def test_rename_job_history(inst):
     for run_id in run_ids:
         assert inst.wait_run(run_id)["state"] == "success"
     later_id = client.schedule(OLD_JOB_ID, {}, time="2100-01-01T00:00:00Z")["run_id"]
+    # a run with bad args is the newest but doesn't block the rename
+    bad = client.schedule(OLD_JOB_ID, {"dat": "x"})
+    assert bad["state"] == "error"
+    run_ids.append(bad["run_id"])
     other_id = client.schedule("team/other", {})["run_id"]
     inst.wait_run(other_id)
 
@@ -77,7 +81,7 @@ def test_rename_job_history(inst):
             text=True,
             check=True,
         )
-        assert "moved 151 runs" in proc.stdout
+        assert "moved 152 runs" in proc.stdout
 
         # an open web ui gets the moved runs under the new job
         ws_job_ids = {}
@@ -120,7 +124,7 @@ def test_rename_job_history_checks_jobs(inst):
     with pytest.raises(APIError, match="team/reprot has no runs to move"):
         inst.client.rename_job_history("team/reprot", NEW_JOB_ID)
 
-    with pytest.raises(APIError, match=r"doesn't fit team/sub/report: missing args \(date\)"):
+    with pytest.raises(APIError, match=r"team/sub/report has params \['date'\] but the latest"):
         inst.client.rename_job_history(OLD_JOB_ID, NEW_JOB_ID)
 
     resp = requests.post(f"http://localhost:{inst.port}/api/control/rename_job_history", json={})
