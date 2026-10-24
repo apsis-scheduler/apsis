@@ -109,6 +109,7 @@ def bind_unix(path: Path) -> socket.socket:
     sock = socket.socket(socket.AF_UNIX)
     sock.bind(str(path))
     path.chmod(0o660)
+    sock.listen()
     return sock
 
 
