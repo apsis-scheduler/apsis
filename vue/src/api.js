@@ -51,11 +51,22 @@ export function getRunUrl(run_id) {
   return getUrl('runs', run_id)
 }
 
-export function getSummaryUrl(init) {
+/**
+ * Returns the summary websocket URL with init for `scope`, an object with
+ * optional `types`, `job_ids` and `dependents_of` arrays.
+ */
+export function getSummaryUrl(scope = {}) {
   const url = getUrl('summary')
   url.protocol = WS_PROTOCOL
-  if (init)
-    url.search = '?init'
+  url.hash = ''
+  const params = ['init']
+  if (scope.types)
+    params.push('types=' + scope.types.join(','))
+  for (const job_id of scope.job_ids || [])
+    params.push('job_id=' + encodeURIComponent(job_id))
+  for (const job_id of scope.dependents_of || [])
+    params.push('dependents_of=' + encodeURIComponent(job_id))
+  url.search = '?' + params.join('&')
   return url
 }
 
