@@ -62,19 +62,22 @@ def test_user_unix():
             {},
             [("X-Remote-User", "alice"), ("X-Remote-User", "bob")],
             {"X-Remote-User": "mallory, alice"},
+            # the kelvin sign lowercases to k
+            {"X-Remote-User": "\u212aalice".encode()},
         ):
             assert client.get("/api/v1/runs", headers=headers).status_code == 401
 
         evil = {"Origin": "https://evil.example"}
         assert client.post("/api/v1/runs", json=LATER_RUN, headers=USER | evil).status_code == 403
-        with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
-            websockets.sync.client.unix_connect(
-                str(inst.sock_path),
-                "ws://apsis/api/v1/summary",
-                origin=evil["Origin"],
-                additional_headers=USER,
-            )
-        assert exc.value.response.status_code == 403
+        for origin, headers, status in (("http://apsis", {}, 401), (evil["Origin"], USER, 403)):
+            with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
+                websockets.sync.client.unix_connect(
+                    str(inst.sock_path),
+                    "ws://apsis/api/v1/summary",
+                    origin=origin,
+                    additional_headers=headers,
+                )
+            assert exc.value.response.status_code == status
         assert client.get("/api/control/debug", headers=USER).status_code == 403
 
         bad_args = LATER_RUN | {"args": {"x": "1"}}

@@ -81,7 +81,7 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
         request.ctx.user = None
         return
     users = request.headers.getall("X-Remote-User", [])
-    user = users[0].split("@", 1)[0].lower() if len(users) == 1 else ""
+    user = users[0].split("@", 1)[0].lower() if len(users) == 1 and users[0].isascii() else ""
     if USER_RE.fullmatch(user) is None:
         return error("missing or invalid X-Remote-User", 401)
     origin = request.headers.get("Origin")
