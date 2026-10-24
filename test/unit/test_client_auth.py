@@ -68,6 +68,7 @@ def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
     ],
 )
 def test_ctl_client_url(monkeypatch, capsys, argv, url, out):
+    monkeypatch.setattr("apsis.service.client.has_ticket", lambda: False)
     monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
     urls = []
     body = {"version": "v"}
