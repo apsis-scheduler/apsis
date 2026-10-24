@@ -15,12 +15,12 @@ def make_db(tmp_path):
     return SqliteDB.open(path)
 
 
-def make_run_store(tmp_path, min_timestamp=ora.now() - 86400):
-    return RunStore(make_db(tmp_path), min_timestamp=min_timestamp)
+def make_run_store(tmp_path, lookback=86400):
+    return RunStore(make_db(tmp_path), lookback=lookback)
 
 
-def test_min_timestamp_none(tmp_path):
-    run_store = make_run_store(tmp_path, min_timestamp=None)
+def test_lookback_none(tmp_path):
+    run_store = make_run_store(tmp_path, lookback=None)
 
     run = Run(Instance("test/job", {"date": "2026-01-01"}), expected=True)
     run_store.add(run)
@@ -68,7 +68,7 @@ def test_no_db_lock_truncate(tmp_path):
     db_path = tmp_path / "apsis.db"
     SqliteDB.create(db_path)
     db = SqliteDB.open(db_path, timeout=5)
-    run_store = RunStore(db, min_timestamp=ora.now() - 86400)
+    run_store = RunStore(db, lookback=86400)
 
     for i in range(100):
         run = Run(Instance("test/job", {"date": f"2026-01-{i:02d}"}), expected=False)
