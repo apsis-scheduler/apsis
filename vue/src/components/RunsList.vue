@@ -82,7 +82,7 @@ div
           button(
             style="padding: 0 4px; border-top-right-radius: 0; border-bottom-right-radius: 0;"
             v-on:click="time = groups.earlierTime"
-            :disabled="groups.earlierCount == 0"
+            :disabled="!groups.earlierMore"
           )
             TriangleIcon(
               direction="left"
@@ -93,7 +93,7 @@ div
           button(
             style="padding: 0 4px; border-top-left-radius: 0; border-bottom-left-radius: 0;"
             v-on:click="time = groups.laterTime"
-            :disabled="groups.laterCount == 0"
+            :disabled="!groups.laterMore"
           )
             TriangleIcon(
               direction="right"
@@ -163,10 +163,10 @@ div
         tr(v-else)
           td.spacer(colspan="9")
 
-        tr(v-if="(asc ? groups.earlierCount : groups.laterCount) > 0")
+        tr(v-if="asc ? groups.earlierMore : groups.laterMore")
           td.note(colspan="9")
-            | {{ asc ? groups.earlierCount : groups.laterCount }}
-            | {{ asc ? 'earlier' : 'later' }} rows not shown
+            | {{ (asc ? groups.earlierStopped : groups.laterStopped) ? 'stopped looking for' : 'more' }}
+            | {{ asc ? 'earlier' : 'later' }} rows
             button(
               v-on:click="time = asc ? groups.earlierTime : groups.laterTime"
             ) {{ asc ? 'Earlier' : 'Later' }}
@@ -223,10 +223,10 @@ div
                   :button="true"
                 )
 
-        tr(v-if="(asc ? groups.laterCount : groups.earlierCount) > 0")
+        tr(v-if="asc ? groups.laterMore : groups.earlierMore")
           td.note(colspan="9")
-            | {{ asc ? groups.laterCount : groups.earlierCount }}
-            | {{ asc ? 'later' : 'earlier' }} rows not shown
+            | {{ (asc ? groups.laterStopped : groups.earlierStopped) ? 'stopped looking for' : 'more' }}
+            | {{ asc ? 'later' : 'earlier' }} rows
             button(
               v-on:click="time = asc ? groups.laterTime : groups.earlierTime"
             ) {{ asc ? 'Later' : 'Earlier' }}
@@ -236,7 +236,7 @@ div
 <script>
 import { entries, filter, flatten, groupBy, includes, isEqual, keys, map, sortBy, sortedIndexBy, uniq } from 'lodash'
 
-import { argsToArray, arrayToArgs, matchKeywords, includesAll, OPERATIONS } from '@/runs'
+import { argsToArray, arrayToArgs, groupCount, matchKeywords, includesAll, OPERATIONS } from '@/runs'
 import { formatDuration, formatElapsed, formatTime } from '@/time'
 import DropList from '@/components/DropList'
 import HamburgerMenu from '@/components/HamburgerMenu'
@@ -309,6 +309,9 @@ export default {
 
     // If true, show a row indicating the current time.
     nowIndicator: {type: Boolean, default: true},
+
+    // If true, show the run window from the summary socket once it arrives.
+    windowed: {type: Boolean, default: false},
   },
 
   components: {
@@ -356,6 +359,10 @@ export default {
   },
 
   computed: {
+    runWindow() {
+      return this.windowed ? this.store.state.runWindow : null
+    },
+
     /** Runs, after filtering.  */
     runs() {
       let runs = Array.from(this.store.state.runs.values())
@@ -412,7 +419,7 @@ export default {
           const sgrp = key[0]
           const run = runs[sgrp === 'C' ? runs.length - 1 : 0]
 
-          counts[run.run_id] = runs.length
+          counts[run.run_id] = groupCount(runs, this.runWindow)
           return run
         })
 
@@ -501,6 +508,25 @@ export default {
         }
       }
 
+      let earlierMore = earlierCount > 0
+      let laterMore = laterCount > 0
+      // true if the server walk stopped at an edge without finding more runs
+      let earlierStopped = false
+      let laterStopped = false
+      if (this.runWindow) {
+        const { earlier, later } = this.runWindow
+        if (earlier) {
+          earlierStopped = !earlierMore && earlier.stopped
+          earlierMore = true
+          earlierTime = earlierTime || earlier.time
+        }
+        if (later) {
+          laterStopped = !laterMore && later.stopped
+          laterMore = true
+          laterTime = laterTime || later.time
+        }
+      }
+
       var nowIndex
       if (runs.length > 0 && runs[0].time_key < now && now < runs[runs.length - 1].time_key)
         nowIndex = sortedIndexBy(runs, { time_key: now }, r => r.time_key)
@@ -525,9 +551,11 @@ export default {
         nowIndex,
         time,
         earlierTime,
-        earlierCount,
+        earlierMore,
+        earlierStopped,
         laterTime,
-        laterCount,
+        laterMore,
+        laterStopped,
       }
     },
   },

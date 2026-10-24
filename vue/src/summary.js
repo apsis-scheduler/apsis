@@ -25,6 +25,28 @@ export function runScope(run) {
   }
 }
 
+/**
+ * Returns the summary scope for the run window of a RunsList query.
+ */
+export function windowScope(query) {
+  const params = [
+    ['time', query.time],
+    ['limit', query.show],
+    ['grouping', query.grouping ? 1 : 0],
+  ]
+  if (query.path)
+    params.push(['path', query.path])
+  for (const keyword of query.keywords || [])
+    params.push(['keyword', keyword])
+  for (const label of query.labels || [])
+    params.push(['label', label])
+  for (const state of query.states || [])
+    params.push(['state', state])
+  for (const [param, value] of Object.entries(query.args || {}))
+    params.push(['arg', value === null ? param : param + '=' + value])
+  return {window: params}
+}
+
 let socket = null
 let socketUrl = null
 // true once the server closed the socket
@@ -32,21 +54,30 @@ let socketClosed = false
 let generation = 0
 // init frames held until the init is done, or null to apply frames as they come
 let held = null
+// set when the server can't serve run windows
+let windowUnavailable = false
 
 /**
  * Subscribes the store to summary messages in `scope`, or to all messages if
  * no scope is given.
  *
- * Does nothing if the scope is unchanged or the open socket is unscoped,
- * since that already has everything.  Otherwise closes the previous socket
- * and opens a new one, and replaces runs, jobs, and agent conns once its init
- * is done, or right away for no scope.
+ * Does nothing if the scope is unchanged and `refresh` is false or its init
+ * isn't done, or if the open socket is unscoped, since that already has
+ * everything.  Otherwise closes the previous socket and opens a new one, and
+ * replaces runs, jobs, and agent conns once its init is done, or right away
+ * for no scope, and reopens if that init leaves the run window stale.  If the
+ * server can't serve run windows, a window scope becomes no scope.
  */
-export function setSummaryScope(scope) {
+export function setSummaryScope(scope, refresh = false) {
+  if (windowUnavailable && scope && scope.window)
+    scope = undefined
   const url = api.getSummaryUrl(scope)
   if (
     socket !== null && !socketClosed
-    && (url.toString() === socketUrl || socketUrl === api.getSummaryUrl().toString())
+    && (
+      (url.toString() === socketUrl && (!refresh || held !== null))
+      || socketUrl === api.getSummaryUrl().toString()
+    )
   )
     return
   socketUrl = url.toString()
@@ -71,10 +102,12 @@ export function setSummaryScope(scope) {
         processMsgs(msgs, store.state)
       else {
         held.push(msgs)
-        if (msgs.some(m => m.type === 'summary_init_done')) {
+        if (msgs.some(m => m.type === 'run_window' || m.type === 'summary_init_done')) {
           clearRunState(store.state)
           processMsgs([].concat(...held), store.state)
           held = null
+          if (store.state.runWindowStale)
+            setSummaryScope(scope, true)
         }
       }
     },
@@ -93,13 +126,18 @@ export function setSummaryScope(scope) {
         store.state.errors.push('connection error')
     },
     // onClose
-    () => {
-      // warn the user that the socket is closed so that they can refresh the page
-      // because we don't automatically reconnect
-      if (current()) {
-        socketClosed = true
-        store.state.errors.push('websocket closed: refresh the page')
+    event => {
+      if (!current())
+        return
+      socketClosed = true
+      if (event.code === 4503) {
+        windowUnavailable = true
+        setSummaryScope(scope)
       }
+      else
+        // warn the user that the socket is closed so that they can refresh the page
+        // because we don't automatically reconnect
+        store.state.errors.push('websocket closed: refresh the page')
     },
     // don't reconnect to avoid bug where browser can't keep up, apsis closes the
     // connection due to backpressure, then the browser continues the cycle by

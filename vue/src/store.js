@@ -51,6 +51,11 @@ class Store {
 
     // Array of Procstar agent connections.
     agentConns: new Map(),
+
+    // last run_window message from the summary socket, with group keys
+    runWindow: null,
+    // true once the run window is missing runs it needs
+    runWindowStale: false,
   }
 
   setTime(time) {
