@@ -115,14 +115,21 @@ def build_apsis(cfg):
 
 def bind_unix(path: Path) -> socket.socket:
     """
-    Removes any existing socket file at `path`, then binds a unix socket there
-    that only its owner and group can connect to.
+    Binds a unix socket at `path` that only its owner and group can connect to,
+    replacing a stale socket file but not one a server is listening on.
     """
     if path.is_socket():
-        path.unlink()
+        with socket.socket(socket.AF_UNIX) as probe:
+            try:
+                probe.connect(str(path))
+            except ConnectionRefusedError:
+                path.unlink()
+            else:
+                raise RuntimeError(f"something is already serving on {path}")
     sock = socket.socket(socket.AF_UNIX)
     sock.bind(str(path))
     path.chmod(0o660)
+    sock.listen()
     return sock
 
 
@@ -142,6 +149,8 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
     asyncio.set_event_loop(loop)
     loop.set_debug(True)
 
+    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
+
     apsis = build_apsis(cfg)
 
     app.apsis = apsis
@@ -152,7 +161,6 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
-    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
     server = app.create_server(**addr, debug=debug, return_asyncio_server=True)
     server_task = asyncio.ensure_future(server)
 
