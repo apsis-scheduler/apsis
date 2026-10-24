@@ -1,11 +1,12 @@
 import importlib.util
 import sys
+from typing import Any, Callable, NoReturn
 from unittest.mock import Mock
 
 import pytest
 import requests
 import websockets
-from websockets.asyncio.server import serve
+from websockets.asyncio.server import Server, serve
 
 import apsis.cli
 import apsis.ctl
@@ -110,11 +111,11 @@ def test_ws_scheme_follows_base_url(monkeypatch, var, value, base):
     assert client._Client__url("/api/v1/runs", ws=True) == f"{ws}://{netloc}/api/v1/runs"
 
 
-def _creds(lifetime: int):
+def _creds(lifetime: int) -> Callable[..., Mock]:
     return lambda **kw: Mock(lifetime=lifetime)
 
 
-def _gss_error(**kw):
+def _gss_error(**kw: Any) -> NoReturn:
     import gssapi
 
     raise gssapi.exceptions.GSSError(0, 0)
@@ -227,7 +228,7 @@ def test_negotiate_header_dropped_on_gss_error(monkeypatch, failing):
     assert get_negotiate_headers("wss://apsis.example.com/x") == {}
 
 
-def _port(server) -> int:
+def _port(server: Server) -> int:
     return server.sockets[0].getsockname()[1]
 
 
