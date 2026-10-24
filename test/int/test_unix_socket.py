@@ -40,6 +40,7 @@ def test_serve_unix_refuses_running_server():
             ["apsisctl", "serve", "--config", inst.cfg_path, "--unix", inst.sock_path],
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
         assert proc.returncode != 0
         assert f"something is already serving on {inst.sock_path}" in proc.stderr
