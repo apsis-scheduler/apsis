@@ -142,6 +142,19 @@ class APIError(RuntimeError):
         self.jso = jso
 
 
+def get_api_error(resp: requests.Response, default: str) -> APIError:
+    """
+    Returns an `APIError` for `resp` with the server's error, or `default`.
+    """
+    try:
+        jso = resp.json()
+        error = jso.get("error", default)
+    except Exception:
+        jso = {}
+        error = default
+    return APIError(resp.status_code, error, jso)
+
+
 NO_ARG = object()
 
 
@@ -183,13 +196,7 @@ class Client:
     def __send(self, method: str, url: str, **kw: Any) -> requests.Response:
         resp = requests.request(method, url, auth=self.__auth, **kw)
         if resp.status_code == 401:
-            try:
-                jso = resp.json()
-                error = jso["error"]
-            except (ValueError, KeyError, TypeError):
-                jso = {}
-                error = get_auth_error(url)
-            raise APIError(401, error, jso)
+            raise get_api_error(resp, get_auth_error(url))
         return resp
 
     def __request(self, method, *path, timeout=None, data=None, query=None, **kw_query):
@@ -199,13 +206,7 @@ class Client:
         if 200 <= resp.status_code < 300:
             return resp.json()
         else:
-            try:
-                jso = resp.json()
-                error = jso.get("error", "unknown error")
-            except Exception:
-                jso = {}
-                error = "unknown error"
-            raise APIError(resp.status_code, error, jso)
+            raise get_api_error(resp, "unknown error")
 
     def __get(self, *path, **query):
         return self.__request("GET", *path, **query)
