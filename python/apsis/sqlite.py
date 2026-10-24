@@ -519,25 +519,44 @@ class RunDB:
             assert con.total_changes == changes + 1
             con.commit()
 
-    def rename_job(self, old_job_id: str, new_job_id: str) -> int:
+    def get_latest_args(self, job_id: str) -> dict[str, str] | None:
         """
-        Moves runs of `old_job_id` and their summaries to `new_job_id` and returns how many moved.
+        Returns the args of the latest run of `job_id`, or none if it has no runs.
+        """
+        row = self.__connection.connection.execute(
+            "SELECT args FROM runs WHERE job_id = ? ORDER BY rowid DESC LIMIT 1", (job_id,)
+        ).fetchone()
+        return None if row is None else ujson.loads(row[0])
+
+    def rename_job(
+        self, old_job_id: str, new_job_id: str, limit: int
+    ) -> list[tuple[str, dict[str, str], State]]:
+        """
+        Moves up to `limit` runs of `old_job_id` and their summaries to `new_job_id`.
+
+        :return:
+          The run ID, args and state of each moved run.
         """
         con = self.__connection.connection
-        # summaries go first since they find their runs by the old job id
+        rows = con.execute(
+            "SELECT rowid, run_id, args, state FROM runs WHERE job_id = ? ORDER BY rowid LIMIT ?",
+            (old_job_id, limit),
+        ).fetchall()
+        marks = ",".join("?" * len(rows))
         con.execute(
-            """
+            f"""
             UPDATE run_summary
             SET payload = json_replace(payload, '$.run_summary.job_id', ?)
-            WHERE run_id IN (SELECT run_id FROM runs WHERE job_id = ?)
+            WHERE run_id IN ({marks})
             """,
-            (new_job_id, old_job_id),
+            (new_job_id, *(r[1] for r in rows)),
         )
-        count = con.execute(
-            "UPDATE runs SET job_id = ? WHERE job_id = ?", (new_job_id, old_job_id)
-        ).rowcount
+        con.execute(
+            f"UPDATE runs SET job_id = ? WHERE rowid IN ({marks})",
+            (new_job_id, *(r[0] for r in rows)),
+        )
         con.commit()
-        return count
+        return [(run_id, ujson.loads(args), State[state]) for _, run_id, args, state in rows]
 
     def get(self, run_id):
         try:

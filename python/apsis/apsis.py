@@ -910,7 +910,11 @@ async def reload_jobs(apsis, *, dry_run=False):
     return rem_ids, add_ids, chg_ids
 
 
-def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
+# keeps each batch to tens of ms on the event loop for jobs with 100k runs
+_RENAME_BATCH_SIZE = 100
+
+
+async def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
     """
     Moves the run history of removed job `old_job_id` to `new_job_id` and returns how many runs moved.
     """
@@ -921,14 +925,29 @@ def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
     else:
         raise ValueError(f"job still exists: {old_job_id}")
     # raises lookup error if the new job isn't loaded
-    apsis.jobs.get_job(new_job_id)
+    new_job = apsis.jobs.get_job(new_job_id)
 
     unfinished = [s for s in State if not s.finished]
     if apsis.run_store.count_runs(job_id=old_job_id, state=unfinished, limit_lookback=False) > 0:
         raise ValueError(f"job has unfinished runs: {old_job_id}")
-    if apsis.run_store.count_runs(job_id=old_job_id, limit_lookback=False) == 0:
+    args = apsis.run_store.get_latest_args(old_job_id)
+    if args is None:
         raise LookupError(f"no runs of job: {old_job_id}")
+    if set(args) != set(new_job.params):
+        raise ValueError(
+            f"latest run of {old_job_id} has args {sorted(args)}"
+            f" but {new_job_id} has params {sorted(new_job.params)}"
+        )
 
-    count = apsis.run_store.rename_job(old_job_id, new_job_id)
+    count = 0
+    while moved := apsis.run_store.rename_job(old_job_id, new_job_id, _RENAME_BATCH_SIZE):
+        count += moved
+        await asyncio.sleep(0)
+
+    # sends open web uis the moved runs they would load on a refresh
+    _, runs = apsis.run_store.query(job_id=new_job_id)
+    for run in runs:
+        apsis.summary_publisher.publish(messages.make_run_summary(run))
+
     log.info(f"moved {count} runs from {old_job_id} to {new_job_id}")
     return count

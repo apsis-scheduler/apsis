@@ -486,11 +486,21 @@ class RunStore:
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
-    def rename_job(self, old_job_id: str, new_job_id: str) -> int:
+    def get_latest_args(self, job_id: str) -> dict[str, str] | None:
         """
-        Moves all runs of `old_job_id` in the DB to `new_job_id` and returns how many moved.
+        Returns the args of the latest run of `job_id` in the DB, or none if it has no runs.
         """
-        return self.__run_db.rename_job(old_job_id, new_job_id)
+        return self.__run_db.get_latest_args(job_id)
+
+    def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> int:
+        """
+        Moves up to `limit` runs of `old_job_id` in the DB to `new_job_id` and returns how many moved.
+        """
+        moved = self.__run_db.rename_job(old_job_id, new_job_id, limit)
+        # wakes conditions waiting on the new job
+        for run_id, args, state in moved:
+            self.publisher.publish(self.Message(run_id, new_job_id, args, state))
+        return len(moved)
 
     def archivable(self, run_id) -> bool:
         """
