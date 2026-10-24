@@ -4,12 +4,14 @@ import pytest
 import socket
 import subprocess
 import sys
+import time
 import websockets.exceptions
 import websockets.sync.client
 
 from instance import ApsisService
 
 USER = {"X-Remote-User": "alice@EXAMPLE.COM"}
+EVIL = {"Origin": "https://evil.example"}
 LATER_RUN = {"job": {"program": {"type": "no-op"}}, "times": {"schedule": "2100-01-01T00:00:00Z"}}
 
 
@@ -67,9 +69,8 @@ def test_user_unix():
         ):
             assert client.get("/api/v1/runs", headers=headers).status_code == 401
 
-        evil = {"Origin": "https://evil.example"}
-        assert client.post("/api/v1/runs", json=LATER_RUN, headers=USER | evil).status_code == 403
-        for origin, headers, status in (("http://apsis", {}, 401), (evil["Origin"], USER, 403)):
+        assert client.post("/api/v1/runs", json=LATER_RUN, headers=USER | EVIL).status_code == 403
+        for origin, headers, status in (("http://apsis", {}, 401), (EVIL["Origin"], USER, 403)):
             with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
                 websockets.sync.client.unix_connect(
                     str(inst.sock_path),
@@ -100,6 +101,20 @@ def test_user_unix():
             log = client.get(f"/api/v1/runs/{run_id}/log", headers=USER).json()["run_log"]
             assert f"{state} run started by alice" in [r["message"] for r in log]
 
+        long_run = {
+            "job": {"program": {"type": "no-op", "duration": "600"}},
+            "times": {"schedule": "now"},
+        }
+        (run_id,) = client.post("/api/v1/runs", json=long_run, headers=USER).json()["runs"]
+        for _ in range(100):
+            run = client.get(f"/api/v1/runs/{run_id}", headers=USER).json()["runs"][run_id]
+            if run["state"] == "running":
+                break
+            time.sleep(0.1)
+        assert client.post(f"/api/v1/runs/{run_id}/stop", headers=USER).status_code == 200
+        log = client.get(f"/api/v1/runs/{run_id}/log", headers=USER).json()["run_log"]
+        assert "stopping by alice" in [r["message"] for r in log]
+
         assert client.post("/api/control/reload_jobs?dry_run=true", headers=USER).status_code == 200
         assert client.post("/api/control/shut_down", headers=USER).status_code == 200
         inst.srv_proc.wait()
@@ -109,7 +124,10 @@ def test_user_unix():
 
 
 def test_user_tcp():
-    with ApsisService() as inst, httpx.Client(base_url=f"http://localhost:{inst.port}") as client:
+    with (
+        ApsisService() as inst,
+        httpx.Client(base_url=f"http://localhost:{inst.port}", headers=EVIL) as client,
+    ):
         assert skip_later_run(client) == ["scheduled: 2100-01-01T00:00:00+00:00", "skipped"]
 
         (run_id,) = client.post("/api/v1/runs", json=LATER_RUN, headers=USER).json()["runs"]
