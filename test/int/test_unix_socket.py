@@ -2,9 +2,8 @@ import json
 import pytest
 import socket
 import subprocess
+import sys
 import websockets.sync.client
-
-import apsis.ctl
 
 from instance import ApsisService
 
@@ -30,7 +29,7 @@ def test_serve_unix():
             )
             assert res.status_code == 200
             (run_id,) = res.json()["runs"]
-            msgs = json.loads(ws.recv())
+            msgs = json.loads(ws.recv(timeout=10))
             assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
 
 
@@ -48,10 +47,30 @@ def test_serve_unix_refuses_running_server():
             assert client.get("/api/v1/running").status_code == 200
 
 
+def test_bind_unix_refuses_bound_socket(tmp_path):
+    path = tmp_path / "apsis.sock"
+    code = (
+        "import sys, pathlib, apsis.service.main as m\n"
+        "p = pathlib.Path(sys.argv[1])\n"
+        "s = m.bind_unix(p)\n"
+        "m.bind_unix(p)\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code, str(path)],
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+    assert f"something is already serving on {path}" in proc.stderr
+
+
 @pytest.mark.parametrize("opt", [("--host", "0.0.0.0"), ("--port", "5000")])
-def test_serve_unix_rejects_host_or_port(monkeypatch, capsys, opt):
-    monkeypatch.setattr("sys.argv", ["apsisctl", "serve", "--unix", "apsis.sock", *opt])
-    with pytest.raises(SystemExit) as exc:
-        apsis.ctl.main()
-    assert exc.value.code == 2
-    assert "--unix can't be used with --host or --port" in capsys.readouterr().err
+def test_serve_unix_rejects_host_or_port(opt):
+    proc = subprocess.run(
+        [sys.executable, "-m", "apsis.ctl", "serve", "--unix", "apsis.sock", *opt],
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 2
+    assert "--unix can't be used with --host or --port" in proc.stderr
