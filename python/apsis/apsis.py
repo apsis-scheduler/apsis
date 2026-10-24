@@ -13,9 +13,11 @@ from . import procstar
 from .actions import Action
 from .cond.base import PolledCondition, RunStoreCondition, NonmonotonicRunStoreCondition
 from .host_group import config_host_groups
+from .exc import RenameJobError
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
 from .lib.asyn import TaskGroup, Publisher, KeyPublisher
+from .lib.itr import join_truncated
 from .lib.py import more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
@@ -90,6 +92,8 @@ class Apsis:
 
         self.run_log = RunLog(self.__db.run_log_db, self.run_update_publisher)
         self.jobs = Jobs(jobs, db.job_db)
+        # held while reloading jobs or moving run history so neither runs halfway through the other
+        self.jobs_lock = asyncio.Lock()
 
         # Actions applied to all runs.
         self.__actions = [Action.from_jso(o) for o in cfg["actions"]]
@@ -867,6 +871,11 @@ async def reload_jobs(apsis, *, dry_run=False):
       Job IDs that have been removed, job IDs that have been added, and job IDs
       that have changed.
     """
+    async with apsis.jobs_lock:
+        return await _reload_jobs(apsis, dry_run=dry_run)
+
+
+async def _reload_jobs(apsis, *, dry_run):
     # FIXME: Refactor to avoid using private attributes and methods.
     jobs0 = apsis.jobs._Jobs__jobs_dir
     job_db = apsis.jobs._Jobs__job_db
@@ -908,3 +917,71 @@ async def reload_jobs(apsis, *, dry_run=False):
             publish(messages.make_job(apsis.jobs.get_job(job_id), jobs=apsis.jobs))
 
     return rem_ids, add_ids, chg_ids
+
+
+# keeps each batch short on the event loop
+_RENAME_BATCH_SIZE = 100
+
+
+async def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
+    """
+    Moves the run history of removed job `old_job_id` to `new_job_id` and returns the run count.
+    """
+    async with apsis.jobs_lock:
+        try:
+            apsis.jobs.get_job(old_job_id)
+        except LookupError:
+            pass
+        else:
+            raise RenameJobError(f"{old_job_id} still exists, merge and reload its rename first")
+        try:
+            new_job = apsis.jobs.get_job(new_job_id)
+        except LookupError:
+            raise RenameJobError(f"{new_job_id} isn't loaded, merge and reload its rename first")
+
+        unfinished = [s for s in State if not s.finished]
+        _, runs = apsis.run_store.query(job_id=old_job_id, state=unfinished, limit_lookback=False)
+        if len(runs) > 0:
+            listed = join_truncated(10, (f"{r.run_id} {r.state.name}" for r in runs), sep=", ")
+            raise RenameJobError(
+                f"{old_job_id} has unfinished runs {listed},"
+                " skip or stop them, or wait for them to finish"
+            )
+
+        # error runs can have bad args
+        valid = [s for s in State if s != State.error]
+        latest = apsis.run_store.get_latest_run(old_job_id, state=valid)
+        if latest is None:
+            if apsis.run_store.get_latest_run(old_job_id) is None:
+                raise RenameJobError(f"{old_job_id} has no runs to move")
+        elif (args := frozenset(latest.inst.args)) != new_job.params:
+            raise RenameJobError(
+                f"{new_job_id} has params {sorted(new_job.params)}"
+                f" but the latest run of {old_job_id} has args {sorted(args)}"
+            )
+
+        log.info(f"moving runs from {old_job_id} to {new_job_id}")
+        count = 0
+        try:
+            while True:
+                moved, summaries = apsis.run_store.rename_job(
+                    old_job_id, new_job_id, _RENAME_BATCH_SIZE
+                )
+                if moved == 0:
+                    break
+                count += moved
+                # sends open web uis the moved runs they would load on a refresh
+                for msg in summaries:
+                    apsis.summary_publisher.publish(msg)
+                await asyncio.sleep(0)
+        except BaseException:
+            log.exception(
+                f"stopped after moving {count} runs from {old_job_id} to {new_job_id}, rerun it"
+            )
+            raise
+        else:
+            log.info(f"moved {count} runs from {old_job_id} to {new_job_id}")
+        finally:
+            # lets waiting runs that depend on the new job check its moved runs
+            apsis.run_store.wake(new_job_id)
+        return count
