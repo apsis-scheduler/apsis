@@ -5,7 +5,7 @@ import signal
 import urllib.parse
 
 import apsis.apsis
-from apsis.exc import JobsDirErrors
+from apsis.exc import JobsDirErrors, RenameJobError
 from apsis.lib.api import to_bool, response_json, error
 
 log = logging.getLogger(__name__)
@@ -47,15 +47,14 @@ async def on_reload_jobs(request):
 
 @API.route("/rename_job_history", methods={"POST"})
 async def on_rename_job_history(request):
-    jso = request.json or {}
+    jso = request.json if isinstance(request.json, dict) else {}
     old_job_id, new_job_id = jso.get("old_job_id"), jso.get("new_job_id")
     if not (isinstance(old_job_id, str) and isinstance(new_job_id, str)):
         return error("old_job_id and new_job_id are required")
     try:
         count = await apsis.apsis.rename_job_history(request.app.apsis, old_job_id, new_job_id)
-    except LookupError as exc:
-        return error(exc, status=404)
-    except ValueError as exc:
+    except RenameJobError as exc:
+        log.warning(f"not moving runs of {old_job_id}: {exc}")
         return error(exc)
     else:
         return response_json({"runs": count})

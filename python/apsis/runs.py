@@ -486,21 +486,33 @@ class RunStore:
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
-    def get_latest_args(self, job_id: str) -> dict[str, str] | None:
+    def get_latest_runs(self, job_id: str) -> list[Message]:
         """
-        Returns the args of the latest run of `job_id` in the DB, or none if it has no runs.
+        Returns the latest run of `job_id` in the DB with each distinct args, newest first.
         """
-        return self.__run_db.get_latest_args(job_id)
+        return [
+            self.Message(run_id, job_id, args, state)
+            for run_id, args, state in self.__run_db.get_latest_runs(job_id)
+        ]
 
-    def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> int:
+    def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> list[str]:
         """
-        Moves up to `limit` runs of `old_job_id` in the DB to `new_job_id` and returns how many moved.
+        Moves up to `limit` runs of `old_job_id` to `new_job_id` and returns their run IDs.
         """
-        moved = self.__run_db.rename_job(old_job_id, new_job_id, limit)
-        # wakes conditions waiting on the new job
-        for run_id, args, state in moved:
-            self.publisher.publish(self.Message(run_id, new_job_id, args, state))
-        return len(moved)
+        return self.__run_db.rename_job(old_job_id, new_job_id, limit)
+
+    def get_summaries(self, run_ids: list[str]) -> list[dict]:
+        """
+        Returns the summary messages of `run_ids` in the lookback window.
+        """
+        return self.__summary_db.get(run_ids, self.__min_timestamp)
+
+    def wake(self, job_id: str) -> None:
+        """
+        Republishes the latest run of `job_id` per args so waiting conditions check again.
+        """
+        for msg in self.get_latest_runs(job_id):
+            self.publisher.publish(msg)
 
     def archivable(self, run_id) -> bool:
         """

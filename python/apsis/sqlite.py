@@ -519,29 +519,31 @@ class RunDB:
             assert con.total_changes == changes + 1
             con.commit()
 
-    def get_latest_args(self, job_id: str) -> dict[str, str] | None:
+    def get_latest_runs(self, job_id: str) -> list[tuple[str, dict[str, str], State]]:
         """
-        Returns the args of the latest run of `job_id`, or none if it has no runs.
+        Returns the run ID, args and state of the latest run of `job_id` with each distinct args.
         """
-        row = self.__connection.connection.execute(
-            "SELECT args FROM runs WHERE job_id = ? ORDER BY rowid DESC LIMIT 1", (job_id,)
-        ).fetchone()
-        return None if row is None else ujson.loads(row[0])
+        rows = self.__connection.connection.execute(
+            """
+            SELECT run_id, args, state FROM runs
+            WHERE rowid IN (SELECT max(rowid) FROM runs WHERE job_id = ? GROUP BY args)
+            ORDER BY rowid DESC
+            """,
+            (job_id,),
+        ).fetchall()
+        return [(run_id, ujson.loads(args), State[state]) for run_id, args, state in rows]
 
-    def rename_job(
-        self, old_job_id: str, new_job_id: str, limit: int
-    ) -> list[tuple[str, dict[str, str], State]]:
+    def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> list[str]:
         """
-        Moves up to `limit` runs of `old_job_id` and their summaries to `new_job_id`.
-
-        :return:
-          The run ID, args and state of each moved run.
+        Moves up to `limit` runs of `old_job_id` and their summaries to `new_job_id`, returning run IDs.
         """
         con = self.__connection.connection
         rows = con.execute(
-            "SELECT rowid, run_id, args, state FROM runs WHERE job_id = ? ORDER BY rowid LIMIT ?",
+            "SELECT rowid, run_id FROM runs WHERE job_id = ? ORDER BY rowid LIMIT ?",
             (old_job_id, limit),
         ).fetchall()
+        if len(rows) == 0:
+            return []
         marks = ",".join("?" * len(rows))
         con.execute(
             f"""
@@ -549,14 +551,14 @@ class RunDB:
             SET payload = json_replace(payload, '$.run_summary.job_id', ?)
             WHERE run_id IN ({marks})
             """,
-            (new_job_id, *(r[1] for r in rows)),
+            (new_job_id, *(run_id for _, run_id in rows)),
         )
         con.execute(
             f"UPDATE runs SET job_id = ? WHERE rowid IN ({marks})",
-            (new_job_id, *(r[0] for r in rows)),
+            (new_job_id, *(rowid for rowid, _ in rows)),
         )
         con.commit()
-        return [(run_id, ujson.loads(args), State[state]) for _, run_id, args, state in rows]
+        return [run_id for _, run_id in rows]
 
     def get(self, run_id):
         try:
@@ -731,6 +733,17 @@ class RunSummaryDB:
             (run.run_id, dump_time(run.timestamp), payload),
         )
         self.__connection.connection.commit()
+
+    def get(self, run_ids: list[str], min_timestamp: ora.Time | None) -> list[dict]:
+        """
+        Returns the summary messages of `run_ids` with timestamps at or after `min_timestamp`.
+        """
+        sql = f"SELECT payload FROM run_summary WHERE run_id IN ({','.join('?' * len(run_ids))})"
+        params = list(run_ids)
+        if min_timestamp is not None:
+            sql += " AND timestamp >= ?"
+            params.append(dump_time(min_timestamp))
+        return [ujson.loads(p) for (p,) in self.__connection.connection.execute(sql, params)]
 
     def query(self, min_timestamp: ora.Time | None = None) -> Iterator[str]:
         # Use independent paged queries to prevent holding a read cursor across the yield, which seems to cause
