@@ -37,7 +37,10 @@ def test_serve_unix():
 
         with (
             websockets.sync.client.unix_connect(
-                str(inst.sock_path), "ws://apsis/api/v1/summary", additional_headers=USER
+                str(inst.sock_path),
+                "ws://apsis/api/v1/summary",
+                origin="http://apsis",
+                additional_headers=USER,
             ) as ws,
             inst.unix_client() as client,
         ):
@@ -50,15 +53,34 @@ def test_serve_unix():
             (run_id,) = res.json()["runs"]
             msgs = json.loads(ws.recv(timeout=10))
             assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
+        assert any("/summary unix alice:" in l for l in inst.get_log_lines())
 
 
 def test_user_unix():
     with ApsisService(unix=True) as inst, inst.unix_client() as client:
-        assert client.get("/api/v1/runs").status_code == 401
+        for headers in (
+            {},
+            [("X-Remote-User", "alice"), ("X-Remote-User", "bob")],
+            {"X-Remote-User": "mallory, alice"},
+        ):
+            assert client.get("/api/v1/runs", headers=headers).status_code == 401
+
+        evil = {"Origin": "https://evil.example"}
+        assert client.post("/api/v1/runs", json=LATER_RUN, headers=USER | evil).status_code == 403
         with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
-            websockets.sync.client.unix_connect(str(inst.sock_path), "ws://apsis/api/v1/summary")
-        assert exc.value.response.status_code == 401
+            websockets.sync.client.unix_connect(
+                str(inst.sock_path),
+                "ws://apsis/api/v1/summary",
+                origin=evil["Origin"],
+                additional_headers=USER,
+            )
+        assert exc.value.response.status_code == 403
         assert client.get("/api/control/debug", headers=USER).status_code == 403
+
+        bad_args = LATER_RUN | {"args": {"x": "1"}}
+        (run,) = client.post("/api/v1/runs", json=bad_args, headers=USER).json()["runs"].values()
+        assert run["state"] == "error"
+        assert run["meta"]["state_reason"].endswith(" by alice")
 
         assert skip_later_run(client) == [
             "scheduled: 2100-01-01T00:00:00+00:00 by alice",

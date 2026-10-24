@@ -1,11 +1,13 @@
 import asyncio
 import logging
 from pathlib import Path
+import re
 import sanic
 import sanic.response
 import sanic.router
 import signal
 import socket
+from urllib.parse import urlsplit
 
 from apsis import __version__
 from apsis.apsis import Apsis
@@ -61,6 +63,10 @@ app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
 
 
+# the default useradd name pattern, without the trailing $ for machine accounts
+USER_RE = re.compile(r"[a-z_][a-z0-9_-]*")
+
+
 @app.middleware("request")
 async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     """
@@ -68,14 +74,19 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     socket, or to none over TCP where anyone can send the header.
 
     :return:
-      A 401 response if the header is missing or empty on a unix socket.
+      On a unix socket, a 401 response for a missing, repeated or invalid
+      X-Remote-User, or a 403 response for an Origin other than the host.
     """
     if not request.app.authenticated:
         request.ctx.user = None
         return
-    user = request.headers.get("X-Remote-User", "").split("@", 1)[0].lower()
-    if not user:
-        return error("missing X-Remote-User", 401)
+    users = request.headers.getall("X-Remote-User", [])
+    user = users[0].split("@", 1)[0].lower() if len(users) == 1 else ""
+    if USER_RE.fullmatch(user) is None:
+        return error("missing or invalid X-Remote-User", 401)
+    origin = request.headers.get("Origin")
+    if origin is not None and urlsplit(origin).netloc != request.host:
+        return error(f"cross origin request from {origin}", 403)
     request.ctx.user = user
 
 
