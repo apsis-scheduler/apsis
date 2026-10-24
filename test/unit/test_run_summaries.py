@@ -1,10 +1,16 @@
 import sqlite3
 import threading
+from types import SimpleNamespace
 
 import ora
+import pytest
 import ujson
 
+from apsis import procstar
+from apsis.jobs import InMemoryJobs, Job
 from apsis.runs import Instance, Run, RunStore
+from apsis.service import summary
+from apsis.service.summary import SummaryScope, send_scoped_init
 from apsis.sqlite import SqliteDB
 from apsis.states import State
 
@@ -242,3 +248,108 @@ def test_summaries_paged(tmp_path, monkeypatch):
     assert [len(p) for p in pages] == [2, 1, 2, 1]
     assert set(pages[0] + pages[1]) == expected_ids
     assert set(pages[2] + pages[3]) == persisted_ids
+
+
+def add_runs(run_store, job_id, count):
+    runs = []
+    for _ in range(count):
+        run = Run(Instance(job_id, {}), expected=False)
+        run_store.add(run)
+        runs.append(run)
+    return runs
+
+
+def run_ids(payloads):
+    return [ujson.loads(p)["run_summary"]["run_id"] for p in payloads]
+
+
+def test_job_summaries_pages(tmp_path):
+    run_store = make_run_store(tmp_path)
+    a = add_runs(run_store, "a", 5)
+    add_runs(run_store, "b", 2)
+
+    # an old timestamp puts a run outside the lookback window
+    conn = run_store._RunStore__summary_db._RunSummaryDB__connection.connection
+    conn.execute("UPDATE runs SET timestamp = 0 WHERE run_id = ?", (a[2].run_id,))
+    conn.commit()
+
+    pages = [run_ids(p) for p in run_store.job_summaries("a", page_size=2)]
+    assert pages == [[a[4].run_id, a[3].run_id], [a[1].run_id], [a[0].run_id]]
+
+    # a full page outside the lookback doesn't end the walk
+    conn.execute("UPDATE runs SET timestamp = 0 WHERE run_id = ?", (a[1].run_id,))
+    conn.commit()
+    pages = [run_ids(p) for p in run_store.job_summaries("a", page_size=2)]
+    assert pages == [[a[4].run_id, a[3].run_id], [], [a[0].run_id]]
+
+    summary_db = run_store._RunStore__summary_db
+    pages = list(summary_db.query_job("a", min_timestamp=None, page_size=10))
+    assert run_ids(pages[0]) == [r.run_id for r in reversed(a)]
+    assert list(summary_db.query_job("c", min_timestamp=None, page_size=10)) == [[]]
+
+
+class FakeWs:
+    def __init__(self):
+        self.frames = []
+
+    async def send(self, data):
+        self.frames.append(ujson.loads(data))
+
+    def ids(self):
+        """
+        Returns the run or job ID of each message, by frame, before the done frame.
+        """
+        return [
+            [m["run_summary"]["run_id"] if "run_summary" in m else m["job"]["job_id"] for m in f]
+            for f in self.frames[:-1]
+        ]
+
+
+@pytest.mark.asyncio
+async def test_send_scoped_init_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(summary, "PAGE_ROWS", 2)
+    run_store = make_run_store(tmp_path)
+    expected = Run(Instance("a", {}), expected=True)
+    run_store.add(expected)
+    run_store.add(Run(Instance("d", {}), expected=True))
+    a = add_runs(run_store, "a", 5)
+    b = add_runs(run_store, "b", 2)
+    apsis = SimpleNamespace(run_store=run_store)
+
+    ws = FakeWs()
+    scope = SummaryScope(init=True, types=frozenset({"run"}), job_ids=frozenset({"a", "b", "c"}))
+    await send_scoped_init(apsis, ws, scope)
+    assert ws.ids() == [
+        [expected.run_id],
+        [a[4].run_id, a[3].run_id],
+        [a[2].run_id, a[1].run_id],
+        [a[0].run_id],
+        [b[1].run_id, b[0].run_id],
+    ]
+    assert ws.frames[-1] == [{"type": "summary_init_done"}]
+
+
+@pytest.mark.asyncio
+async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
+    run_store = make_run_store(tmp_path)
+    (run,) = add_runs(run_store, "x", 1)
+    apsis = SimpleNamespace(jobs=InMemoryJobs([Job("x"), Job("y")]), run_store=run_store)
+
+    conn = SimpleNamespace(to_jso=lambda: {"conn_id": "c"})
+    with monkeypatch.context() as m:
+        m.setattr(procstar, "get_agent_server", lambda: SimpleNamespace(connections={"c": conn}))
+        ws = FakeWs()
+        scope = SummaryScope(
+            init=True, types=frozenset({"job", "agent_conn"}), job_ids=frozenset({"x", "missing"})
+        )
+        await send_scoped_init(apsis, ws, scope)
+    assert [m["job"]["job_id"] for m in ws.frames[0]] == ["x"]
+    assert ws.frames[1:] == [
+        [{"type": "agent_conn", "conn": {"conn_id": "c"}}],
+        [{"type": "summary_init_done"}],
+    ]
+
+    # no job ids sends all jobs and runs, and no agent server sends no conns
+    ws = FakeWs()
+    await send_scoped_init(apsis, ws, SummaryScope(init=True))
+    assert ws.ids() == [["x", "y"], [run.run_id]]

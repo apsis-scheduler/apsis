@@ -14,6 +14,7 @@ import ujson
 import yaml
 
 import apsis.service.client
+from apsis.service.client import get_ws_msgs
 from apsis.sqlite import SqliteDB
 
 # -------------------------------------------------------------------------------
@@ -221,6 +222,23 @@ class ApsisService:
                 return res
         else:
             raise RuntimeError("timeout waiting for run")
+
+    async def read_summary(self, query, *, until="summary_init_done", timeout=10):
+        """
+        Reads summary websocket messages for `query` through the first
+        message of type `until`.
+        """
+        url = f"ws://localhost:{self.port}/api/v1/summary?{query}"
+
+        async def read():
+            msgs = []
+            async with get_ws_msgs(url) as frames:
+                async for frame in frames:
+                    msgs += ujson.loads(frame)
+                    if msgs[-1]["type"] == until:
+                        return msgs
+
+        return await asyncio.wait_for(read(), timeout)
 
     def wait_for_run_to_start(self, run_id):
         return self.wait_run(run_id, wait_states=("new", "scheduled", "waiting", "starting"))
