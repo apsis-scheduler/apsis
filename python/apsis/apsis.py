@@ -17,6 +17,7 @@ from .exc import RenameJobError
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
 from .lib.asyn import TaskGroup, Publisher, KeyPublisher
+from .lib.itr import join_truncated
 from .lib.py import more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
@@ -918,7 +919,7 @@ async def _reload_jobs(apsis, *, dry_run):
     return rem_ids, add_ids, chg_ids
 
 
-# keeps each batch under about 10 ms on the event loop for a job with 100k runs
+# keeps each batch short on the event loop
 _RENAME_BATCH_SIZE = 100
 
 
@@ -926,11 +927,6 @@ async def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
     """
     Moves the run history of removed job `old_job_id` to `new_job_id` and returns the run count.
     """
-    # keeps moving if the request that started it goes away
-    return await asyncio.shield(_rename_job_history(apsis, old_job_id, new_job_id))
-
-
-async def _rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
     async with apsis.jobs_lock:
         try:
             apsis.jobs.get_job(old_job_id)
@@ -942,26 +938,23 @@ async def _rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
             new_job = apsis.jobs.get_job(new_job_id)
         except LookupError:
             raise RenameJobError(f"{new_job_id} isn't loaded, merge and reload its rename first")
-        if new_job.ad_hoc:
-            raise RenameJobError(f"{new_job_id} is an ad hoc job")
 
         unfinished = [s for s in State if not s.finished]
         _, runs = apsis.run_store.query(job_id=old_job_id, state=unfinished, limit_lookback=False)
         if len(runs) > 0:
-            listed = ", ".join(f"{r.run_id} {r.state.name}" for r in runs[:10])
-            more = f" and {len(runs) - 10} more" if len(runs) > 10 else ""
+            listed = join_truncated(10, (f"{r.run_id} {r.state.name}" for r in runs), sep=", ")
             raise RenameJobError(
-                f"{old_job_id} has unfinished runs {listed}{more},"
+                f"{old_job_id} has unfinished runs {listed},"
                 " skip or stop them, or wait for them to finish"
             )
 
         # error runs can have bad args
         valid = [s for s in State if s != State.error]
         latest = apsis.run_store.get_latest_run(old_job_id, state=valid)
-        if latest is None:
+        if latest is None and apsis.run_store.get_latest_run(old_job_id) is None:
             raise RenameJobError(f"{old_job_id} has no runs to move")
-        args = frozenset(latest.inst.args)
-        if args != new_job.params:
+        args = None if latest is None else frozenset(latest.inst.args)
+        if args is not None and args != new_job.params:
             raise RenameJobError(
                 f"{new_job_id} has params {sorted(new_job.params)}"
                 f" but the latest run of {old_job_id} has args {sorted(args)}"
@@ -981,8 +974,14 @@ async def _rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
                 for msg in summaries:
                     apsis.summary_publisher.publish(msg)
                 await asyncio.sleep(0)
-        finally:
+        except BaseException:
+            log.error(
+                f"stopped after moving {count} runs from {old_job_id} to {new_job_id}, rerun it"
+            )
+            raise
+        else:
             log.info(f"moved {count} runs from {old_job_id} to {new_job_id}")
+        finally:
             # lets waiting runs that depend on the new job check its moved runs
             apsis.run_store.wake(new_job_id)
         return count

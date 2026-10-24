@@ -523,10 +523,7 @@ class RunDB:
         self, old_job_id: str, new_job_id: str, limit: int, min_timestamp: ora.Time | None
     ) -> tuple[int, list[dict]]:
         """
-        Moves up to `limit` runs of `old_job_id` and their summaries to `new_job_id`.
-
-        :return:
-          The number of runs moved, and the summary messages of those at or after `min_timestamp`.
+        Moves up to `limit` runs to `new_job_id`, returns count and summaries since `min_timestamp`.
         """
         con = self.__connection.connection
         try:

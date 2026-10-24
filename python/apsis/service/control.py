@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sanic
@@ -52,7 +53,10 @@ async def on_rename_job_history(request):
     if not (isinstance(old_job_id, str) and isinstance(new_job_id, str)):
         return error("old_job_id and new_job_id are required")
     try:
-        count = await apsis.apsis.rename_job_history(request.app.apsis, old_job_id, new_job_id)
+        # keeps moving if this request goes away
+        count = await asyncio.shield(
+            apsis.apsis.rename_job_history(request.app.apsis, old_job_id, new_job_id)
+        )
     except RenameJobError as exc:
         log.warning(f"not moving runs of {old_job_id}: {exc}")
         return error(exc)

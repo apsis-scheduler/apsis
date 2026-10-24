@@ -22,3 +22,4 @@ def test_rename_job_rolls_back_runs(tmp_path):
         db.run_db.rename_job("old", "new", 100, None)
     # the runs update goes back with the failed summary update
     assert db.run_db.get(run.run_id).inst.job_id == "old"
+    db.close()

@@ -487,7 +487,7 @@ class RunStore:
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
-    def get_latest_run(self, job_id: str, state: Iterable[State]) -> Run | None:
+    def get_latest_run(self, job_id: str, state: Iterable[State] | None = None) -> Run | None:
         """
         Returns the latest run of `job_id` in `state` in the DB, or none if there isn't one.
         """
@@ -496,10 +496,7 @@ class RunStore:
 
     def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> tuple[int, list[dict]]:
         """
-        Moves up to `limit` runs of `old_job_id` in the DB to `new_job_id`.
-
-        :return:
-          The number of runs moved, and the summary messages of those in the lookback window.
+        Moves up to `limit` runs to `new_job_id`, returns count and summaries in the lookback window.
         """
         return self.__run_db.rename_job(old_job_id, new_job_id, limit, self.__min_timestamp)
 

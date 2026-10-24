@@ -116,9 +116,6 @@ def test_rename_job_history_checks_jobs(inst):
     move_job(inst, new_job="params: [date]\n" + JOB)
     with pytest.raises(APIError, match="team/missing isn't loaded"):
         inst.client.rename_job_history(OLD_JOB_ID, "team/missing")
-    adhoc_id = inst.client.schedule_adhoc("now", {"program": {"type": "no-op"}})["job_id"]
-    with pytest.raises(APIError, match="is an ad hoc job"):
-        inst.client.rename_job_history(OLD_JOB_ID, adhoc_id)
 
     # a typo in the old job id moves nothing
     with pytest.raises(APIError, match="team/reprot has no runs to move"):
@@ -126,6 +123,24 @@ def test_rename_job_history_checks_jobs(inst):
 
     with pytest.raises(APIError, match=r"team/sub/report has params \['date'\] but the latest"):
         inst.client.rename_job_history(OLD_JOB_ID, NEW_JOB_ID)
+
+    # a job whose runs are all errors still moves
+    assert inst.client.schedule("team/other", {"x": "1"})["state"] == "error"
+    (inst.jobs_dir / "team/other.yaml").rename(inst.jobs_dir / "team/sub/other.yaml")
+    inst.client.reload_jobs()
+    # a failed batch is logged and a rerun picks it up
+    trigger = "CREATE TRIGGER fail BEFORE UPDATE ON run_summary BEGIN SELECT RAISE(ABORT, 'x'); END"
+    with closing(sqlite3.connect(inst.db_path)) as db, db:
+        db.execute(trigger)
+    with pytest.raises(APIError) as exc:
+        inst.client.rename_job_history("team/other", "team/sub/other")
+    assert exc.value.status == 500
+    assert any(
+        "stopped after moving 0 runs from team/other" in line for line in inst.get_log_lines()
+    )
+    with closing(sqlite3.connect(inst.db_path)) as db, db:
+        db.execute("DROP TRIGGER fail")
+    assert inst.client.rename_job_history("team/other", "team/sub/other") == {"runs": 1}
 
     resp = requests.post(f"http://localhost:{inst.port}/api/control/rename_job_history", json={})
     assert resp.status_code == 400
