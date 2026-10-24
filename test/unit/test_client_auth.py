@@ -12,6 +12,7 @@ import apsis.ctl
 from apsis.service import DEFAULT_PORT
 from apsis.service.client import (
     AUTH_ERROR,
+    NO_HTTPS_ERROR,
     NO_KERBEROS_ERROR,
     APIError,
     Client,
@@ -28,13 +29,13 @@ def _response(status: int, content: bytes = b"{}") -> requests.Response:
 
 
 @pytest.mark.parametrize(
-    "flags, url",
+    "flags, url, error",
     [
-        ([], "https://apsis.example.com/api/v1/jobs/j"),
-        (["--host", "h"], "http://h:6000/api/v1/jobs/j"),
+        ([], "https://apsis.example.com/api/v1/jobs/j", AUTH_ERROR),
+        (["--host", "h"], "http://h:6000/api/v1/jobs/j", NO_HTTPS_ERROR),
     ],
 )
-def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url):
+def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
     monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
     monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
     monkeypatch.setenv("APSIS_HOST", "other:6000")
@@ -47,7 +48,7 @@ def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url):
         apsis.cli.main()
     assert exc.value.code == 1
     assert urls == [url]
-    assert AUTH_ERROR in " ".join(capsys.readouterr().out.split())
+    assert error in " ".join(capsys.readouterr().out.split())
 
 
 @pytest.mark.parametrize(
@@ -187,7 +188,7 @@ def test_no_kerberos_without_gssapi_packages(monkeypatch):
 @pytest.mark.parametrize("get", [Client.get_outputs, lambda c, r: c.get_output(r, "output")])
 @pytest.mark.parametrize(
     "content, error",
-    [(b"{}", AUTH_ERROR), (b'{"error": "missing X-Remote-User"}', "missing X-Remote-User")],
+    [(b"<html>", NO_HTTPS_ERROR), (b'{"error": "missing X-Remote-User"}', "missing X-Remote-User")],
 )
 def test_raw_gets_raise_auth_error(monkeypatch, get, content, error):
     monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
@@ -246,12 +247,37 @@ async def test_ws_msgs_send_negotiate_header(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "status, error", [(401, APIError), (500, websockets.exceptions.InvalidHandshake)]
+    "status, error, match",
+    [(401, APIError, NO_HTTPS_ERROR), (500, websockets.exceptions.InvalidHandshake, None)],
 )
-async def test_ws_status_error(status, error):
+async def test_ws_status_error(monkeypatch, status, error, match):
+    monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
     async with serve(
         None, "127.0.0.1", 0, process_request=lambda conn, req: conn.respond(status, "")
     ) as server:
-        with pytest.raises(error):
+        with pytest.raises(error, match=match):
             async with get_ws_msgs(f"ws://127.0.0.1:{_port(server)}/x"):
                 pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "updates, path",
+    [
+        (lambda c: c.get_run_updates("r1"), "/api/v1/runs/r1/updates"),
+        (
+            lambda c: c.get_output_data_updates("r1", "output"),
+            "/api/v1/runs/r1/output/output/updates",
+        ),
+    ],
+)
+async def test_updates_connect_over_ws(updates, path):
+    paths = []
+
+    async def handler(conn):
+        paths.append(conn.request.path)
+
+    async with serve(handler, "127.0.0.1", 0) as server:
+        async with updates(Client(("127.0.0.1", _port(server)))) as msgs:
+            assert [m async for m in msgs] == []
+    assert paths == [path]

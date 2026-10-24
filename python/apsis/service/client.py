@@ -65,6 +65,18 @@ def get_url() -> str:
 
 AUTH_ERROR = "not authenticated, get a Kerberos ticket and check KRB5CCNAME"
 NO_KERBEROS_ERROR = "not authenticated, install requests-gssapi for Kerberos"
+NO_HTTPS_ERROR = "not authenticated, use an https URL for Kerberos"
+
+
+def get_auth_error(url: str) -> str:
+    """
+    Returns the error for a 401 from `url` without a server error message.
+    """
+    if HTTPSPNEGOAuth is None:
+        return NO_KERBEROS_ERROR
+    if urlsplit(url).scheme not in ("https", "wss"):
+        return NO_HTTPS_ERROR
+    return AUTH_ERROR
 
 
 def has_ticket() -> bool:
@@ -119,7 +131,7 @@ async def get_ws_msgs(url):
             yield get_msgs()
     except websockets.exceptions.InvalidStatusCode as exc:
         if exc.status_code == 401:
-            raise APIError(401, AUTH_ERROR, {}) from None
+            raise APIError(401, get_auth_error(url), {}) from None
         raise
 
 
@@ -180,9 +192,9 @@ class Client:
             try:
                 jso = resp.json()
                 error = jso["error"]
-            except Exception:
+            except (ValueError, KeyError, TypeError):
                 jso = {}
-                error = AUTH_ERROR if HTTPSPNEGOAuth is not None else NO_KERBEROS_ERROR
+                error = get_auth_error(url)
             raise APIError(401, error, jso)
         return resp
 
