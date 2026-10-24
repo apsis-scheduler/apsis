@@ -76,7 +76,7 @@ def test_bind_unix_refuses_bound_socket(tmp_path):
 @pytest.mark.parametrize("opt", [("--host", "0.0.0.0"), ("--port", "5000")])
 def test_serve_unix_rejects_host_or_port(opt):
     proc = subprocess.run(
-        [sys.executable, "-m", "apsis.ctl", "serve", "--unix", "apsis.sock", *opt],
+        ["apsisctl", "serve", "--unix", "apsis.sock", *opt],
         stderr=subprocess.PIPE,
         text=True,
         timeout=30,
