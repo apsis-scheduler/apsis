@@ -1,11 +1,13 @@
 import asyncio
 import logging
 from pathlib import Path
+import re
 import sanic
 import sanic.response
 import sanic.router
 import signal
 import socket
+from urllib.parse import urlsplit
 
 from apsis import __version__
 from apsis.apsis import Apsis
@@ -61,6 +63,10 @@ app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
 
 
+# the default useradd name pattern, without the trailing $ for machine accounts
+USER_RE = re.compile(r"[a-z_][a-z0-9_-]*")
+
+
 @app.middleware("request")
 async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     """
@@ -68,14 +74,19 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     socket, or to none over TCP where anyone can send the header.
 
     :return:
-      A 401 response if the header is missing or empty on a unix socket.
+      On a unix socket, a 401 response for a missing, repeated or invalid
+      X-Remote-User, or a 403 response for an Origin other than the host.
     """
     if not request.app.authenticated:
         request.ctx.user = None
         return
-    user = request.headers.get("X-Remote-User", "").split("@", 1)[0].lower()
-    if not user:
-        return error("missing X-Remote-User", 401)
+    users = request.headers.getall("X-Remote-User", [])
+    user = users[0].split("@", 1)[0].lower() if len(users) == 1 and users[0].isascii() else ""
+    if USER_RE.fullmatch(user) is None:
+        return error("missing or invalid X-Remote-User", 401)
+    origin = request.headers.get("Origin")
+    if origin is not None and urlsplit(origin).netloc != request.host:
+        return error(f"cross origin request from {origin}", 403)
     request.ctx.user = user
 
 
@@ -115,14 +126,21 @@ def build_apsis(cfg):
 
 def bind_unix(path: Path) -> socket.socket:
     """
-    Removes any existing socket file at `path`, then binds a unix socket there
-    that only its owner and group can connect to.
+    Binds a unix socket at `path` that only its owner and group can connect to,
+    replacing a stale socket file but not one a server is listening on.
     """
     if path.is_socket():
-        path.unlink()
+        with socket.socket(socket.AF_UNIX) as probe:
+            try:
+                probe.connect(str(path))
+            except ConnectionRefusedError:
+                path.unlink()
+            else:
+                raise RuntimeError(f"something is already serving on {path}")
     sock = socket.socket(socket.AF_UNIX)
     sock.bind(str(path))
     path.chmod(0o660)
+    sock.listen()
     return sock
 
 
@@ -142,6 +160,8 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
     asyncio.set_event_loop(loop)
     loop.set_debug(True)
 
+    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
+
     apsis = build_apsis(cfg)
 
     app.apsis = apsis
@@ -152,7 +172,6 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
-    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
     server = app.create_server(**addr, debug=debug, return_asyncio_server=True)
     server_task = asyncio.ensure_future(server)
 

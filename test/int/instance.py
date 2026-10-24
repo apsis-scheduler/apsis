@@ -105,7 +105,7 @@ class ApsisService:
         with self.unix_client() as client:
             while True:
                 try:
-                    client.get("/api/v1/running")
+                    client.get("/api/v1/running", headers={"X-Remote-User": "alice"})
                     return
                 except httpx.TransportError:
                     if time.monotonic() > deadline:

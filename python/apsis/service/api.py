@@ -675,7 +675,7 @@ async def websocket_summary(request, ws):
     apsis = request.app.apsis
 
     peer = request.socket
-    prefix = f"/summary {peer[0]}:{peer[1]}:" if peer else "/summary unix:"
+    prefix = f"/summary {peer[0]}:{peer[1]}:" if peer else f"/summary unix {request.ctx.user}:"
     log.debug(f"{prefix} connected init={init}")
 
     predicate = lambda msg: msg["type"] in SUMMARY_MSG_TYPES
