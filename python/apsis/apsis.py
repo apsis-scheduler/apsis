@@ -908,3 +908,26 @@ async def reload_jobs(apsis, *, dry_run=False):
             publish(messages.make_job(apsis.jobs.get_job(job_id), jobs=apsis.jobs))
 
     return rem_ids, add_ids, chg_ids
+
+
+def rename_job_history(apsis, old_job_id: str, new_job_id: str) -> int:
+    """
+    Moves the run history of removed job `old_job_id` to `new_job_id` and returns how many runs moved.
+    """
+    try:
+        apsis.jobs.get_job(old_job_id)
+    except LookupError:
+        pass
+    else:
+        raise ValueError(f"job still exists: {old_job_id}")
+    # raises lookup error if the new job isn't loaded
+    apsis.jobs.get_job(new_job_id)
+
+    unfinished = [s for s in State if not s.finished]
+    _, runs = apsis.run_store.query(job_id=old_job_id, state=unfinished, limit_lookback=False)
+    if len(runs) > 0:
+        raise ValueError(f"job has unfinished runs: {old_job_id}")
+
+    count = apsis.run_store.rename_job(old_job_id, new_job_id)
+    log.info(f"moved {count} runs from {old_job_id} to {new_job_id}")
+    return count

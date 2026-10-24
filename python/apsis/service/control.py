@@ -45,6 +45,20 @@ async def on_reload_jobs(request):
 # FIXME: Reload a single job id?
 
 
+@API.route("/rename_job_history", methods={"POST"})
+async def on_rename_job_history(request):
+    old_job_id = request.json["old_job_id"]
+    new_job_id = request.json["new_job_id"]
+    try:
+        count = apsis.apsis.rename_job_history(request.app.apsis, old_job_id, new_job_id)
+    except LookupError as exc:
+        return error(exc, status=404)
+    except ValueError as exc:
+        return error(exc)
+    else:
+        return response_json({"runs": count})
+
+
 @API.route("/shut_down", methods={"POST"})
 async def on_shut_down(request):
     # Sanic ignores query params without values.

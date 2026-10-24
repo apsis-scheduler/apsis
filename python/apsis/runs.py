@@ -486,6 +486,14 @@ class RunStore:
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
 
+    def rename_job(self, old_job_id: str, new_job_id: str) -> int:
+        """
+        Moves all runs of `old_job_id` in the DB to `new_job_id` and returns how many moved.
+        """
+        # summaries go first since they find their runs by the old job id
+        self.__summary_db.rename_job(old_job_id, new_job_id)
+        return self.__run_db.rename_job(old_job_id, new_job_id)
+
     def archivable(self, run_id) -> bool:
         """
         :return:
