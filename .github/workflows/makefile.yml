@@ -23,10 +23,13 @@ jobs:
         version: "latest"
         enable-cache: true
 
+    - name: Install Kerberos headers
+      run: sudo apt-get update && sudo apt-get install -y libkrb5-dev
+
     - name: Install dependencies
       # extra index-url is for using procstar repository as a pypi index via Github
       # Pages
-      run: uv sync --extra-index-url https://apsis-scheduler.github.io/procstar/simple
+      run: uv sync --extra kerberos --extra-index-url https://apsis-scheduler.github.io/procstar/simple
 
     - name: Check Python formatting
       run: uv run ruff format --check --diff

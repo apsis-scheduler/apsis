@@ -1,3 +1,4 @@
+import base64
 from collections import namedtuple
 from contextlib import asynccontextmanager
 import http.client
@@ -8,9 +9,16 @@ import os
 import re
 import requests
 import time
+from typing import Any
 import ujson
-from urllib.parse import quote, urlunparse
+from urllib.parse import quote, urlsplit, urlunsplit
 import websockets.client
+
+try:
+    import gssapi
+    from requests_gssapi import DISABLED, SPNEGO, HTTPSPNEGOAuth
+except ImportError:
+    gssapi = HTTPSPNEGOAuth = None
 
 import apsis.service
 from apsis.runs import run_number
@@ -23,11 +31,11 @@ Address = namedtuple("Address", ("host", "port"))
 
 def get_address() -> Address:
     """
-    Returns the configured host and port where Apsis runs.
+    Returns the configured host and port where Apsis runs, or the defaults if
+    APSIS_HOST is a URL.
     """
-    try:
-        loc = os.environ["APSIS_HOST"]
-    except KeyError:
+    loc = os.environ.get("APSIS_HOST")
+    if loc is None or "://" in loc:
         host, port = "localhost", apsis.service.DEFAULT_PORT
     else:
         try:
@@ -40,23 +48,91 @@ def get_address() -> Address:
     return Address(host, port)
 
 
+def get_url() -> str:
+    """
+    Returns the base URL from APSIS_HOST, defaulting to http.
+    """
+    loc = os.environ.get("APSIS_HOST", "")
+    if "://" in loc:
+        return loc.rstrip("/")
+    return "http://{}:{}".format(*get_address())
+
+
+def get_explicit_address(host: str | None, port: str | None) -> Address | None:
+    """
+    Returns the address for an explicit `host` or `port`, or none.
+    """
+    if host is None and port is None:
+        return None
+    addr = get_address()
+    return Address(host or addr.host, port or addr.port)
+
+
+AUTH_ERROR = "not authenticated, get a Kerberos ticket and check KRB5CCNAME"
+NO_KERBEROS_ERROR = "not authenticated, install requests-gssapi for Kerberos"
+NO_HTTPS_ERROR = "not authenticated, use an https URL for Kerberos"
+
+
+def get_auth_error(url: str) -> str:
+    """
+    Returns the error for a 401 from `url` without a server error message.
+    """
+    if HTTPSPNEGOAuth is None:
+        return NO_KERBEROS_ERROR
+    if urlsplit(url).scheme not in ("https", "wss"):
+        return NO_HTTPS_ERROR
+    return AUTH_ERROR
+
+
+def has_ticket() -> bool:
+    """
+    Returns true if the user has an unexpired Kerberos ticket.
+    """
+    try:
+        return gssapi.Credentials(usage="initiate").lifetime != 0
+    except gssapi.exceptions.GSSError:
+        return False
+
+
+def get_negotiate_headers(url: str) -> dict[str, str]:
+    """
+    Returns an SPNEGO Authorization header for a wss `url`, or no headers.
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "wss" or HTTPSPNEGOAuth is None or not has_ticket():
+        return {}
+    try:
+        name = gssapi.Name(f"HTTP@{parts.hostname}", gssapi.NameType.hostbased_service)
+        token = gssapi.SecurityContext(name=name, mech=SPNEGO, usage="initiate").step()
+    except gssapi.exceptions.GSSError as exc:
+        logging.debug(f"no negotiate token for {parts.hostname}: {exc}")
+        return {}
+    return {"Authorization": "Negotiate " + base64.b64encode(token).decode()}
+
+
 @asynccontextmanager
 async def get_ws_msgs(url):
     """
     Async context manager of async iterator of messages read from websocket
     at `url`.
     """
-    async with websockets.client.connect(url, max_size=None) as conn:
+    headers = get_negotiate_headers(url)
+    try:
+        async with websockets.client.connect(url, max_size=None, extra_headers=headers) as conn:
 
-        async def get_msgs():
-            while True:
-                try:
-                    msg = await conn.recv()
-                except websockets.ConnectionClosedOK:
-                    break
-                yield msg
+            async def get_msgs():
+                while True:
+                    try:
+                        msg = await conn.recv()
+                    except websockets.ConnectionClosedOK:
+                        break
+                    yield msg
 
-        yield get_msgs()
+            yield get_msgs()
+    except websockets.exceptions.InvalidStatusCode as exc:
+        if exc.status_code == 401:
+            raise APIError(401, get_auth_error(url), {}) from None
+        raise
 
 
 def parse_content_range(header):
@@ -72,6 +148,19 @@ class APIError(RuntimeError):
         self.jso = jso
 
 
+def get_api_error(resp: requests.Response, default: str) -> APIError:
+    """
+    Returns an `APIError` for `resp` with the server's error, or `default`.
+    """
+    try:
+        jso = resp.json()
+        error = jso.get("error", default)
+    except Exception:
+        jso = {}
+        error = default
+    return APIError(resp.status_code, error, jso)
+
+
 NO_ARG = object()
 
 
@@ -79,11 +168,25 @@ class Client:
     def __init__(self, address=None):
         """
         :param address:
-          Apsis hostname and port, or none for default.
+          Apsis hostname and port, or none for `get_url`.
         """
-        self.__addr = get_address() if address is None else Address(*address)
+        self.__base = get_url() if address is None else "http://{}:{}".format(*address)
+        self.__auth = (
+            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True)
+            if urlsplit(self.__base).scheme == "https"
+            and HTTPSPNEGOAuth is not None
+            and has_ticket()
+            else None
+        )
 
-    def __url(self, *path, scheme="http", query=None, **kw_query):
+    @property
+    def base_url(self) -> str:
+        """
+        The base URL requests go to.
+        """
+        return self.__base
+
+    def __url(self, *path, ws=False, query=None, **kw_query):
         # query holds params whose names may collide with these keywords
         query = {**(query or {}), **kw_query}
         query = "&".join(
@@ -91,31 +194,25 @@ class Client:
             for k, v in query.items()
             if v is not None
         )
-        return urlunparse(
-            (
-                scheme,
-                f"{self.__addr.host}:{self.__addr.port}",
-                "/".join(path),
-                "",
-                query,
-                "",
-            )
-        )
+        scheme, netloc, base_path, _, _ = urlsplit(self.__base)
+        if ws:
+            scheme = {"http": "ws", "https": "wss"}[scheme]
+        return urlunsplit((scheme, netloc, base_path + "/".join(path), query, ""))
+
+    def __send(self, method: str, url: str, **kw: Any) -> requests.Response:
+        resp = requests.request(method, url, auth=self.__auth, **kw)
+        if resp.status_code == 401:
+            raise get_api_error(resp, get_auth_error(url))
+        return resp
 
     def __request(self, method, *path, timeout=None, data=None, query=None, **kw_query):
         url = self.__url(*path, query={**(query or {}), **kw_query})
         logging.debug(f"{method} {url} data={data}")
-        resp = requests.request(method, url, json=data, timeout=timeout)
+        resp = self.__send(method, url, json=data, timeout=timeout)
         if 200 <= resp.status_code < 300:
             return resp.json()
         else:
-            try:
-                jso = resp.json()
-                error = jso.get("error", "unknown error")
-            except Exception:
-                jso = {}
-                error = "unknown error"
-            raise APIError(resp.status_code, error, jso)
+            raise get_api_error(resp, "unknown error")
 
     def __get(self, *path, **query):
         return self.__request("GET", *path, **query)
@@ -221,13 +318,13 @@ class Client:
         Returns output metadata for `run_id`.
         """
         url = self.__url("/api/v1/runs", run_id, "outputs")
-        resp = requests.get(url)
+        resp = self.__send("GET", url)
         resp.raise_for_status()
         return resp.json()
 
     def get_output(self, run_id, output_id) -> bytes:
         url = self.__url("/api/v1/runs", run_id, "output", output_id)
-        resp = requests.get(url)
+        resp = self.__send("GET", url)
         resp.raise_for_status()
         return resp.content
 
@@ -247,7 +344,7 @@ class Client:
             "output",
             output_id,
             "updates",
-            scheme="ws",
+            ws=True,
             **({} if start is None else {"start": start}),
         )
 
@@ -356,7 +453,7 @@ class Client:
             "/api/v1/runs",
             run_id,
             "updates",
-            scheme="ws",
+            ws=True,
             **({"init": NO_ARG} if init else {}),
         )
         async with get_ws_msgs(url) as msgs:

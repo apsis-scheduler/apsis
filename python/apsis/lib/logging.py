@@ -21,6 +21,7 @@ def set_log_levels():
     logging.getLogger("websockets.protocol").setLevel(logging.INFO)
     logging.getLogger("botocore").setLevel(logging.WARNING)
     logging.getLogger("boto3").setLevel(logging.WARNING)
+    logging.getLogger("requests_gssapi").setLevel(logging.CRITICAL)
 
 
 # -------------------------------------------------------------------------------
