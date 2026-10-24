@@ -50,8 +50,7 @@ def get_address() -> Address:
 
 def get_url() -> str:
     """
-    Returns the base URL where Apsis runs, from APSIS_HOST if it's a URL, else
-    from `get_address` over http.
+    Returns the base URL from APSIS_HOST, defaulting to http.
     """
     loc = os.environ.get("APSIS_HOST", "")
     if "://" in loc:
@@ -61,8 +60,7 @@ def get_url() -> str:
 
 def get_explicit_address(host: str | None, port: str | None) -> Address | None:
     """
-    Returns the address for an explicit `host` or `port`, filling in the other
-    from `get_address`, or none if neither is given.
+    Returns the address for an explicit `host` or `port`, or none.
     """
     if host is None and port is None:
         return None
@@ -88,8 +86,7 @@ def get_auth_error(url: str) -> str:
 
 def has_ticket() -> bool:
     """
-    Returns true if the user has unexpired Kerberos credentials to initiate a
-    context with.
+    Returns true if the user has an unexpired Kerberos ticket.
     """
     try:
         return gssapi.Credentials(usage="initiate").lifetime != 0
@@ -99,9 +96,7 @@ def has_ticket() -> bool:
 
 def get_negotiate_headers(url: str) -> dict[str, str]:
     """
-    Returns an SPNEGO `Authorization` header for the host of a wss `url`, or
-    no headers if the URL isn't wss, requests-gssapi is missing, there's no
-    ticket, or the token fails.
+    Returns an SPNEGO Authorization header for a wss `url`, or no headers.
     """
     parts = urlsplit(url)
     if parts.scheme != "wss" or HTTPSPNEGOAuth is None or not has_ticket():
