@@ -23,6 +23,13 @@ export default {
     }
   },
 
+  computed: {
+    words() {
+      const words = this.text.split(this.separator).map(w => w.trim()).filter(w => w)
+      return words.length > 0 ? words : null
+    },
+  },
+
   methods: {
     join(value) {
       return value ? value.join(this.separator === ' ' ? ' ' : this.separator + ' ') : ''
@@ -30,16 +37,17 @@ export default {
 
     onChange() {
       // Emit 'input' and 'change' only if the value is effectively different.
-      const words = this.text.split(this.separator).map(w => w.trim()).filter(w => w)
-      const value = words.length > 0 ? words : null
-      if (!isEqual(value, this.value)) {
-        this.$emit('input', value)
-        this.$emit('change', value)
+      if (!isEqual(this.words, this.value)) {
+        this.$emit('input', this.words)
+        this.$emit('change', this.words)
       }
     },
   },
 
   watch: {
+    // emit 'words' as the text changes, before it's committed
+    words(words) { this.$emit('words', words) },
+
     value(value) {
       this.text = this.join(value)
     },
