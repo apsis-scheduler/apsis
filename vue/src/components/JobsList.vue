@@ -29,7 +29,7 @@ div.jobs-list
       HelpButton
         p Syntax: <b>label, label&hellip;</b>
         p Show only jobs with each <b>label</b>. Labels are separated by commas, so a label can have spaces.
-        p Example: <b>critical, needs review</b>
+        p Example: <b>label1, label2</b>
 
     div.buttons(style="grid: span 3")
       button(
