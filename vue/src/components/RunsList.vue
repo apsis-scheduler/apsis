@@ -27,7 +27,7 @@ div
         HelpButton
           p Syntax: <b>label, label&hellip;</b>
           p Show only runs with each <b>label</b>. Labels are separated by commas, so a label can have spaces.
-          p Example: <b>critical, eqidx no-ops board</b>
+          p Example: <b>critical, needs review</b>
 
     template(v-if="runControls")
       div

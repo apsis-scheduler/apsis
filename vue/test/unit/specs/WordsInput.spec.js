@@ -16,12 +16,12 @@ describe('WordsInput', () => {
   })
 
   test('splits on a separator, trims words, and joins them back', () => {
-    const vm = mount({value: ['critical', 'eqidx no-ops board'], separator: ','})
-    expect(vm.text).toBe('critical, eqidx no-ops board')
+    const vm = mount({value: ['critical', 'needs review'], separator: ','})
+    expect(vm.text).toBe('critical, needs review')
     const emitted = []
     vm.$on('input', v => emitted.push(v))
-    vm.text = 'vor no-ops-board ,, critical'
+    vm.text = 'needs review ,, critical'
     vm.onChange()
-    expect(emitted).toEqual([['vor no-ops-board', 'critical']])
+    expect(emitted).toEqual([['needs review', 'critical']])
   })
 })
