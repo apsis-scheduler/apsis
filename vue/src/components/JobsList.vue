@@ -24,10 +24,12 @@ div.jobs-list
       WordsInput(
         :value="labels"
         @input="$emit('labels', $event)"
+        separator=","
       )
       HelpButton
-        p Syntax: <b>label label&hellip;</b>
-        p Show only jobs with each <b>label</b>.
+        p Syntax: <b>label, label&hellip;</b>
+        p Show only jobs with each <b>label</b>. Labels are separated by commas, so a label can have spaces.
+        p Example: <b>critical, eqidx no-ops board</b>
 
     div.buttons(style="grid: span 3")
       button(
