@@ -23,7 +23,7 @@ async def on_debug(request):
 
 @API.route("/reload_jobs", methods={"POST"})
 async def on_reload_jobs(request):
-    (dry_run,) = request.args.pop("dry_run", False)
+    (dry_run,) = request.args.pop("dry_run", ["False"])
     dry_run = to_bool(dry_run)
     try:
         rem_ids, add_ids, chg_ids = await apsis.apsis.reload_jobs(
