@@ -152,6 +152,22 @@ systemd and cgroups v2.
 `procstar.agent.resource_defaults.mem_max_gb` in the Apsis config applies, if
 any (see :ref:`config <config>`).
 
+It may also be a template, so that a job can take its limit from an arg:
+
+.. code:: yaml
+
+    params: [mem_limit]
+
+    program:
+        type: procstar-shell
+        command: ...
+        resources:
+            mem_max_gb: '{{ mem_limit }}'
+
+A literal is checked when the job is loaded; a template can only be checked
+when a run is bound, so an arg that is not a positive number fails the run
+rather than the job.
+
 The run's program metadata records the request and what the agent observed:
 
 - `memory_limit.requested_bytes` and `memory_limit.source` (`job`, `default`,
