@@ -118,11 +118,11 @@ def test_get_dependents():
     assert jobs.get_dependents("own/up") == {"own"}
     assert jobs.get_dependents("plain") == frozenset()
 
-    def jso(job_id, cond, schedule):
+    def jso(job_id: str, cond: dict, schedule: list[dict]) -> Job:
         jso = {"program": {"type": "no-op"}, "schedule": schedule, "condition": cond}
         return Job.from_jso(jso, job_id)
 
-    def daily():
+    def daily() -> list[dict]:
         return [{"type": "daily", "tz": "UTC", "daytime": "12:00:00", "args": {"region": "a"}}]
 
     explicit = [{"type": "explicit", "times": ["2026-10-30T12:00:00Z"], "args": {"region": 1}}]
