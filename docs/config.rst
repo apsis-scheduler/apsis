@@ -20,7 +20,7 @@ config file.
       timeout: 10s              # duration
 
     runs:
-      lookback: null            # seconds
+      lookback: null            # seconds or a duration like 21d
 
     adhoc:
       enabled: false
@@ -71,7 +71,8 @@ Files
 Runs
 ----
 
-`runs.lookback` specifies the maximum run age, in seconds.  Runs older than this
+`runs.lookback` specifies the maximum run age, in seconds or as a duration like
+`21d`.  Runs older than this
 are not held in memory and are not visible in user interfaces.  They are
 retained in the database file, however.
 
