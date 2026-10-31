@@ -47,9 +47,20 @@ describe('setSummaryScope', () => {
     expect(sockets[0].close).not.toHaveBeenCalled()
   })
 
+  test('refresh reopens the same scope but not no scope', () => {
+    summary.setSummaryScope(summary.JOBS_SCOPE)
+    sockets[0].onMessage(frame(DONE))
+    summary.setSummaryScope(summary.JOBS_SCOPE, true)
+    expect(sockets.length).toBe(2)
+    expect(sockets[0].close).toHaveBeenCalled()
+    summary.setSummaryScope()
+    summary.setSummaryScope(undefined, true)
+    expect(sockets.length).toBe(3)
+  })
+
   test('a closed socket reopens for the same scope', () => {
     summary.setSummaryScope(summary.JOBS_SCOPE)
-    sockets[0].onClose()
+    sockets[0].onClose({code: 1006})
     summary.setSummaryScope(summary.JOBS_SCOPE)
     expect(sockets.length).toBe(2)
     expect(sockets[1].url.search).toBe('?init&types=job,agent_conn')
@@ -102,17 +113,92 @@ describe('setSummaryScope', () => {
     summary.setSummaryScope(summary.jobScope('a'))
     summary.setSummaryScope()
     sockets[0].onErr()
-    sockets[0].onClose()
+    sockets[0].onClose({code: 1000})
     expect(store.state.errors.errors).toEqual([])
 
     sockets[1].onErr()
-    sockets[1].onClose()
+    sockets[1].onClose({code: 1006})
     expect(store.state.errors.errors.map(e => e.message))
       .toEqual(['connection error', 'websocket closed: refresh the page'])
     sockets[0].onConnect()
     expect(store.state.errors.errors.length).toBe(2)
     sockets[1].onConnect()
     expect(store.state.errors.errors).toEqual([])
+  })
+})
+
+describe('run windows', () => {
+  const QUERY = {
+    path: null,
+    keywords: null,
+    labels: null,
+    states: null,
+    args: null,
+    grouping: true,
+    show: 50,
+    time: 'now',
+    asc: false,
+  }
+
+  test('query to window scope', () => {
+    expect(summary.windowScope(QUERY).window)
+      .toEqual([['time', 'now'], ['limit', 50], ['grouping', 1]])
+    const query = {
+      ...QUERY,
+      path: 'a/b',
+      keywords: ['x', 'y'],
+      labels: ['l'],
+      states: ['failure', 'error'],
+      args: {d: '1', e: null},
+      grouping: false,
+      show: 20,
+      time: '2026-10-14T12:00:00+00:00',
+    }
+    expect(summary.windowScope(query).window).toEqual([
+      ['time', '2026-10-14T12:00:00+00:00'], ['limit', 20], ['grouping', 0],
+      ['path', 'a/b'], ['keyword', 'x'], ['keyword', 'y'], ['label', 'l'],
+      ['state', 'failure'], ['state', 'error'], ['arg', 'd=1'], ['arg', 'e'],
+    ])
+    expect(api.getSummaryUrl(summary.windowScope(query)).search).toBe(
+      '?init&time=2026-10-14T12%3A00%3A00%2B00%3A00&limit=20&grouping=0&path=a%2Fb'
+      + '&keyword=x&keyword=y&label=l&state=failure&state=error&arg=d%3D1&arg=e'
+    )
+  })
+
+  test('going back to now from an old window opens one socket and reloads if it lands stale', async () => {
+    const past = '?init&time=2026-10-14T10%3A00%3A00Z&limit=50&grouping=1'
+    const now = '?init&time=now&limit=50&grouping=1'
+    const Vue = require('vue')
+    const router = require('@/router').default
+    const vm = new Vue({router, render: h => h('router-view')}).$mount()
+    await router.push('/runs?time=20261014T100000Z')
+    sockets[sockets.length - 1].onMessage(frame({
+      type: 'run_window',
+      anchor: '2026-10-14T10:00:00+00:00',
+      groups: {},
+      earlier: null,
+      later: {time: '2026-10-14T10:10:00+00:00'},
+    }))
+    // the old window is past half its later span
+    store.state.time = new Date(Date.now() + 10 * 60 * 1000)
+    await router.push('/runs')
+    expect(sockets.slice(-2).map(s => s.url.search)).toEqual([past, now])
+    sockets[sockets.length - 1].onMessage(frame(
+      {type: 'run_summary', run_summary: {...RUN, state: 'running'}},
+      {type: 'run_window', groups: {r1: 5}, earlier: null, later: null},
+    ))
+    expect(sockets.slice(-3).map(s => s.url.search)).toEqual([past, now, now])
+    vm.$destroy()
+  })
+
+  test('4503 falls back to no scope', () => {
+    summary.setSummaryScope(summary.windowScope(QUERY))
+    sockets[0].onClose({code: 4503})
+    expect(sockets.length).toBe(2)
+    expect(sockets[1].url.search).toBe('?init')
+    expect(store.state.errors.errors).toEqual([])
+    summary.setSummaryScope(summary.windowScope({...QUERY, show: 20}))
+    expect(sockets.length).toBe(2)
   })
 })
 
