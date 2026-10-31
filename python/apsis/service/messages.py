@@ -42,6 +42,7 @@ def make_run_delete(run):
     return {
         "type": "run_delete",
         "run_id": run.run_id,
+        "job_id": run.inst.job_id,
     }
 
 

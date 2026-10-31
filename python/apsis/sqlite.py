@@ -17,7 +17,7 @@ from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr, py
 from .lib.timing import Timer
-from .runs import Instance, Run, run_number
+from .runs import SUMMARY_PAGE_SIZE, Instance, Run, run_number
 from .states import State
 from .program import Program, Output, OutputMetadata
 
@@ -650,10 +650,6 @@ class RunDB:
 
 # -------------------------------------------------------------------------------
 
-# Chosen empirically to balance performance and GC pressure. Smaller batches can be deallocated before they cause a
-# gen 0 collection
-_SUMMARY_BATCH_SIZE = 256
-
 
 class RunSummaryDB:
     TABLE = sa.Table(
@@ -693,7 +689,10 @@ class RunSummaryDB:
         )
         self.__connection.connection.commit()
 
-    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[str]:
+    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[list[str]]:
+        """
+        Yields run summary payloads newest first, one list per DB page.
+        """
         # Use independent paged queries to prevent holding a read cursor across the yield, which seems to cause
         # write-lock errors when paired with litestream. Note that his problem isn't fully understood and hasn't been
         # satisfactorily reproduced in isolation.
@@ -711,7 +710,7 @@ class RunSummaryDB:
                 if max_ts is not None:
                     stmt = stmt.where(self.TABLE.c.timestamp < max_ts)
                 stmt = stmt.order_by(self.TABLE.c.timestamp.desc())
-                stmt = stmt.limit(_SUMMARY_BATCH_SIZE)
+                stmt = stmt.limit(SUMMARY_PAGE_SIZE)
                 rows = conn.execute(stmt).fetchall()
 
             if not rows:
@@ -722,11 +721,43 @@ class RunSummaryDB:
             payloads = [r[1] for r in rows]
             del rows
 
-            yield from payloads
+            yield payloads
 
             del payloads
-            if count < _SUMMARY_BATCH_SIZE:
+            if count < SUMMARY_PAGE_SIZE:
                 break
+
+    def query_job(
+        self, job_id: str, *, min_timestamp: ora.Time | None, page_size: int
+    ) -> Iterator[list[str]]:
+        """
+        Yields pages of summary payloads of `job_id` runs, newest run first.
+
+        Each page reads the next `page_size` runs of the job in its own
+        transaction and keeps those with timestamp at least `min_timestamp`.
+        """
+        stmt = sa.text("""
+            SELECT r.rowid, s.payload
+            FROM runs r
+            LEFT JOIN run_summary s ON s.run_id = r.run_id AND r.timestamp >= :min_ts
+            WHERE r.job_id = :job_id AND r.rowid < :max_rowid
+            ORDER BY r.rowid DESC
+            LIMIT :limit
+        """)
+        params = {
+            "min_ts": float("-inf") if min_timestamp is None else dump_time(min_timestamp),
+            "job_id": job_id,
+            "max_rowid": 2**63 - 1,
+            "limit": page_size,
+        }
+        while True:
+            with self.__engine.begin() as conn:
+                rows = conn.execute(stmt, params).fetchall()
+            payloads = [p for _, p in rows if p is not None]
+            yield payloads
+            if len(rows) < page_size:
+                break
+            params["max_rowid"] = rows[-1][0]
 
 
 # -------------------------------------------------------------------------------
