@@ -519,6 +519,41 @@ class RunDB:
             assert con.total_changes == changes + 1
             con.commit()
 
+    def rename_job(
+        self, old_job_id: str, new_job_id: str, limit: int, min_timestamp: ora.Time | None
+    ) -> tuple[int, list[dict]]:
+        """
+        Moves up to `limit` runs to `new_job_id`, returns count and summaries since `min_timestamp`.
+        """
+        con = self.__connection.connection
+        try:
+            run_ids = [
+                run_id
+                for (run_id,) in con.execute(
+                    """
+                    UPDATE runs SET job_id = ?
+                    WHERE rowid IN (SELECT rowid FROM runs WHERE job_id = ? ORDER BY rowid LIMIT ?)
+                    RETURNING run_id
+                    """,
+                    (new_job_id, old_job_id, limit),
+                )
+            ]
+            summaries = con.execute(
+                f"""
+                UPDATE run_summary
+                SET payload = json_replace(payload, '$.run_summary.job_id', ?)
+                WHERE run_id IN ({",".join("?" * len(run_ids))})
+                RETURNING timestamp, payload
+                """,
+                (new_job_id, *run_ids),
+            ).fetchall()
+            con.commit()
+        except BaseException:
+            con.rollback()
+            raise
+        min_ts = None if min_timestamp is None else dump_time(min_timestamp)
+        return len(run_ids), [ujson.loads(p) for t, p in summaries if min_ts is None or t >= min_ts]
+
     def get(self, run_id):
         try:
             rowid = run_number(run_id)

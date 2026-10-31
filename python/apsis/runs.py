@@ -422,7 +422,8 @@ class RunStore:
         self.__active_runs: dict[str, Run] = {}
 
         # Publisher for run transitions.  Messages are `Message` objects;
-        # `state` is none if the run is removed.
+        # `state` is none if the run is removed, and `args` is none to make
+        # dependencies on the job check again.
         self.publisher = Publisher()
 
     def __query_run_db(self, *args, min_timestamp=None, **kwargs) -> list[Run]:
@@ -485,6 +486,25 @@ class RunStore:
         del self.__expected_runs[run_id]
         self.publisher.publish(self.Message(run.run_id, run.inst.job_id, run.inst.args, None))
         return run
+
+    def get_latest_run(self, job_id: str, state: Iterable[State] | None = None) -> Run | None:
+        """
+        Returns the latest run of `job_id` in `state` in the DB, or none if there isn't one.
+        """
+        runs = self.__run_db.query_paged(job_id=job_id, state=state, limit=1)
+        return runs[0] if runs else None
+
+    def rename_job(self, old_job_id: str, new_job_id: str, limit: int) -> tuple[int, list[dict]]:
+        """
+        Moves up to `limit` runs to `new_job_id`, returns count and summaries in the lookback window.
+        """
+        return self.__run_db.rename_job(old_job_id, new_job_id, limit, self.__min_timestamp)
+
+    def wake(self, job_id: str) -> None:
+        """
+        Publishes a message with no args so waiting conditions on `job_id` check again.
+        """
+        self.publisher.publish(self.Message(None, job_id, None, None))
 
     def archivable(self, run_id) -> bool:
         """
