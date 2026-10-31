@@ -15,6 +15,8 @@ div
 </template>
 
 <script>
+import { isEqual, isUndefined, omitBy } from 'lodash'
+
 import JobsList from '@/components/JobsList'
 
 function toPathStr(path) {
@@ -56,15 +58,19 @@ export default {
   methods: {
     pushRoute() {
       const joinWords = (words) => words !== null ? words.join(',') : undefined
-      this.$router.push({
+      const location = {
         params: {
           path: toPathParts(this.path),
         },
-        query: {
+        query: omitBy({
           keywords: joinWords(this.keywords),
           labels: joinWords(this.labels),
-        }
-      })
+        }, isUndefined),
+      }
+      // syncing from a route change lands here too, so skip pushing the same url
+      const route = this.$router.resolve(location).route
+      if (route.path !== this.$route.path || !isEqual(route.query, this.$route.query))
+        this.$router.push(location)
     },
 
     showRuns() {
