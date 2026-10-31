@@ -80,6 +80,7 @@ def test_user_unix():
                 )
             assert exc.value.response.status_code == status
         assert client.get("/api/control/debug", headers=USER).status_code == 403
+        assert client.get("/api/v1/whoami", headers=USER).json() == {"user": "alice"}
 
         bad_args = LATER_RUN | {"args": {"x": "1"}}
         (run,) = client.post("/api/v1/runs", json=bad_args, headers=USER).json()["runs"].values()
@@ -134,6 +135,7 @@ def test_user_tcp():
         assert client.post(f"/api/v1/runs/{run_id}/start", headers=USER).status_code == 200
         log = client.get(f"/api/v1/runs/{run_id}/log", headers=USER).json()["run_log"]
         assert "scheduled run started by override" in [r["message"] for r in log]
+        assert client.get("/api/v1/whoami", headers=USER).json() == {"user": None}
 
 
 def test_summary_tcp():
