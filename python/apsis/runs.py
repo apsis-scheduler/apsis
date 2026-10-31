@@ -660,8 +660,7 @@ class RunStore:
             # no lookback, but respect user's since if provided
             min_ts = ora.Time(since) if since is not None else None
 
-        # active runs in memory get the lookback like the db, and expected runs
-        # are pending so they're kept like count_runs and summaries keep them
+        # the lookback applies to active runs in memory like the db, not to expected runs
         if lookback_ts is not None:
             in_memory = (r for r in in_memory if r.expected or r.timestamp >= lookback_ts)
 
