@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import contextmanager
 import functools
+import httpx
 import logging
 import os
 from pathlib import Path
@@ -35,10 +36,11 @@ class ApsisService:
     An Apsis service instance running in a separate process.
     """
 
-    def __init__(self, *, port=None, job_dir=None, cfg={}, env={}):
+    def __init__(self, *, port=None, job_dir=None, cfg={}, env={}, unix=False):
         self.port = int(port) if port is not None else find_free_port()
 
         self.tmp_dir = Path(tempfile.mkdtemp())
+        self.sock_path = self.tmp_dir / "apsis.sock" if unix else None
         logging.info(f"Apsis instance in {self.tmp_dir}")
         self.db_path = self.tmp_dir / "apsis.db"
         if job_dir is None:
@@ -81,8 +83,11 @@ class ApsisService:
                     "serve",
                     "--config",
                     str(self.cfg_path),
-                    "--port",
-                    str(self.port),
+                    *(
+                        ("--port", str(self.port))
+                        if self.sock_path is None
+                        else ("--unix", str(self.sock_path))
+                    ),
                 ],
                 env=os.environ
                 | self.env
@@ -93,7 +98,24 @@ class ApsisService:
             )
 
     def wait_for_serve(self):
-        self.client.wait_running(2)
+        if self.sock_path is None:
+            self.client.wait_running(2)
+            return
+        deadline = time.monotonic() + 2
+        with self.unix_client() as client:
+            while True:
+                try:
+                    client.get("/api/v1/running")
+                    return
+                except httpx.TransportError:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.05)
+
+    def unix_client(self) -> httpx.Client:
+        return httpx.Client(
+            transport=httpx.HTTPTransport(uds=str(self.sock_path)), base_url="http://apsis"
+        )
 
     def is_running(self):
         if self.srv_proc is None:
