@@ -4,9 +4,12 @@ Tests for RunStore with real SQLite database.
 
 import ora
 import random
+import ujson
 
 import pytest
 
+import apsis.runs
+import apsis.sqlite
 from apsis.runs import Instance, Run, RunStore
 from apsis.sqlite import SqliteDB
 from apsis.states import State
@@ -358,18 +361,38 @@ def test_lookback_window_follows_now(tmp_path, monkeypatch):
     def visible():
         return (
             {r.run_id for r in store.query(job_id="job")[1]},
+            {r.run_id for r in store.query_page(job_id="job", limit=10)[0]},
             store.count_runs(job_id="job"),
             sum(map(len, store.summaries())),
         )
 
-    assert visible() == ({run.run_id}, 1, 1)
+    assert visible() == ({run.run_id}, {run.run_id}, 1, 1)
     # same store a while later, the run has aged out of the window
     monkeypatch.setattr("apsis.runs.now", lambda: run.timestamp + 200)
-    assert visible() == (set(), 0, 0)
+    assert visible() == (set(), set(), 0, 0)
 
 
-def test_summaries_concurrent_transition(tmp_path):
-    """summaries() must not raise RuntimeError if a run transitions mid-iteration."""
+def test_lookback_keeps_expected_runs(tmp_path, monkeypatch):
+    """Every run query keeps an expected run once it's older than the lookback."""
+    store = _make_store(tmp_path, lookback=100)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    monkeypatch.setattr("apsis.runs.now", lambda: run.timestamp + 200)
+
+    assert [r.run_id for r in store.query(job_id="job")[1]] == [run.run_id]
+    assert [r.run_id for r in store.query_page(job_id="job", limit=10)[0]] == [run.run_id]
+    assert store.count_runs(job_id="job") == 1
+    assert sum(map(len, store.summaries())) == 1
+
+
+def summary_ids(pages):
+    return [ujson.loads(s)["run_summary"]["run_id"] for page in pages for s in page]
+
+
+def test_summaries_concurrent_transition(tmp_path, monkeypatch):
+    """summaries() keeps going when an expected run transitions between its pages."""
+    monkeypatch.setattr(apsis.runs, "SUMMARY_PAGE_SIZE", 1)
+    monkeypatch.setattr(apsis.sqlite, "SUMMARY_PAGE_SIZE", 1)
     store = _make_store(tmp_path)
 
     run_a = Run(Instance("job", {"n": "0"}), expected=True)
@@ -378,13 +401,31 @@ def test_summaries_concurrent_transition(tmp_path):
     _schedule(store, run_b)
 
     it = store.summaries()
-    next(it)
+    first = next(it)
 
-    # transition a run out of expected (simulates concurrent state change)
-    _transition(store, run_b, State.waiting)
+    # transition the run on the next page out of expected
+    _transition(store, run_b if run_a.run_id in summary_ids([first]) else run_a, State.waiting)
 
     # consuming the rest must not raise "dictionary changed size during iteration"
-    list(it)
+    assert set(summary_ids([first, *it])) == {run_a.run_id, run_b.run_id}
+
+
+def test_summaries_persisted_transition(tmp_path, monkeypatch):
+    """summaries() keeps going when a persisted run moves past its cursor."""
+    monkeypatch.setattr(apsis.runs, "SUMMARY_PAGE_SIZE", 1)
+    monkeypatch.setattr(apsis.sqlite, "SUMMARY_PAGE_SIZE", 1)
+    store = _make_store(tmp_path)
+    run_ids = [_make_active(store) for _ in range(3)]
+
+    it = store.summaries()
+    first = next(it)
+    assert summary_ids([first]) == [run_ids[2]]
+
+    # the oldest run gets the newest timestamp, so it moves above the cursor
+    _transition(store, store.get(run_ids[0])[1], State.starting)
+
+    # live updates carry the moved run, and the rest come through once each
+    assert summary_ids([first, *it]) == [run_ids[2], run_ids[1]]
 
 
 def test_upsert_durability(tmp_path):

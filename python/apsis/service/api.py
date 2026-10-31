@@ -685,6 +685,13 @@ async def websocket_summary(request, ws):
         await ws.send(ujson.dumps([{"type": "summary_error", "error": str(exc)}]))
         await ws.close(code=4400, reason="bad summary scope")
         return
+    except Exception:
+        log.error(f"{prefix} can't build summary scope", exc_info=True)
+        await ws.send(
+            ujson.dumps([{"type": "summary_error", "error": "can't build summary scope"}])
+        )
+        await ws.close(code=1011, reason="summary scope failed")
+        return
     init = scope.init
     log.debug(f"{prefix} connected {scope}")
 

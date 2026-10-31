@@ -20,7 +20,7 @@ config file.
       timeout: 10s              # duration
 
     runs:
-      lookback: null            # seconds
+      lookback: null            # seconds or a duration like 21d
 
     adhoc:
       enabled: false
@@ -71,9 +71,11 @@ Files
 Runs
 ----
 
-`runs.lookback` specifies the maximum run age, in seconds.  Runs older than this
-are not held in memory and are not visible in user interfaces.  They are
-retained in the database file, however.
+`runs.lookback` specifies the maximum run age, in seconds or as a duration like
+`21d`.  Runs older than this are not held in memory and are not visible in user
+interfaces.  They are retained in the database file, however.  If old runs are
+archived, archive only runs older than the lookback, since job pages read runs
+from the runs table that archiving prunes.
 
 
 Ad hoc jobs

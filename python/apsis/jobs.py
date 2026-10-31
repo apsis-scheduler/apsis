@@ -21,7 +21,7 @@ from .lib import itr
 from .lib.json import to_array, to_narray, check_schema
 from .lib.py import tupleize, format_ctor
 from .program import Program, NoOpProgram
-from .runs import BIND_ARGS, is_template, template_expand
+from .runs import BIND_ARGS, eval_enabled, is_template, template_expand
 from .schedule import schedule_to_jso, schedule_from_jso
 
 log = logging.getLogger(__name__)
@@ -442,6 +442,17 @@ def dump_job(jobs_dir_path, job):
 # FIXME: This feels so awkward.  Is there a better design?
 
 
+def _maybe_enabled(enabled: bool | str | None, bind_args: dict[str, object]) -> bool:
+    """
+    Returns false if `enabled` is false with `bind_args`, or true if it needs
+    an arg only a run has.
+    """
+    try:
+        return eval_enabled(enabled, bind_args)
+    except NameError:
+        return True
+
+
 class Jobs:
     """
     Combines a job dir and a job DB.
@@ -467,18 +478,23 @@ class Jobs:
         dependents = defaultdict(set)
         for job in self.__jobs_dir.get_jobs():
             for cond in job.conds:
-                if not isinstance(cond, Dependency):
+                if not isinstance(cond, Dependency) or cond.enabled is False:
                     continue
                 if not is_template(cond.job_id):
                     dependents[cond.job_id].add(job.job_id)
                     continue
                 for sched in job.schedules:
-                    bind_args = {**BIND_ARGS, "job_id": job.job_id, **sched.args}
+                    # runs get schedule args as strings
+                    args = {k: str(v) for k, v in sched.args.items()}
+                    bind_args = {**BIND_ARGS, "job_id": job.job_id, **args}
                     try:
-                        dependents[template_expand(cond.job_id, bind_args)].add(job.job_id)
+                        if _maybe_enabled(cond.enabled, bind_args):
+                            dependents[template_expand(cond.job_id, bind_args)].add(job.job_id)
                     except NameError:
                         # the template needs an arg only a run has like date
                         pass
+                    except Exception as exc:
+                        log.warning(f"skipping dependency {cond.job_id} of {job.job_id}: {exc}")
         return dependents
 
     def get_dependents(self, job_id: str) -> frozenset[str]:
@@ -486,7 +502,8 @@ class Jobs:
         Returns IDs of jobs in the jobs dir with a dependency on `job_id`.
 
         A templated dependency job ID counts if it expands to `job_id` with
-        the args of one of the job's schedules.
+        the args of one of the job's schedules, and disabled dependencies and
+        ones whose templates fail to expand are left out.
         """
         return frozenset(self.__dependents.get(job_id, ()))
 
