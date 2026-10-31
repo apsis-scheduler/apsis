@@ -16,7 +16,8 @@ from .host_group import config_host_groups
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
 from .lib.asyn import TaskGroup, Publisher, KeyPublisher
-from .lib.py import more_gc_stats
+from .lib.parse import nparse_duration
+from .lib.py import get_cfg, more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
 from .program.base import _InternalProgram
@@ -94,8 +95,7 @@ class Apsis:
         # Actions applied to all runs.
         self.__actions = [Action.from_jso(o) for o in cfg["actions"]]
 
-        lookback = cfg.get("runs", {}).get("lookback")
-        self.run_store = RunStore(db, lookback=lookback)
+        self.run_store = RunStore(db, lookback=get_lookback(cfg))
 
         self.outputs = OutputStore(db.output_db)
 
@@ -811,11 +811,24 @@ async def _wait_loop(apsis, run, timeout):
         apsis._start(run)
 
 
+def get_lookback(cfg: dict) -> float | None:
+    """
+    Returns `runs.lookback` in seconds, or none for no lookback.
+
+    :raise ValueError:
+      The lookback isn't a positive duration.
+    """
+    lookback = nparse_duration(get_cfg(cfg, "runs.lookback", None))
+    if lookback is not None and lookback <= 0:
+        raise ValueError(f"runs.lookback must be positive: {lookback}")
+    return lookback
+
+
 def _unschedule_runs(apsis, job_id):
     """
     Deletes all scheduled expected runs of `job_id`.
     """
-    _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled)
+    _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled, limit_lookback=False)
     runs = [r for r in runs if r.expected]
 
     for run in runs:

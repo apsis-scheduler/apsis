@@ -1,5 +1,4 @@
 import ora
-import pytest
 
 from apsis.jobs import Job, Jobs, JobsDir
 from apsis.schedule.stop import DurationStopSchedule
@@ -119,6 +118,44 @@ def test_get_dependents():
     assert jobs.get_dependents("own/up") == {"own"}
     assert jobs.get_dependents("plain") == frozenset()
 
-    bad = job("bad", "up/{{ region + 1 }}", [{"region": "a"}])
-    with pytest.raises(TypeError):
-        Jobs(JobsDir(None, {"bad": bad}), None).get_dependents("up/a")
+    def jso(job_id, cond, schedule):
+        jso = {"program": {"type": "no-op"}, "schedule": schedule, "condition": cond}
+        return Job.from_jso(jso, job_id)
+
+    def daily():
+        return [{"type": "daily", "tz": "UTC", "daytime": "12:00:00", "args": {"region": "a"}}]
+
+    explicit = [{"type": "explicit", "times": ["2026-10-30T12:00:00Z"], "args": {"region": 1}}]
+    bad = "unused/{{ region + 1 }}"
+    jobs = Jobs(
+        JobsDir(
+            None,
+            {
+                j.job_id: j
+                for j in (
+                    jso("off", {"type": "dependency", "job_id": bad, "enabled": False}, daily()),
+                    jso(
+                        "off_tmpl",
+                        {"type": "dependency", "job_id": bad, "enabled": '{{ region != "a" }}'},
+                        daily(),
+                    ),
+                    jso(
+                        "on_tmpl",
+                        {
+                            "type": "dependency",
+                            "job_id": "up/{{ region }}",
+                            "enabled": '{{ region == "a" }}',
+                        },
+                        daily(),
+                    ),
+                    jso("num", {"type": "dependency", "job_id": '{{ "up/" + region }}'}, explicit),
+                    jso("bad", {"type": "dependency", "job_id": bad}, daily()),
+                    job("plain", "up/a"),
+                )
+            },
+        ),
+        None,
+    )
+    # disabled and failing dependencies are skipped and the rest are returned
+    assert jobs.get_dependents("up/a") == {"on_tmpl", "plain"}
+    assert jobs.get_dependents("up/1") == {"num"}
