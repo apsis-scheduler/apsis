@@ -358,14 +358,28 @@ def test_lookback_window_follows_now(tmp_path, monkeypatch):
     def visible():
         return (
             {r.run_id for r in store.query(job_id="job")[1]},
+            {r.run_id for r in store.query_page(job_id="job", limit=10)[0]},
             store.count_runs(job_id="job"),
             sum(map(len, store.summaries())),
         )
 
-    assert visible() == ({run.run_id}, 1, 1)
+    assert visible() == ({run.run_id}, {run.run_id}, 1, 1)
     # same store a while later, the run has aged out of the window
     monkeypatch.setattr("apsis.runs.now", lambda: run.timestamp + 200)
-    assert visible() == (set(), 0, 0)
+    assert visible() == (set(), set(), 0, 0)
+
+
+def test_lookback_keeps_expected_runs(tmp_path, monkeypatch):
+    """Every run query keeps an expected run once it's older than the lookback."""
+    store = _make_store(tmp_path, lookback=100)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    monkeypatch.setattr("apsis.runs.now", lambda: run.timestamp + 200)
+
+    assert [r.run_id for r in store.query(job_id="job")[1]] == [run.run_id]
+    assert [r.run_id for r in store.query_page(job_id="job", limit=10)[0]] == [run.run_id]
+    assert store.count_runs(job_id="job") == 1
+    assert len(list(store.summaries())) == 1
 
 
 def test_summaries_concurrent_transition(tmp_path):
