@@ -143,16 +143,16 @@ def test_run_delete_job_id():
 async def test_scope_failure_sends_error(monkeypatch):
     """A scope that fails to build for any reason gets a summary_error and a close."""
 
-    def fail(query_string, jobs):
+    def fail(query_string: str, jobs: object) -> None:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(api, "parse_summary_scope", fail)
     sent, closed = [], []
 
-    async def send(data):
+    async def send(data: str) -> None:
         sent.append(ujson.loads(data))
 
-    async def close(code, reason):
+    async def close(code: int, reason: str) -> None:
         closed.append(code)
 
     request = SimpleNamespace(

@@ -813,7 +813,7 @@ async def _wait_loop(apsis, run, timeout):
 
 def get_lookback(cfg: dict) -> float | None:
     """
-    Returns `runs.lookback` in seconds, or none for no lookback.
+    Returns `runs.lookback` in seconds, or None for no lookback.
 
     :raise ValueError:
       The lookback isn't a positive duration.

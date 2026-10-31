@@ -2,6 +2,8 @@
 Tests for RunStore with real SQLite database.
 """
 
+from collections.abc import Iterable
+
 import ora
 import random
 import ujson
@@ -385,7 +387,7 @@ def test_lookback_keeps_expected_runs(tmp_path, monkeypatch):
     assert sum(map(len, store.summaries())) == 1
 
 
-def summary_ids(pages):
+def summary_ids(pages: Iterable[list[str]]) -> list[str]:
     return [ujson.loads(s)["run_summary"]["run_id"] for page in pages for s in page]
 
 
