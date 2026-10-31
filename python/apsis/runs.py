@@ -660,11 +660,10 @@ class RunStore:
             # no lookback, but respect user's since if provided
             min_ts = ora.Time(since) if since is not None else None
 
-        # apply the same time filter to in-memory runs so lookback semantics
-        # are consistent regardless of whether a run lives in the mirror or
-        # only in SQLite.
-        if min_ts is not None:
-            in_memory = (r for r in in_memory if r.timestamp >= min_ts)
+        # active runs in memory get the lookback like the db, and expected runs
+        # are pending so they're kept like count_runs and summaries keep them
+        if lookback_ts is not None:
+            in_memory = (r for r in in_memory if r.expected or r.timestamp >= lookback_ts)
 
         # materialize in-memory results so we can filter DB rows to avoid
         # duplicating active runs that are also persisted.
