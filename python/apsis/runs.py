@@ -553,6 +553,12 @@ class RunStore:
         )
         self.__active_runs[run.run_id] = run
 
+    def get_active_runs(self) -> list[Run]:
+        """
+        Returns the in-memory runs in active states, including every waiting run.
+        """
+        return list(self.__active_runs.values())
+
     # FIXME: Remove `when` from the result; I think we don't use it.
     # FIXME: Remove `since`?
     def query(

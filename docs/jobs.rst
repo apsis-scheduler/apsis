@@ -238,9 +238,8 @@ hours.
 Changes to jobs
 ===============
 
-Once Apsis creates a run from a job and binds the run's args to the job's
-program, conditions, and actions, these items are fixed.  Any later changes to a
-job will not affect existing runs that were previously created from that job.
+When Apsis creates a run from a job, it binds the run's args to the job's
+program, conditions, and actions.
 
 However, whenever a job is changed, or when the Apsis server restarts, Apsis
 removes scheduled runs and recreates them from jobs' schedules.  (Any runs
@@ -250,20 +249,27 @@ changes to a job's schedules immediately affect future scheduled runs.  When
 Apsis recreates a run, it uses the current definition of its job, and picks up
 any changes to programs, conditions, and actions.
 
+When Apsis reloads jobs, it also updates the other scheduled and waiting runs of
+each changed job, like runs scheduled by hand and reruns, to the job's current
+program, conditions, and actions, and a waiting run checks its updated
+conditions again from the first one.  If the changed job no longer fits a run,
+the run keeps what it had and its run log says why.  A restart doesn't do
+this, so a run restored after a restart keeps what it had until a reload changes
+its job.
+
 As a result, these rules generally describe a run's relationship to its job:
 
 1. Scheduled runs in the future reflect a job's current schedules.  Runs
    scheduled in the past are of course not affected by subsequent changes to the
    job's schedules.
 
-2. A run's program, conditions, and actions effectively reflect the state of its
-   job at the time the run transitioned from *scheduled* to *waiting*, which
-   generally at the time the run's scheduled time occurred.
+2. A run that hasn't started yet reflects its job's current program,
+   conditions, and actions, unless the job changed while Apsis was down or the
+   change didn't fit the run.
 
 3. If you rerun a run, the rerun always reflects its job's current program,
    conditions, and actions.
 
-If a run is *waiting* (or in a subsequent state) and you make changes to its
-program, conditions, or actions, skip or kill the run if necessary, and rerun it
-to pick up the changes.
+A run that has already started won't pick up changes, so kill it if necessary
+and rerun it.
 

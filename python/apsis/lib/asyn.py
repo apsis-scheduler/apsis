@@ -108,6 +108,9 @@ class TaskGroup:
     def __len__(self):
         return len(self.__tasks)
 
+    def __contains__(self, key) -> bool:
+        return key in self.__tasks
+
     def add(self, key, coro):
         task = asyncio.get_event_loop().create_task(coro)
         task.key = key
