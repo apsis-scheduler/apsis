@@ -72,9 +72,8 @@ Runs
 ----
 
 `runs.lookback` specifies the maximum run age, in seconds or as a duration like
-`21d`.  Runs older than this
-are not held in memory and are not visible in user interfaces.  They are
-retained in the database file, however.
+`21d`.  Runs older than this are not held in memory and are not visible in user
+interfaces.  They are retained in the database file, however.
 
 
 Ad hoc jobs
