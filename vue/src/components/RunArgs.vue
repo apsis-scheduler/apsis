@@ -1,6 +1,10 @@
 <template lang="pug">
 span.run-args
-  span.run-arg(v-for="[param, arg] in pairs")
+  span.run-arg(
+    v-for="[param, arg] in pairs"
+    :class="{ clickable, selected: selected !== null && selected[param] === arg }"
+    @click="clickable && !textSelected() && $emit('click', param, arg)"
+  )
     span.param {{ param }}
     span.eq =
     span.arg {{ arg }}
@@ -10,19 +14,30 @@ span.run-args
 import { toPairs } from 'lodash'
 
 export default {
-  props: [
-    'args',
-  ],
+  props: {
+    args: Object,
+    clickable: {type: Boolean, default: false},
+    // args filter whose matching args are highlighted
+    selected: {type: Object, default: null},
+  },
 
   computed: {
     pairs() {
       return toPairs(this.args)
     },
-  }
+  },
+
+  methods: {
+    textSelected() {
+      return !window.getSelection().isCollapsed
+    },
+  },
 }
 </script>
 
 <style lang="scss">
+@import '../styles/vars.scss';
+
 span.run-args {
   span.run-arg {
     & + .run-arg {
@@ -32,6 +47,14 @@ span.run-args {
 
     &:hover {
       text-decoration: underline;
+    }
+
+    &.clickable {
+      cursor: pointer;
+    }
+
+    &.selected {
+      background: $global-select-background;
     }
 
     .param {
