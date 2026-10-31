@@ -52,14 +52,12 @@ def main():
     parser.add_argument(
         "--host",
         metavar="HOST",
-        default=addr.host,
-        help=f"connect to HOST [def: {addr.host}]",
+        help=f"connect to HOST over http [def: {addr.host}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        default=addr.port,
-        help=f"connect to PORT [def: {addr.port}]",
+        help=f"connect to PORT over http [def: {addr.port}]",
     )
 
     # --- command: adhoc ----------------------------------------------
@@ -455,7 +453,9 @@ def main():
     # -------------------------------------------------------------
 
     args = parser.parse_args()
-    client = apsis.service.client.Client((args.host, args.port))
+    client = apsis.service.client.Client(
+        apsis.service.client.get_explicit_address(args.host, args.port)
+    )
     con = apsis.cmdline.get_console()
 
     try:

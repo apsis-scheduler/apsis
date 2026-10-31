@@ -44,6 +44,9 @@ doc = [
     "readthedocs-sphinx-ext",
     "sphinx-rtd-theme",
 ]
+kerberos = [
+    "requests-gssapi",
+]
 
 [dependency-groups]
 dev = [
