@@ -221,7 +221,10 @@ def main():
         metavar="PATH",
         type=Path,
         default=None,
-        help="serve on a unix socket at PATH instead of HOST and PORT",
+        help=(
+            "serve on a unix socket at PATH instead of HOST and PORT, behind a proxy "
+            "that sets X-Remote-User and passes on the browser's Host header with port"
+        ),
     )
     cmd.add_argument(
         "--config",

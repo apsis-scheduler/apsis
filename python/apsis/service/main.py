@@ -1,16 +1,19 @@
 import asyncio
 import logging
 from pathlib import Path
+import re
 import sanic
 import sanic.response
 import sanic.router
 import signal
 import socket
+from urllib.parse import urlsplit
 
 from apsis import __version__
 from apsis.apsis import Apsis
 from apsis.exc import JobsDirErrors
 from apsis.jobs import load_jobs_dir
+from apsis.lib.api import error
 from apsis.lib.asyn import cancel_task
 from apsis.sqlite import SqliteDB
 from . import api, control, procstar
@@ -58,6 +61,34 @@ app.config.RESPONSE_TIMEOUT = 180
 # more forgiving for when slow browsers can't keep up with websocket messages
 app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
+
+
+# the default useradd name pattern, without the trailing $ for machine accounts
+USER_RE = re.compile(r"[a-z_][a-z0-9_-]*")
+
+
+@app.middleware("request")
+async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
+    """
+    Sets `request.ctx.user` from the proxy's X-Remote-User header on a unix
+    socket, or to none over TCP where anyone can send the header.
+
+    :return:
+      On a unix socket, a 401 response for a missing, repeated or invalid
+      X-Remote-User, or a 403 response for an Origin other than the host.
+    """
+    if not request.app.authenticated:
+        request.ctx.user = None
+        return
+    users = request.headers.getall("X-Remote-User", [])
+    user = users[0].split("@", 1)[0].lower() if len(users) == 1 and users[0].isascii() else ""
+    if USER_RE.fullmatch(user) is None:
+        return error("missing or invalid X-Remote-User", 401)
+    origin = request.headers.get("Origin")
+    if origin is not None and urlsplit(origin).netloc != request.host:
+        return error(f"cross origin request from {origin}", 403)
+    request.ctx.user = user
+
 
 app.blueprint(api.API, url_prefix="/api/v1")
 app.blueprint(control.API, url_prefix="/api/control")
@@ -137,6 +168,7 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
     # Flag to indicate whether to restart after shutting down.
     app.restart = False
     app.running = True  # FIXME: ??  Remove?
+    app.authenticated = unix is not None
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
