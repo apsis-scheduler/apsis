@@ -9,7 +9,7 @@ from contextlib import closing
 import logging
 from pathlib import Path
 
-from apsis.sqlite import SqliteDB
+from apsis.sqlite import SCHEDULE_TIME_SQL, SqliteDB
 
 
 log = logging.getLogger()
@@ -184,6 +184,20 @@ def migrate_2_4_5(db: SqliteDB) -> None:
     conn.commit()
 
 
+def migrate_2_7_0(db: SqliteDB) -> None:
+    """
+    Add the indexes backing job scoped and windowed run summaries.
+    """
+    conn = db.conn
+    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_runs_schedule ON runs ({SCHEDULE_TIME_SQL})")
+    log.info("created idx_runs_schedule")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runs_job_cover ON runs (job_id, rowid, run_id, timestamp)"
+    )
+    log.info("created idx_runs_job_cover")
+    conn.commit()
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("path", metavar="PATH", type=Path, help="migrate db file PATH")
@@ -194,6 +208,7 @@ def main():
         migrate_2_3_0(db)
         migrate_2_4_0(db)
         migrate_2_4_5(db)
+        migrate_2_7_0(db)
 
         db.conn.commit()
 

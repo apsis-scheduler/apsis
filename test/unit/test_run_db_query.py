@@ -470,3 +470,18 @@ def test_query_schedule_second_precision(tmp_path):
         r[".00000101"].run_id,
         r[".05"].run_id,
     }
+
+
+def test_job_rows(tmp_path):
+    run_db = _setup(tmp_path)
+    a1, a2 = _make_run(run_db, "job/a", {}), _make_run(run_db, "job/a", {})
+    _make_run(run_db, "job/b", {})
+    _make_run(run_db, "job/c", {})
+
+    assert run_db.count_job_rows(["job/a", "job/b"], 10) == 3
+    assert run_db.count_job_rows(["job/a", "job/b"], 2) == 2
+    assert [r[1] for r in run_db.job_page("job/a", max_rowid=2**62, limit=10)] == [
+        a2.run_id,
+        a1.run_id,
+    ]
+    assert [r[1] for r in run_db.job_page("job/a", max_rowid=a2._rowid, limit=10)] == [a1.run_id]
