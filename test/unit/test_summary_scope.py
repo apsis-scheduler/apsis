@@ -1,7 +1,10 @@
+from types import SimpleNamespace
+
 import pytest
+import ujson
 
 from apsis.runs import Instance, Run
-from apsis.service import messages
+from apsis.service import api, messages
 from apsis.service.summary import (
     ALL_TYPES,
     MAX_JOB_IDS,
@@ -81,3 +84,29 @@ def test_predicate(scope, passed):
 
 def test_run_delete_job_id():
     assert messages.make_run_delete(Run(Instance("a", {})))["job_id"] == "a"
+
+
+@pytest.mark.asyncio
+async def test_scope_failure_sends_error(monkeypatch):
+    """A scope that fails to build for any reason gets a summary_error and a close."""
+
+    def fail(query_string, jobs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(api, "parse_summary_scope", fail)
+    sent, closed = [], []
+
+    async def send(data):
+        sent.append(ujson.loads(data))
+
+    async def close(code, reason):
+        closed.append(code)
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(apsis=SimpleNamespace(jobs=None)),
+        socket=("127.0.0.1", 1),
+        query_string="init&dependents_of=a",
+    )
+    await api.websocket_summary(request, SimpleNamespace(send=send, close=close))
+    assert [m["type"] for msgs in sent for m in msgs] == ["summary_error"]
+    assert closed == [1011]
