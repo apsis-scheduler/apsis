@@ -184,7 +184,7 @@ def migrate_2_4_5(db: SqliteDB) -> None:
     conn.commit()
 
 
-def migrate_2_7_0(db: SqliteDB) -> None:
+def migrate_2_8_0(db: SqliteDB) -> None:
     """
     Add the indexes backing job scoped and windowed run summaries.
     """
@@ -208,7 +208,7 @@ def main():
         migrate_2_3_0(db)
         migrate_2_4_0(db)
         migrate_2_4_5(db)
-        migrate_2_7_0(db)
+        migrate_2_8_0(db)
 
         db.conn.commit()
 

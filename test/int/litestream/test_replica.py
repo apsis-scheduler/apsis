@@ -197,10 +197,10 @@ def test_replica_killing_apsis_and_litestream_with_heavy_load():
             client = inst.client
             # populate apsis db with a large number of runs
             runs_ids = [
-                client.schedule("sleep", {"duration": "12"})["run_id"] for _ in range(num_jobs)
+                client.schedule("sleep", {"duration": "20"})["run_id"] for _ in range(num_jobs)
             ]
             sched_runs_ids = [
-                client.schedule("sleep", {"duration": "1"}, time=ora.now() + 14)["run_id"]
+                client.schedule("sleep", {"duration": "1"}, time=ora.now() + 18)["run_id"]
                 for _ in range(num_jobs)
             ]
 

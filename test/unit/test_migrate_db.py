@@ -21,7 +21,7 @@ def indexes(path: Path) -> set[str]:
     return {name for (name,) in rows}
 
 
-def test_migrate_2_7_0(tmp_path, migrate_db):
+def test_migrate_2_8_0(tmp_path, migrate_db):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
     assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
@@ -32,11 +32,11 @@ def test_migrate_2_7_0(tmp_path, migrate_db):
 
     db = SqliteDB.open(path)
     assert not db.run_db.has_schedule_index
-    migrate_db.migrate_2_7_0(db)
+    migrate_db.migrate_2_8_0(db)
     assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
     # running again leaves the indexes alone
-    migrate_db.migrate_2_7_0(db)
+    migrate_db.migrate_2_8_0(db)
     assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
 
