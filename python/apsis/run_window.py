@@ -388,15 +388,16 @@ async def query_window(
         after = _Side(chunks(entries[i:], PAGE_ROWS), _all, False, [])
 
         groups = {}
-        for i, e in enumerate(entries, 1):
-            if i % PAGE_ROWS == 0:
-                await asyncio.sleep(0)
-            key = key_of(e)
-            run_id, count = groups.get(key, (None, 0))
-            # scheduled groups show their earliest run and others their latest
-            if run_id is None or key[0] != "S":
-                run_id = e.run_id
-            groups[key] = run_id, count + 1
+        if spec.grouping:
+            for n, e in enumerate(entries, 1):
+                if n % PAGE_ROWS == 0:
+                    await asyncio.sleep(0)
+                key = key_of(e)
+                run_id, count = groups.get(key, (None, 0))
+                # scheduled groups show their earliest run and others their latest
+                if run_id is None or key[0] != "S":
+                    run_id = e.run_id
+                groups[key] = run_id, count + 1
 
         async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             return groups[key]
@@ -417,10 +418,11 @@ async def query_window(
         )
 
         expected_groups = defaultdict(list)
-        for n, e in enumerate(expected, 1):
-            if n % PAGE_ROWS == 0:
-                await asyncio.sleep(0)
-            expected_groups[key_of(e)].append(e)
+        if spec.grouping:
+            for n, e in enumerate(expected, 1):
+                if n % PAGE_ROWS == 0:
+                    await asyncio.sleep(0)
+                expected_groups[key_of(e)].append(e)
 
         async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             sgrp = key[0]
