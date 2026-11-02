@@ -31,7 +31,7 @@ def test_migrate_2_8_0(tmp_path, migrate_db):
     conn.commit()
 
     db = SqliteDB.open(path)
-    assert not db.run_db.has_schedule_index
+    assert not db.run_db.has_window_indexes
     migrate_db.migrate_2_8_0(db)
     assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
@@ -49,4 +49,4 @@ def test_main(tmp_path, migrate_db, monkeypatch):
 
     monkeypatch.setattr("sys.argv", ["migrate-db.py", str(path)])
     migrate_db.main()
-    assert SqliteDB.open(path).run_db.has_schedule_index
+    assert SqliteDB.open(path).run_db.has_window_indexes

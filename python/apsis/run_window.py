@@ -118,7 +118,7 @@ class RunWindow:
 
 class WindowUnavailable(RuntimeError):
     def __init__(self) -> None:
-        super().__init__("runs schedule index missing")
+        super().__init__("runs window indexes missing")
 
 
 def select_window(before: int, after: int, limit: int) -> tuple[int, int]:
@@ -341,7 +341,8 @@ async def query_window(
       Runs that are only in memory by run ID, which runs leave as they move
       to the db or are removed while the window is built.
     :raise WindowUnavailable:
-      The window needs the schedule index and the db doesn't have it.
+      The window walks runs by schedule time and the db is missing one of
+      `WINDOW_INDEXES`.
     """
     anchor = ora.now() if spec.anchor is None else spec.anchor
     t = str(anchor)
@@ -399,7 +400,7 @@ async def query_window(
             return groups[key]
 
     else:
-        if not run_db.has_schedule_index:
+        if not run_db.has_window_indexes:
             raise WindowUnavailable()
         i = bisect.bisect_left([e.sched for e in expected], t)
         before = _Side(

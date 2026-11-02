@@ -222,7 +222,8 @@ async def send_window_init(
     then a `run_window` message describing the window.
 
     :raise WindowUnavailable:
-      The window needs the runs schedule index.
+      The window walks runs by schedule time and the db is missing one of
+      `WINDOW_INDEXES`.
     """
     await _send_jobs_and_conns(apsis, ws, scope)
     spec = scope.window

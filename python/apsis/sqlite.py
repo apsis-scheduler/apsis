@@ -316,6 +316,8 @@ SCHEDULE_TIME_SQL = "json_extract(times, '$.schedule')"
 # labels of the job when the run was created
 RUN_LABELS_SQL = "json_extract(meta, '$.job.labels')"
 sa.Index("idx_runs_schedule", sa.func.json_extract(TBL_RUNS.c.times, "$.schedule"))
+# indexes that run window queries name with INDEXED BY
+WINDOW_INDEXES = frozenset({"idx_runs_schedule", "idx_runs_job_args"})
 
 TBL_RUNS_SELECT = sa.select(
     [
@@ -346,16 +348,16 @@ class RunDB:
         self.__engine = engine
         self.__connection = engine.raw_connection()
         # FIXME: Do we need to clean this up?
-        self.has_schedule_index = self.__check_schedule_index()
+        self.has_window_indexes = self.__check_window_indexes()
 
-    def __check_schedule_index(self) -> bool:
+    def __check_window_indexes(self) -> bool:
         """
-        Returns true if idx_runs_schedule exists.
+        Returns true if every index in `WINDOW_INDEXES` exists.
         """
-        row = self.__connection.connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_runs_schedule'"
-        ).fetchone()
-        return row is not None
+        rows = self.__connection.connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        ).fetchall()
+        return WINDOW_INDEXES <= {name for (name,) in rows}
 
     @staticmethod
     def __build_where(

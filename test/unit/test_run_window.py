@@ -1,5 +1,7 @@
 import asyncio
+from contextlib import closing
 import random
+import sqlite3
 
 import ora
 import pytest
@@ -265,14 +267,17 @@ async def test_edges_step_past_ties(tmp_path, grouping):
         assert steps == pytest.approx(anchors)
 
 
+@pytest.mark.parametrize("index", ["idx_runs_schedule", "idx_runs_job_args"])
 @pytest.mark.asyncio
-async def test_no_index(tmp_path):
-    run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
-    run_db.has_schedule_index = False
+async def test_no_index(tmp_path, index):
+    make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
+    with closing(sqlite3.connect(tmp_path / "apsis.db")) as conn:
+        conn.execute(f"DROP INDEX {index}")
+    run_db = SqliteDB.open(tmp_path / "apsis.db").run_db
     with pytest.raises(WindowUnavailable):
         await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
 
-    # a small job set doesn't need the index
+    # a small job set doesn't need the indexes
     window = await query_window(
         run_db, {}, WindowSpec(job_ids=frozenset({"a"})), min_timestamp=None
     )
