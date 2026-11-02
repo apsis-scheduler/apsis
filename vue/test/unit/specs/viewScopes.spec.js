@@ -68,13 +68,17 @@ describe('view summary scopes', () => {
 
     document.dispatchEvent(new Event('visibilitychange'))
     expect(reloadSummaryScope).toHaveBeenCalledTimes(2)
-    // a fresh window or another page doesn't reload when shown
+    // a fresh window doesn't reload when shown
     store.state.runWindowStale = false
-    document.dispatchEvent(new Event('visibilitychange'))
-    await go('/jobs')
-    store.state.runWindowStale = true
+    await flush()
     document.dispatchEvent(new Event('visibilitychange'))
     expect(reloadSummaryScope).toHaveBeenCalledTimes(2)
+    // and a stale one doesn't once the page is left
+    store.state.runWindowStale = true
+    await flush()
+    await go('/jobs')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(reloadSummaryScope).toHaveBeenCalledTimes(3)
   })
 
   // bad url values fall back to a window the server can send
