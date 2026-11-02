@@ -1,5 +1,9 @@
 import asyncio
+from collections.abc import Iterable
+from contextlib import closing
+from pathlib import Path
 import random
+import sqlite3
 
 import ora
 import pytest
@@ -7,13 +11,14 @@ import pytest
 from apsis import run_window
 from apsis.run_window import (
     JobFilter,
+    RunWindow,
     WindowSpec,
     WindowUnavailable,
     query_window,
     select_window,
 )
 from apsis.runs import Instance, Run
-from apsis.sqlite import SqliteDB
+from apsis.sqlite import RunDB, SqliteDB
 from apsis.states import State
 
 NOW = ora.now()
@@ -33,7 +38,17 @@ CLIENT_GROUPS = {
 }
 
 
-def make_run(rowid, job_id, args, state, sched, *, old=False, expected=False, labels=()):
+def make_run(
+    rowid: int,
+    job_id: str,
+    args: dict[str, str],
+    state: State,
+    sched: ora.Time | None,
+    *,
+    old: bool = False,
+    expected: bool = False,
+    labels: tuple[str, ...] = (),
+) -> Run:
     run = Run(Instance(job_id, args), expected=expected)
     run.run_id = f"r{rowid}"
     run.timestamp = NOW - (2 * 86400 if old else 60)
@@ -43,7 +58,7 @@ def make_run(rowid, job_id, args, state, sched, *, old=False, expected=False, la
     return run
 
 
-def make_db(tmp_path, runs):
+def make_db(tmp_path: Path, runs: Iterable[Run]) -> RunDB:
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
     db = SqliteDB.open(path)
@@ -52,20 +67,23 @@ def make_db(tmp_path, runs):
     return db.run_db
 
 
-def client_window(runs, spec, anchor):
+def client_window(
+    runs: list[Run], spec: WindowSpec, anchor: ora.Time
+) -> tuple[list[str], dict[str, int], str | None, str | None]:
     """
-    Returns the shown run IDs, group counts, and edges that the web UI runs
-    list computes with every run in memory.
+    Returns the shown run IDs, group counts, and edges of the window for
+    `spec` at `anchor`, from all `runs` in memory filtered and grouped like
+    the web UI runs list, with args in canonical order.
     """
 
     path, keywords, labels = spec.job_filter.path, spec.job_filter.keywords, spec.job_filter.labels
 
-    def match(r):
+    def match(r: Run) -> bool:
         args = r.inst.args
         job_id = r.inst.job_id
         return (
             "schedule" in r.times
-            and r.timestamp >= MIN_TIMESTAMP
+            and (r.expected or r.timestamp >= MIN_TIMESTAMP)
             and (spec.job_ids is None or job_id in spec.job_ids)
             and (spec.states is None or r.state.name in spec.states)
             and all(k in args and (v is None or args[k] == v) for k, v in spec.args)
@@ -74,13 +92,13 @@ def client_window(runs, spec, anchor):
             and set(labels) <= set(r.meta["job"]["labels"])
         )
 
-    def key(r):
+    def key(r: Run) -> str | tuple[str, str, tuple[tuple[str, str], ...]]:
         sgrp = CLIENT_GROUPS[r.state.name]
         if not spec.grouping or sgrp == "R":
             return r.run_id
         return sgrp, r.inst.job_id, tuple(sorted(r.inst.args.items()))
 
-    def pos(r):
+    def pos(r: Run) -> tuple[ora.Time, int]:
         return r.times["schedule"], int(r.run_id[1:])
 
     runs = sorted(filter(match, runs), key=pos)
@@ -97,7 +115,7 @@ def client_window(runs, spec, anchor):
     nb, na = select_window(len(before), len(after), spec.limit)
     shown = before[len(before) - nb :] + after[:na]
 
-    def edge(omitted, outer, nearest):
+    def edge(omitted: list[Run], outer: Run | None, nearest: Run | None) -> str | None:
         if not omitted:
             return None
         # anchoring at the outer shown run, or the nearest omitted one, moves the window
@@ -118,7 +136,7 @@ def client_window(runs, spec, anchor):
     )
 
 
-def random_runs(rng):
+def random_runs(rng: random.Random) -> list[Run]:
     runs = []
     # few distinct times so schedule times tie within and across groups
     for i, t in enumerate(rng.choices(range(40), k=60)):
@@ -131,7 +149,8 @@ def random_runs(rng):
                 State.scheduled if expected else rng.choice(list(State)),
                 # expected runs tend to come after the db runs
                 None if rng.random() < 0.05 else NOW + (t + 20 * expected) * 60,
-                old=rng.random() < 0.1,
+                # expected runs are often older than the lookback
+                old=rng.random() < (0.5 if expected else 0.1),
                 expected=expected,
                 labels=rng.choice([(), ("l",), ("l", "m")]),
             )
@@ -245,7 +264,7 @@ async def test_edges_step_past_ties(tmp_path, grouping):
     run_db = make_db(tmp_path, runs)
     pos = {r.run_id: (r.times["schedule"], int(r.run_id[1:])) for r in runs}
 
-    async def window_at(anchor):
+    async def window_at(anchor: ora.Time) -> RunWindow:
         spec = WindowSpec(anchor=anchor, grouping=grouping)
         return await query_window(run_db, {}, spec, min_timestamp=None)
 
@@ -264,14 +283,17 @@ async def test_edges_step_past_ties(tmp_path, grouping):
         assert steps == pytest.approx(anchors)
 
 
+@pytest.mark.parametrize("index", ["idx_runs_schedule", "idx_runs_job_args"])
 @pytest.mark.asyncio
-async def test_no_index(tmp_path):
-    run_db = make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
-    run_db.has_schedule_index = False
+async def test_no_index(tmp_path, index):
+    make_db(tmp_path, [make_run(1, "a", {}, State.success, NOW)])
+    with closing(sqlite3.connect(tmp_path / "apsis.db")) as conn:
+        conn.execute(f"DROP INDEX {index}")
+    run_db = SqliteDB.open(tmp_path / "apsis.db").run_db
     with pytest.raises(WindowUnavailable):
         await query_window(run_db, {}, WindowSpec(), min_timestamp=None)
 
-    # a small job set doesn't need the index
+    # a small job set doesn't need the indexes
     window = await query_window(
         run_db, {}, WindowSpec(job_ids=frozenset({"a"})), min_timestamp=None
     )
@@ -295,7 +317,7 @@ async def test_expected_runs_start_during_window(tmp_path, job_filter, grouping)
     runs = starting + [make_run(4, "a", {}, State.scheduled, NOW + 60, expected=True)]
     expected = {r.run_id: r for r in runs}
 
-    async def start():
+    async def start() -> None:
         # the runs start at the first yield of the window build
         for run in starting:
             run.state = State.running

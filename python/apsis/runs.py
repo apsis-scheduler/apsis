@@ -789,8 +789,8 @@ class RunStore:
 
     async def query_window(self, spec: "WindowSpec") -> "RunWindow":
         """
-        Returns the `RunWindow` for `WindowSpec` `spec` over runs in the
-        lookback window.
+        Returns the `RunWindow` for `WindowSpec` `spec` over expected runs
+        and runs in the lookback window.
         """
         from .run_window import query_window
 

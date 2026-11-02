@@ -476,6 +476,8 @@ class Apsis:
         # Create the run and add it to the run store, which assigns it a run ID
         # and persists it.
         run = Run(inst, expected=expected)
+        # runs that fail to validate or bind keep their schedule time
+        run.times["schedule"] = times["schedule"]
         self.run_store.add(run)
 
         # Check that the run is valid and get it ready.

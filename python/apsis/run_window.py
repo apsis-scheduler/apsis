@@ -31,6 +31,8 @@ STATE_GROUPS = {
 }
 GROUP_STATES = {g: frozenset(s for s, x in STATE_GROUPS.items() if x == g) for g in "SC"}
 
+# fewest runs a window shows
+MIN_LIMIT = 2
 MAX_LIMIT = 1000
 # db rows per page
 PAGE_ROWS = 500
@@ -118,7 +120,7 @@ class RunWindow:
 
 class WindowUnavailable(RuntimeError):
     def __init__(self) -> None:
-        super().__init__("runs schedule index missing")
+        super().__init__("runs window indexes missing")
 
 
 def select_window(before: int, after: int, limit: int) -> tuple[int, int]:
@@ -149,7 +151,7 @@ class _Side:
         desc: bool,
         extra: list[Entry],
         live: Container[str] = (),
-    ):
+    ) -> None:
         """
         :param pages:
           Nonempty pages of entries, nearest first.
@@ -334,13 +336,15 @@ async def query_window(
 ) -> RunWindow:
     """
     Returns the window of runs that the web UI runs list would show for
-    `spec`, for runs with a schedule time and timestamp at least `min_timestamp`.
+    `spec`, for runs with a schedule time that are expected or have a timestamp
+    at least `min_timestamp`.
 
     :param expected_runs:
       Runs that are only in memory by run ID, which runs leave as they move
       to the db or are removed while the window is built.
     :raise WindowUnavailable:
-      The window needs the schedule index and the db doesn't have it.
+      The window walks runs by schedule time and the db is missing one of
+      `WINDOW_INDEXES`.
     """
     anchor = ora.now() if spec.anchor is None else spec.anchor
     t = str(anchor)
@@ -357,9 +361,11 @@ async def query_window(
     keep = _make_keep(
         spec, job_ids, float("-inf") if min_timestamp is None else dump_time(min_timestamp)
     )
+    # expected runs ignore the lookback
+    keep_expected = _make_keep(spec, job_ids, float("-inf"))
     expected = []
     for chunk in chunks(runs, PAGE_ROWS):
-        expected.extend(e for e in map(_expected_entry, chunk) if keep(e))
+        expected.extend(e for e in map(_expected_entry, chunk) if keep_expected(e))
         await asyncio.sleep(0)
     expected.sort(key=lambda e: (e.sched, e.rowid))
     key_of = group_key if spec.grouping else lambda e: "R" + e.run_id
@@ -382,21 +388,22 @@ async def query_window(
         after = _Side(chunks(entries[i:], PAGE_ROWS), _all, False, [])
 
         groups = {}
-        for i, e in enumerate(entries, 1):
-            if i % PAGE_ROWS == 0:
-                await asyncio.sleep(0)
-            key = key_of(e)
-            run_id, count = groups.get(key, (None, 0))
-            # scheduled groups show their earliest run and others their latest
-            if run_id is None or key[0] != "S":
-                run_id = e.run_id
-            groups[key] = run_id, count + 1
+        if spec.grouping:
+            for n, e in enumerate(entries, 1):
+                if n % PAGE_ROWS == 0:
+                    await asyncio.sleep(0)
+                key = key_of(e)
+                run_id, count = groups.get(key, (None, 0))
+                # scheduled groups show their earliest run and others their latest
+                if run_id is None or key[0] != "S":
+                    run_id = e.run_id
+                groups[key] = run_id, count + 1
 
         async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             return groups[key]
 
     else:
-        if not run_db.has_schedule_index:
+        if not run_db.has_window_indexes:
             raise WindowUnavailable()
         i = bisect.bisect_left([e.sched for e in expected], t)
         before = _Side(
@@ -411,10 +418,11 @@ async def query_window(
         )
 
         expected_groups = defaultdict(list)
-        for n, e in enumerate(expected, 1):
-            if n % PAGE_ROWS == 0:
-                await asyncio.sleep(0)
-            expected_groups[key_of(e)].append(e)
+        if spec.grouping:
+            for n, e in enumerate(expected, 1):
+                if n % PAGE_ROWS == 0:
+                    await asyncio.sleep(0)
+                expected_groups[key_of(e)].append(e)
 
         async def stats(entry: Entry, key: str) -> tuple[str | None, int]:
             sgrp = key[0]

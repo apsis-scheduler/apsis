@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -9,7 +10,7 @@ SCRIPT = Path(__file__).parents[2] / "scripts" / "migrate-db.py"
 
 
 @pytest.fixture(scope="module")
-def migrate_db():
+def migrate_db() -> ModuleType:
     spec = importlib.util.spec_from_file_location("migrate_db", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -31,7 +32,7 @@ def test_migrate_2_8_0(tmp_path, migrate_db):
     conn.commit()
 
     db = SqliteDB.open(path)
-    assert not db.run_db.has_schedule_index
+    assert not db.run_db.has_window_indexes
     migrate_db.migrate_2_8_0(db)
     assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
@@ -49,4 +50,4 @@ def test_main(tmp_path, migrate_db, monkeypatch):
 
     monkeypatch.setattr("sys.argv", ["migrate-db.py", str(path)])
     migrate_db.main()
-    assert SqliteDB.open(path).run_db.has_schedule_index
+    assert SqliteDB.open(path).run_db.has_window_indexes
