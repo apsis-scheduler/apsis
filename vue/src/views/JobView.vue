@@ -143,6 +143,7 @@ import RunArgs from '@/components/RunArgs'
 import RunsList from '@/components/RunsList'
 import showdown from 'showdown'
 import store from '@/store'
+import { jobScope, setSummaryScope } from '@/summary.js'
 import { formatTime, parseTime } from '@/time'
 import Vue from 'vue'
 
@@ -167,6 +168,16 @@ export default {
       scheduledInstance: null,
       scheduledRunId: null,
     }
+  },
+
+  created() {
+    setSummaryScope(jobScope(this.job_id))
+  },
+
+  watch: {
+    job_id(job_id) {
+      setSummaryScope(jobScope(job_id))
+    },
   },
 
   computed: {

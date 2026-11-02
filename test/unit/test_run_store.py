@@ -2,11 +2,16 @@
 Tests for RunStore with real SQLite database.
 """
 
+from collections.abc import Iterable
+
 import ora
 import random
+import ujson
 
 import pytest
 
+import apsis.runs
+import apsis.sqlite
 from apsis.runs import Instance, Run, RunStore
 from apsis.sqlite import SqliteDB
 from apsis.states import State
@@ -26,7 +31,7 @@ def test_runs_by_job(tmp_path):
     rnd.shuffle(job_ids)
 
     # Create a random run store and add a bunch of runs.
-    run_store = RunStore(db, min_timestamp=ora.now())
+    run_store = RunStore(db, lookback=86400)
     for _ in range(n):
         run = Run(Instance(rnd.choice(job_ids), {}), expected=True)
         run_store.add(run)
@@ -112,8 +117,8 @@ def test_run_store_populate(tmp_path):
     run_ids = {r.run_id for r in runs}
     assert len(run_ids) == len(runs)
 
-    # Create a new run store with min_timestamp before the runs.
-    run_store = RunStore(db, min_timestamp=base_timestamp - 1)
+    # Create a new run store with a lookback window that covers the runs.
+    run_store = RunStore(db, lookback=7200)
 
     # Query each run by run ID.
     for run in runs:
@@ -134,10 +139,10 @@ def test_run_store_populate(tmp_path):
         assert {r.run_id for r in q} == {r.run_id for r in expected}
 
 
-def _make_store(tmp_path, min_timestamp=None):
+def _make_store(tmp_path, lookback=None):
     db_path = tmp_path / "apsis.db"
     SqliteDB.create(path=db_path)
-    return RunStore(SqliteDB.open(db_path), min_timestamp=min_timestamp)
+    return RunStore(SqliteDB.open(db_path), lookback=lookback)
 
 
 def _transition(store, run, state, **kw_args):
@@ -286,10 +291,9 @@ def test_run_store_limit_lookback(tmp_path):
 
     now = ora.now()
     lookback = 3600  # 1 hour
-    min_timestamp = now - lookback
 
     # Create store with lookback window
-    store = RunStore(db, min_timestamp=min_timestamp)
+    store = RunStore(db, lookback=lookback)
 
     # Create an old run beyond the lookback window
     old = Run(Instance("job", {"n": "old"}))
@@ -350,8 +354,47 @@ def test_run_store_limit_lookback(tmp_path):
     assert count_all == 2, "count_runs with limit_lookback=False should see all runs"
 
 
-def test_summaries_concurrent_transition(tmp_path):
-    """summaries() must not raise RuntimeError if a run transitions mid-iteration."""
+def test_lookback_window_follows_now(tmp_path, monkeypatch):
+    """The lookback window is measured back from the current time, not from store creation."""
+    store = _make_store(tmp_path, lookback=100)
+    run = _persist_run(store, "job")
+    store._RunStore__summary_db.upsert(run)
+
+    def visible():
+        return (
+            {r.run_id for r in store.query(job_id="job")[1]},
+            {r.run_id for r in store.query_page(job_id="job", limit=10)[0]},
+            store.count_runs(job_id="job"),
+            sum(map(len, store.summaries())),
+        )
+
+    assert visible() == ({run.run_id}, {run.run_id}, 1, 1)
+    # same store a while later, the run has aged out of the window
+    monkeypatch.setattr("apsis.runs.now", lambda: run.timestamp + 200)
+    assert visible() == (set(), set(), 0, 0)
+
+
+def test_lookback_keeps_expected_runs(tmp_path, monkeypatch):
+    """Every run query keeps an expected run once it's older than the lookback."""
+    store = _make_store(tmp_path, lookback=100)
+    run = Run(Instance("job", {}), expected=True)
+    _schedule(store, run)
+    monkeypatch.setattr("apsis.runs.now", lambda: run.timestamp + 200)
+
+    assert [r.run_id for r in store.query(job_id="job")[1]] == [run.run_id]
+    assert [r.run_id for r in store.query_page(job_id="job", limit=10)[0]] == [run.run_id]
+    assert store.count_runs(job_id="job") == 1
+    assert sum(map(len, store.summaries())) == 1
+
+
+def summary_ids(pages: Iterable[list[str]]) -> list[str]:
+    return [ujson.loads(s)["run_summary"]["run_id"] for page in pages for s in page]
+
+
+def test_summaries_concurrent_transition(tmp_path, monkeypatch):
+    """summaries() keeps going when an expected run transitions between its pages."""
+    monkeypatch.setattr(apsis.runs, "SUMMARY_PAGE_SIZE", 1)
+    monkeypatch.setattr(apsis.sqlite, "SUMMARY_PAGE_SIZE", 1)
     store = _make_store(tmp_path)
 
     run_a = Run(Instance("job", {"n": "0"}), expected=True)
@@ -360,19 +403,37 @@ def test_summaries_concurrent_transition(tmp_path):
     _schedule(store, run_b)
 
     it = store.summaries()
-    next(it)
+    first = next(it)
 
-    # transition a run out of expected (simulates concurrent state change)
-    _transition(store, run_b, State.waiting)
+    # transition the run on the next page out of expected
+    _transition(store, run_b if run_a.run_id in summary_ids([first]) else run_a, State.waiting)
 
     # consuming the rest must not raise "dictionary changed size during iteration"
-    list(it)
+    assert set(summary_ids([first, *it])) == {run_a.run_id, run_b.run_id}
+
+
+def test_summaries_persisted_transition(tmp_path, monkeypatch):
+    """summaries() keeps going when a persisted run moves past its cursor."""
+    monkeypatch.setattr(apsis.runs, "SUMMARY_PAGE_SIZE", 1)
+    monkeypatch.setattr(apsis.sqlite, "SUMMARY_PAGE_SIZE", 1)
+    store = _make_store(tmp_path)
+    run_ids = [_make_active(store) for _ in range(3)]
+
+    it = store.summaries()
+    first = next(it)
+    assert summary_ids([first]) == [run_ids[2]]
+
+    # the oldest run gets the newest timestamp, so it moves above the cursor
+    _transition(store, store.get(run_ids[0])[1], State.starting)
+
+    # live updates carry the moved run, and the rest come through once each
+    assert summary_ids([first, *it]) == [run_ids[2], run_ids[1]]
 
 
 def test_upsert_durability(tmp_path):
     SqliteDB.create(path=tmp_path / "apsis.db")
     db = SqliteDB.open(tmp_path / "apsis.db")
-    store = RunStore(db, min_timestamp=None)
+    store = RunStore(db, lookback=None)
 
     now = ora.now()
 
@@ -458,7 +519,7 @@ def test_active_run_singleton_survives_db_backing(tmp_path):
     run.meta = {}
     db.run_db.upsert(run)
 
-    store = RunStore(db, min_timestamp=None)
+    store = RunStore(db, lookback=None)
 
     # first get() has to deserialize from SQLite.
     _, g1 = store.get(run.run_id)
@@ -489,7 +550,7 @@ def test_active_run_singleton_via_attach(tmp_path):
     run.meta = {}
     db.run_db.upsert(run)
 
-    store = RunStore(db, min_timestamp=None)
+    store = RunStore(db, lookback=None)
     store.attach(run)
 
     _, g = store.get(run.run_id)
@@ -595,7 +656,7 @@ def test_paged_stable_when_expected_run_persists_mid_scroll(tmp_path):
 def test_paged_applies_lookback_on_every_page(tmp_path):
     """Runs older than the lookback window never appear on any page, not just page one."""
     min_ts = ora.now() - 3600
-    store = _make_store(tmp_path, min_timestamp=min_ts)
+    store = _make_store(tmp_path, lookback=3600)
     # interleave fresh and too-old runs so old rows land below the first cursor
     # and between later fresh matches, not all bunched above page one
     fresh = set()
@@ -705,7 +766,7 @@ def test_run_store_schedule_span_paged_mixed_storage(tmp_path):
 
 def test_run_store_schedule_span_respects_lookback(tmp_path):
     """the span does not bypass the last-update lookback"""
-    store = _make_store(tmp_path, min_timestamp=ora.now() - 100)
+    store = _make_store(tmp_path, lookback=100)
     _persist_at(store, T2, args={"n": "old"}, timestamp=ora.now() - 10000)
     new = _persist_at(store, T2, args={"n": "new"})
 
