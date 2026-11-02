@@ -67,6 +67,7 @@ def test_parse_window():
     assert parse("time=now&grouping=True").window.grouping
     # an empty path is no path filter
     assert parse("time=now&path=").window.job_filter == JobFilter()
+    assert parse("time=now&limit=1").window.limit == 2
 
     scope = parse("time=now&types=job,run&job_id=a/x")
     assert scope.window == WindowSpec(job_ids=frozenset({"a/x"}))

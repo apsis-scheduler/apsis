@@ -31,6 +31,8 @@ STATE_GROUPS = {
 }
 GROUP_STATES = {g: frozenset(s for s, x in STATE_GROUPS.items() if x == g) for g in "SC"}
 
+# fewest runs a window shows
+MIN_LIMIT = 2
 MAX_LIMIT = 1000
 # db rows per page
 PAGE_ROWS = 500

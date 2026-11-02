@@ -10,7 +10,7 @@ from . import messages
 from apsis import procstar
 from apsis.jobs import Jobs
 from apsis.lib.itr import chunks
-from apsis.run_window import MAX_LIMIT, JobFilter, WindowSpec, args_match
+from apsis.run_window import MAX_LIMIT, MIN_LIMIT, JobFilter, WindowSpec, args_match
 from apsis.states import to_state
 
 if TYPE_CHECKING:
@@ -64,9 +64,9 @@ def parse_summary_scope(query_string: str, jobs: Jobs) -> SummaryScope:
 
     With `time`, an ISO time or `now`, init sends a window of runs around it
     as the web UI runs list shows them, and types default to `run`.  The
-    window takes `limit`, `grouping` of 0 or 1, `path` with empty for none,
-    and repeatable `keyword`, `label`, `state`, and `arg` of `param=value` or
-    `param`.
+    window takes a `limit` of 1 to `MAX_LIMIT` that shows at least `MIN_LIMIT`
+    runs, `grouping` of 0 or 1, `path` with empty for none, and repeatable
+    `keyword`, `label`, `state`, and `arg` of `param=value` or `param`.
 
     :raise ValueError:
       An invalid param.
@@ -104,7 +104,7 @@ def parse_summary_scope(query_string: str, jobs: Jobs) -> SummaryScope:
     states = query.get("state")
     spec = WindowSpec(
         anchor=None if time == "now" else ora.Time(time),
-        limit=limit,
+        limit=max(limit, MIN_LIMIT),
         grouping=_parse_bool(one("grouping", "1")),
         job_ids=job_ids,
         states=None if states is None else frozenset(to_state(s).name for s in states),
