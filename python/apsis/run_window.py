@@ -334,7 +334,8 @@ async def query_window(
 ) -> RunWindow:
     """
     Returns the window of runs that the web UI runs list would show for
-    `spec`, for runs with a schedule time and timestamp at least `min_timestamp`.
+    `spec`, for runs with a schedule time that are expected or have a timestamp
+    at least `min_timestamp`.
 
     :param expected_runs:
       Runs that are only in memory by run ID, which runs leave as they move
@@ -357,9 +358,11 @@ async def query_window(
     keep = _make_keep(
         spec, job_ids, float("-inf") if min_timestamp is None else dump_time(min_timestamp)
     )
+    # expected runs ignore the lookback
+    keep_expected = _make_keep(spec, job_ids, float("-inf"))
     expected = []
     for chunk in chunks(runs, PAGE_ROWS):
-        expected.extend(e for e in map(_expected_entry, chunk) if keep(e))
+        expected.extend(e for e in map(_expected_entry, chunk) if keep_expected(e))
         await asyncio.sleep(0)
     expected.sort(key=lambda e: (e.sched, e.rowid))
     key_of = group_key if spec.grouping else lambda e: "R" + e.run_id

@@ -371,3 +371,22 @@ async def test_window_summaries(tmp_path):
     assert window.run_ids == [run.run_id, expected.run_id]
     summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
     assert run_ids(summaries) == [expected.run_id, run.run_id]
+
+
+@pytest.mark.asyncio
+async def test_window_lookback_keeps_expected_runs(tmp_path):
+    """A window drops db runs older than the lookback but keeps old expected runs."""
+    run_store = make_run_store(tmp_path, lookback=3600)
+    t = ora.now()
+    (done,) = add_runs(run_store, "a", 1)
+    done._transition(t - 7200, State.success, times={"schedule": t - 7200}, force=True)
+    run_store.update(done, t - 7200)
+    old, new = Run(Instance("a", {}), expected=True), Run(Instance("a", {}), expected=True)
+    for run, ts, sched in (old, t - 7200, t + 60), (new, t, t + 120):
+        run_store.add(run)
+        run._transition(ts, State.scheduled, times={"schedule": sched})
+        run_store.update(run, ts)
+
+    window = await run_store.query_window(WindowSpec(anchor=t))
+    assert window.run_ids == [old.run_id]
+    assert window.counts == {old.run_id: 2}

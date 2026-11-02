@@ -65,7 +65,7 @@ def client_window(runs, spec, anchor):
         job_id = r.inst.job_id
         return (
             "schedule" in r.times
-            and r.timestamp >= MIN_TIMESTAMP
+            and (r.expected or r.timestamp >= MIN_TIMESTAMP)
             and (spec.job_ids is None or job_id in spec.job_ids)
             and (spec.states is None or r.state.name in spec.states)
             and all(k in args and (v is None or args[k] == v) for k, v in spec.args)
@@ -131,7 +131,8 @@ def random_runs(rng):
                 State.scheduled if expected else rng.choice(list(State)),
                 # expected runs tend to come after the db runs
                 None if rng.random() < 0.05 else NOW + (t + 20 * expected) * 60,
-                old=rng.random() < 0.1,
+                # expected runs are often older than the lookback
+                old=rng.random() < (0.5 if expected else 0.1),
                 expected=expected,
                 labels=rng.choice([(), ("l",), ("l", "m")]),
             )
