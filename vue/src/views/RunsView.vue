@@ -18,7 +18,7 @@ import { clamp, intersection, isEqual } from 'lodash'
 import { STATES, argsToArray, arrayToArgs, isRunWindowStale } from '@/runs'
 import RunsList from '@/components/RunsList'
 import store from '@/store.js'
-import { setSummaryScope, windowScope } from '@/summary.js'
+import { reloadSummaryScope, setSummaryScope, windowScope } from '@/summary.js'
 import { formatCompactUTCTime, parseCompactUTCTime } from '@/time'
 
 // most runs the server sends in a window
@@ -48,6 +48,11 @@ export default {
 
   created() {
     setSummaryScope(windowScope(this.query))
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+  },
+
+  destroyed() {
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
   },
 
   computed: {
@@ -70,11 +75,17 @@ export default {
     // reload a stale window, keeping its runs until the new one arrives
     windowStale(stale) {
       if (stale)
-        setSummaryScope(windowScope(this.query), true)
+        reloadSummaryScope()
     },
   },
 
   methods: {
+    // reloads a window that went stale while the page was hidden
+    onVisibilityChange() {
+      if (this.windowStale)
+        reloadSummaryScope()
+    },
+
     /**
      * Converts the query part of a URL to a query object for RunsList.
      */

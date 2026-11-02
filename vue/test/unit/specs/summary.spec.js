@@ -52,6 +52,8 @@ describe('setSummaryScope', () => {
     sockets[0].onMessage(frame(DONE))
     summary.setSummaryScope(summary.JOBS_SCOPE, true)
     expect(sockets.length).toBe(2)
+    // a refresh keeps showing the same scope so it isn't loading
+    expect(store.state.scopeLoading).toBe(false)
     expect(sockets[0].close).toHaveBeenCalled()
     summary.setSummaryScope()
     summary.setSummaryScope(undefined, true)
@@ -70,9 +72,10 @@ describe('setSummaryScope', () => {
   test('new scope closes, opens, and replaces the store once its init is done', () => {
     summary.setSummaryScope(summary.jobScope('a'))
     sockets[0].onMessage(frame({type: 'run_summary', run_summary: {...RUN}}))
-    expect(store.state.runs.size).toBe(0)
+    expect([store.state.runs.size, store.state.scopeLoading]).toEqual([0, true])
     sockets[0].onMessage(frame(DONE))
     expect(Array.from(store.state.runs.keys())).toEqual(['r1'])
+    expect(store.state.scopeLoading).toBe(false)
 
     summary.setSummaryScope(summary.jobScope('b'))
     expect(sockets[0].close).toHaveBeenCalled()
@@ -189,6 +192,50 @@ describe('run windows', () => {
     ))
     expect(sockets.slice(-3).map(s => s.url.search)).toEqual([past, now, now])
     vm.$destroy()
+  })
+
+  test('a window with states only adds live runs in them', () => {
+    summary.setSummaryScope(summary.windowScope({...QUERY, states: ['failure']}))
+    sockets[0].onMessage(frame(
+      {type: 'run_summary', run_summary: {...RUN, state: 'failure'}},
+      {type: 'run_window', groups: {}, earlier: {time: '2026-10-13T00:00:00Z'}, later: null},
+    ))
+    sockets[0].onMessage(frame(
+      {type: 'run_summary', run_summary: {...RUN, run_id: 'r2', state: 'scheduled'}},
+      {type: 'run_transition', run_summary: {...RUN, run_id: 'r3', state: 'running'}},
+      {type: 'run_transition', run_summary: {...RUN, run_id: 'r4', state: 'failure'}},
+    ))
+    expect(Array.from(store.state.runs.keys())).toEqual(['r1', 'r4'])
+
+    // runs it has still update when they leave its states
+    sockets[0].onMessage(frame(
+      {type: 'run_transition', run_summary: {...RUN, state: 'success'}},
+      {type: 'run_transition', run_summary: {...RUN, run_id: 'r4', state: 'success'}},
+    ))
+    expect(Array.from(store.state.runs.values(), r => r.state)).toEqual(['success', 'success'])
+  })
+
+  test('window reloads wait for an open init, keep a gap with one reload after it and skip a hidden page', () => {
+    const WINDOW = {type: 'run_window', groups: {}, earlier: null, later: null}
+    summary.setSummaryScope(summary.windowScope(QUERY))
+    summary.reloadSummaryScope()
+    expect(sockets.length).toBe(1)
+    sockets[0].onClose({code: 1006})
+    summary.reloadSummaryScope()
+    sockets[1].onMessage(frame(WINDOW))
+    summary.reloadSummaryScope()
+    summary.reloadSummaryScope()
+    expect(sockets.length).toBe(2)
+    jest.advanceTimersByTime(summary.RELOAD_GAP)
+    expect(sockets.length).toBe(3)
+    sockets[2].onMessage(frame(WINDOW))
+    jest.advanceTimersByTime(summary.RELOAD_GAP)
+    expect(sockets.length).toBe(3)
+
+    Object.defineProperty(document, 'hidden', {value: true, configurable: true})
+    summary.reloadSummaryScope()
+    delete document.hidden
+    expect(sockets.length).toBe(3)
   })
 
   test('4503 falls back to no scope', () => {

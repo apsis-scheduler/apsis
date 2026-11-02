@@ -159,7 +159,9 @@ div
             )
 
       tbody
-        tr(v-if="groups.groups.length == 0")
+        tr(v-if="loading")
+          td.note(:colspan="columns.length") Loading runs.
+        tr(v-else-if="groups.groups.length == 0")
           td.note(:colspan="columns.length") No runs.
         tr(v-else)
           td.spacer(:colspan="columns.length")
@@ -341,7 +343,7 @@ export default {
 
     // If true, the table scrolls in a pane that fills the rest of the window.
     fillWindow: {type: Boolean, default: false},
-    // If true, show the run window from the summary socket once it arrives.
+    // if true, show the run window from the summary socket once it arrives
     windowed: {type: Boolean, default: false},
   },
 
@@ -395,6 +397,11 @@ export default {
   computed: {
     runWindow() {
       return this.windowed ? this.store.state.runWindow : null
+    },
+
+    // true while a new run window loads
+    loading() {
+      return this.windowed && this.store.state.scopeLoading
     },
 
     /** Runs, after filtering.  */
@@ -583,6 +590,9 @@ export default {
           laterTime = laterTime || later.time
         }
       }
+      // hides the edges of the old window while a new one loads
+      if (this.loading)
+        earlierMore = laterMore = false
 
       var nowIndex
       if (runs.length > 0 && runs[0].time_key < now && now < runs[runs.length - 1].time_key)

@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterator
 from contextlib import closing
 import sqlite3
 from urllib.parse import quote
@@ -18,7 +19,7 @@ JOBS = {
 }
 
 
-def start(drop_index=False):
+def start(drop_index: bool = False) -> ApsisService:
     inst = ApsisService()
     for job_id, jso in JOBS.items():
         with open(inst.jobs_dir / f"{job_id}.yaml", "w") as file:
@@ -34,13 +35,13 @@ def start(drop_index=False):
 
 
 @pytest.fixture(scope="module")
-def service():
+def service() -> Iterator[ApsisService]:
     with closing(start()) as inst:
         yield inst
 
 
 @pytest.fixture(scope="module")
-def run_ids(service):
+def run_ids(service: ApsisService) -> dict[str, str | list[str]]:
     now = ora.now()
     schedule = service.client.schedule
     done = schedule("a", {"x": 1})["run_id"]
@@ -53,7 +54,7 @@ def run_ids(service):
     }
 
 
-def window_ids(msgs):
+def window_ids(msgs: list[dict]) -> list[str]:
     return [m["run_summary"]["run_id"] for m in msgs if m["type"] == "run_summary"]
 
 
@@ -93,7 +94,7 @@ async def test_window_deltas(service, run_ids):
         a2_run_id = service.client.schedule("a", {"x": 2})["run_id"]
         a1_run_id = service.client.schedule("a", {"x": 1})["run_id"]
 
-        async def read():
+        async def read() -> list[dict]:
             msgs = []
             async for frame in frames:
                 msgs += ujson.loads(frame)

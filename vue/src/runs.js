@@ -79,9 +79,9 @@ export function isRunWindowStale(state, atNow) {
 }
 
 /**
- * Returns the number of runs in a group of local `runs`, adding the runs
- * `runWindow` counted but didn't send for each member still in the group the
- * window counted it in.
+ * Returns the number of runs in a group of local `runs`, plus the runs
+ * `runWindow` grouped with each of them but didn't send, unless that run has
+ * since moved to another group.
  */
 export function groupCount(runs, runWindow) {
   let count = runs.length
@@ -149,9 +149,12 @@ export function processMsgs(msgs, state) {
         run.time_key = timeKey(run)
         if (state.runWindow !== null) {
           // a run window only keeps runs it sent or strictly inside the span it loaded
-          const { runIds, start, end } = state.runWindow
+          const { runIds, start, end, states = [] } = state.runWindow
           const t = Date.parse(run.time_key)
           if (!runIds.has(run.run_id) && !(start < t && t < end))
+            break
+          // and only adds runs in the states it asked for
+          if (states.length > 0 && !states.includes(run.state) && !(runs || state.runs).has(run.run_id))
             break
           const counted = state.runWindow.groups[run.run_id]
           if (counted && counted.count > 1 && counted.key !== run.group_key)
