@@ -101,6 +101,9 @@ export function setSummaryScope(scope, refresh = false) {
       if (held === null)
         processMsgs(msgs, store.state)
       else {
+        for (const m of msgs)
+          if (m.type === 'run_window')
+            m.states = scope.window.filter(([param]) => param === 'state').map(([, state]) => state)
         held.push(msgs)
         if (msgs.some(m => m.type === 'run_window' || m.type === 'summary_init_done')) {
           clearRunState(store.state)

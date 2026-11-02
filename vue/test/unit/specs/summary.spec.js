@@ -191,6 +191,27 @@ describe('run windows', () => {
     vm.$destroy()
   })
 
+  test('a window with states only adds live runs in them', () => {
+    summary.setSummaryScope(summary.windowScope({...QUERY, states: ['failure']}))
+    sockets[0].onMessage(frame(
+      {type: 'run_summary', run_summary: {...RUN, state: 'failure'}},
+      {type: 'run_window', groups: {}, earlier: {time: '2026-10-13T00:00:00Z'}, later: null},
+    ))
+    sockets[0].onMessage(frame(
+      {type: 'run_summary', run_summary: {...RUN, run_id: 'r2', state: 'scheduled'}},
+      {type: 'run_transition', run_summary: {...RUN, run_id: 'r3', state: 'running'}},
+      {type: 'run_transition', run_summary: {...RUN, run_id: 'r4', state: 'failure'}},
+    ))
+    expect(Array.from(store.state.runs.keys())).toEqual(['r1', 'r4'])
+
+    // runs it has still update when they leave its states
+    sockets[0].onMessage(frame(
+      {type: 'run_transition', run_summary: {...RUN, state: 'success'}},
+      {type: 'run_transition', run_summary: {...RUN, run_id: 'r4', state: 'success'}},
+    ))
+    expect(Array.from(store.state.runs.values(), r => r.state)).toEqual(['success', 'success'])
+  })
+
   test('4503 falls back to no scope', () => {
     summary.setSummaryScope(summary.windowScope(QUERY))
     sockets[0].onClose({code: 4503})
