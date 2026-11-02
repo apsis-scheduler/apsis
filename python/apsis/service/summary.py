@@ -64,8 +64,9 @@ def parse_summary_scope(query_string: str, jobs: Jobs) -> SummaryScope:
 
     With `time`, an ISO time or `now`, init sends a window of runs around it
     as the web UI runs list shows them, and types default to `run`.  The
-    window takes `limit`, `grouping` of 0 or 1, `path`, and repeatable
-    `keyword`, `label`, `state`, and `arg` of `param=value` or `param`.
+    window takes `limit`, `grouping` of 0 or 1, `path` with empty for none,
+    and repeatable `keyword`, `label`, `state`, and `arg` of `param=value` or
+    `param`.
 
     :raise ValueError:
       An invalid param.
@@ -109,7 +110,7 @@ def parse_summary_scope(query_string: str, jobs: Jobs) -> SummaryScope:
         states=None if states is None else frozenset(to_state(s).name for s in states),
         args=tuple(map(_parse_arg, query.get("arg", ()))),
         job_filter=JobFilter(
-            path=one("path", None),
+            path=one("path", None) or None,
             keywords=tuple(query.get("keyword", ())),
             labels=tuple(query.get("label", ())),
         ),
