@@ -12,7 +12,7 @@ def test_rename_job_rolls_back_runs(tmp_path):
     SqliteDB.create(path=path)
     db = SqliteDB.open(path)
     run = Run(Instance("old", {}))
-    RunStore(db, min_timestamp=None).add(run)
+    RunStore(db, lookback=None).add(run)
     with closing(sqlite3.connect(path)) as con, con:
         con.execute(
             "CREATE TRIGGER fail BEFORE UPDATE ON run_summary BEGIN SELECT RAISE(ABORT, 'boom'); END"
