@@ -47,8 +47,12 @@ export function windowScope(query) {
   return {window: params}
 }
 
+// least ms between run window reloads
+export const RELOAD_GAP = 10 * 1000
+
 let socket = null
 let socketUrl = null
+let socketScope
 // true once the server closed the socket
 let socketClosed = false
 let generation = 0
@@ -56,17 +60,21 @@ let generation = 0
 let held = null
 // set when the server can't serve run windows
 let windowUnavailable = false
+// timer that ends the gap after a reload, or null
+let reloadGap = null
+// true if a reload waits for the gap to end
+let reloadPending = false
 
 /**
  * Subscribes the store to summary messages in `scope`, or to all messages if
  * no scope is given.
  *
- * Does nothing if the scope is unchanged and `refresh` is false or its init
- * isn't done, or if the open socket is unscoped, since that already has
- * everything.  Otherwise closes the previous socket and opens a new one, and
- * replaces runs, jobs, and agent conns once its init is done, or right away
- * for no scope, and reopens if that init leaves the run window stale.  If the
- * server can't serve run windows, a window scope becomes no scope.
+ * Does nothing if the scope is unchanged and `refresh` is false, or if the
+ * open socket is unscoped, since that already has everything.  Otherwise
+ * closes the previous socket and opens a new one, and replaces runs, jobs, and
+ * agent conns once its init is done, or right away for no scope, and reloads
+ * if that init leaves the run window stale.  If the server can't serve run
+ * windows, a window scope becomes no scope.
  */
 export function setSummaryScope(scope, refresh = false) {
   if (windowUnavailable && scope && scope.window)
@@ -75,13 +83,15 @@ export function setSummaryScope(scope, refresh = false) {
   if (
     socket !== null && !socketClosed
     && (
-      (url.toString() === socketUrl && (!refresh || held !== null))
+      (url.toString() === socketUrl && !refresh)
       || socketUrl === api.getSummaryUrl().toString()
     )
   )
     return
   socketUrl = url.toString()
+  socketScope = scope
   socketClosed = false
+  reloadPending = false
   held = url.toString() === api.getSummaryUrl().toString() ? null : []
   store.state.scopeLoading = held !== null && !refresh
 
@@ -112,7 +122,7 @@ export function setSummaryScope(scope, refresh = false) {
           held = null
           store.state.scopeLoading = false
           if (store.state.runWindowStale)
-            setSummaryScope(scope, true)
+            reloadSummaryScope()
         }
       }
     },
@@ -150,4 +160,26 @@ export function setSummaryScope(scope, refresh = false) {
     { reconnect: false },
   )
   socket.open()
+}
+
+/**
+ * Reopens the socket's scope to reload its run window, unless its init is
+ * still coming or the page is hidden.  Reloads at most once per `RELOAD_GAP`,
+ * and once more at the end of the gap if asked during it.
+ */
+export function reloadSummaryScope() {
+  if ((held !== null && !socketClosed) || document.hidden)
+    return
+  if (reloadGap !== null) {
+    reloadPending = true
+    return
+  }
+  setSummaryScope(socketScope, true)
+  reloadGap = setTimeout(() => {
+    reloadGap = null
+    if (reloadPending) {
+      reloadPending = false
+      reloadSummaryScope()
+    }
+  }, RELOAD_GAP)
 }

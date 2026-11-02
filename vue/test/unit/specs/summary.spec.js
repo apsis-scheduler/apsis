@@ -215,6 +215,29 @@ describe('run windows', () => {
     expect(Array.from(store.state.runs.values(), r => r.state)).toEqual(['success', 'success'])
   })
 
+  test('window reloads wait for an open init, keep a gap with one reload after it and skip a hidden page', () => {
+    const WINDOW = {type: 'run_window', groups: {}, earlier: null, later: null}
+    summary.setSummaryScope(summary.windowScope(QUERY))
+    summary.reloadSummaryScope()
+    expect(sockets.length).toBe(1)
+    sockets[0].onClose({code: 1006})
+    summary.reloadSummaryScope()
+    sockets[1].onMessage(frame(WINDOW))
+    summary.reloadSummaryScope()
+    summary.reloadSummaryScope()
+    expect(sockets.length).toBe(2)
+    jest.advanceTimersByTime(summary.RELOAD_GAP)
+    expect(sockets.length).toBe(3)
+    sockets[2].onMessage(frame(WINDOW))
+    jest.advanceTimersByTime(summary.RELOAD_GAP)
+    expect(sockets.length).toBe(3)
+
+    Object.defineProperty(document, 'hidden', {value: true, configurable: true})
+    summary.reloadSummaryScope()
+    delete document.hidden
+    expect(sockets.length).toBe(3)
+  })
+
   test('4503 falls back to no scope', () => {
     summary.setSummaryScope(summary.windowScope(QUERY))
     sockets[0].onClose({code: 4503})
