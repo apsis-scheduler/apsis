@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import RunsList from '@/components/RunsList'
+import router from '@/router'
 import { clearRunState, processMsgs } from '@/runs.js'
 import store from '@/store.js'
 
@@ -23,6 +24,7 @@ function groups(windowed) {
 describe('RunsList run window', () => {
   beforeEach(() => {
     clearRunState(store.state)
+    store.state.scopeLoading = false
     processMsgs(summaries(run('r1', 'a', 'success', '10'), run('r2', 'b', 'scheduled', '12')), store.state)
     processMsgs([{
       type: 'run_window',
@@ -58,6 +60,13 @@ describe('RunsList run window', () => {
     processMsgs([{type: 'run_window', groups: {r1: 4, r2: 3}, earlier: null, later: null}], store.state)
     const g = groups(true)
     expect([g.earlierMore, g.laterMore]).toEqual([false, false])
+  })
+
+  test('windowed shows a loading row and no edges while a new window loads', () => {
+    store.state.scopeLoading = true
+    const vm = new (Vue.extend(RunsList))({router, propsData: {query: QUERY, windowed: true}}).$mount()
+    expect(Array.from(vm.$el.querySelectorAll('td.note'), td => td.textContent.trim())).toEqual(['Loading runs.'])
+    expect(Array.from(vm.$el.querySelectorAll('.controls button'), b => b.disabled)).toEqual([true, true])
   })
 
   test('not windowed uses local runs only', () => {

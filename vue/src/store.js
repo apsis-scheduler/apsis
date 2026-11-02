@@ -56,6 +56,8 @@ class Store {
     runWindow: null,
     // true once the run window is missing runs it needs
     runWindowStale: false,
+    // true while the init of a new summary scope is held
+    scopeLoading: false,
   }
 
   setTime(time) {

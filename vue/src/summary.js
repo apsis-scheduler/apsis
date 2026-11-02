@@ -83,6 +83,7 @@ export function setSummaryScope(scope, refresh = false) {
   socketUrl = url.toString()
   socketClosed = false
   held = url.toString() === api.getSummaryUrl().toString() ? null : []
+  store.state.scopeLoading = held !== null && !refresh
 
   // callbacks from a replaced socket are ignored
   const gen = ++generation
@@ -109,6 +110,7 @@ export function setSummaryScope(scope, refresh = false) {
           clearRunState(store.state)
           processMsgs([].concat(...held), store.state)
           held = null
+          store.state.scopeLoading = false
           if (store.state.runWindowStale)
             setSummaryScope(scope, true)
         }

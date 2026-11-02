@@ -52,6 +52,8 @@ describe('setSummaryScope', () => {
     sockets[0].onMessage(frame(DONE))
     summary.setSummaryScope(summary.JOBS_SCOPE, true)
     expect(sockets.length).toBe(2)
+    // a refresh keeps showing the same scope so it isn't loading
+    expect(store.state.scopeLoading).toBe(false)
     expect(sockets[0].close).toHaveBeenCalled()
     summary.setSummaryScope()
     summary.setSummaryScope(undefined, true)
@@ -70,9 +72,10 @@ describe('setSummaryScope', () => {
   test('new scope closes, opens, and replaces the store once its init is done', () => {
     summary.setSummaryScope(summary.jobScope('a'))
     sockets[0].onMessage(frame({type: 'run_summary', run_summary: {...RUN}}))
-    expect(store.state.runs.size).toBe(0)
+    expect([store.state.runs.size, store.state.scopeLoading]).toEqual([0, true])
     sockets[0].onMessage(frame(DONE))
     expect(Array.from(store.state.runs.keys())).toEqual(['r1'])
+    expect(store.state.scopeLoading).toBe(false)
 
     summary.setSummaryScope(summary.jobScope('b'))
     expect(sockets[0].close).toHaveBeenCalled()

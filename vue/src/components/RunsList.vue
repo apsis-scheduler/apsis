@@ -158,7 +158,9 @@ div
           th.col-operations Operations
 
       tbody
-        tr(v-if="groups.groups.length == 0")
+        tr(v-if="loading")
+          td.note(colspan="9") Loading runs.
+        tr(v-else-if="groups.groups.length == 0")
           td.note(colspan="9") No runs.
         tr(v-else)
           td.spacer(colspan="9")
@@ -363,6 +365,11 @@ export default {
       return this.windowed ? this.store.state.runWindow : null
     },
 
+    // true while a new run window loads
+    loading() {
+      return this.windowed && this.store.state.scopeLoading
+    },
+
     /** Runs, after filtering.  */
     runs() {
       let runs = Array.from(this.store.state.runs.values())
@@ -526,6 +533,9 @@ export default {
           laterTime = laterTime || later.time
         }
       }
+      // hides the edges of the old window while a new one loads
+      if (this.loading)
+        earlierMore = laterMore = false
 
       var nowIndex
       if (runs.length > 0 && runs[0].time_key < now && now < runs[runs.length - 1].time_key)
