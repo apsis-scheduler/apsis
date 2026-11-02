@@ -65,9 +65,9 @@ export function isRunWindowStale(state, atNow) {
 }
 
 /**
- * Returns the number of runs in a group of local `runs`, adding the runs
- * `runWindow` counted but didn't send for each member still in the group the
- * window counted it in.
+ * Returns the number of runs in a group of local `runs`, plus the runs
+ * `runWindow` grouped with each of them but didn't send, unless that run has
+ * since moved to another group.
  */
 export function groupCount(runs, runWindow) {
   let count = runs.length

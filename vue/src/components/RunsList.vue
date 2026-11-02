@@ -312,7 +312,7 @@ export default {
     // If true, show a row indicating the current time.
     nowIndicator: {type: Boolean, default: true},
 
-    // If true, show the run window from the summary socket once it arrives.
+    // if true, show the run window from the summary socket once it arrives
     windowed: {type: Boolean, default: false},
   },
 
