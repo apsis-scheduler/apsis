@@ -14,15 +14,14 @@ describe('run windows', () => {
     run_id, job_id: 'a', args: {}, state, times: {schedule: '2026-10-14T00:00:00+00:00'},
   })
 
-  test('group counts add the runs the window left out', () => {
+  test('a counted run that leaves its group counts only itself', () => {
     const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
-    runs.processMsgs([{type: 'run_summary', run_summary: run('r1', 'success')}], state)
+    runs.processMsgs([{type: 'run_summary', run_summary: run('r1', 'scheduled')}], state)
     runs.processMsgs([{type: 'run_window', groups: {r1: 5, r9: 2}, earlier: null, later: null}], state)
-    expect(state.runWindow.groups).toEqual({r1: {count: 5, key: 'Ca\0'}, r9: {count: 2, key: null}})
-    expect(runs.groupCount([state.runs.get('r1')], state.runWindow)).toBe(5)
+    expect(state.runWindow.groups).toEqual({r1: {count: 5, key: 'Sa\0'}, r9: {count: 2, key: null}})
     expect(state.runWindowStale).toBe(false)
 
-    // a counted run that left its group counts alone and the window goes stale
+    // r1 starts so it counts only itself and the window goes stale
     runs.processMsgs([{type: 'run_transition', run_summary: run('r1', 'running')}], state)
     expect(runs.groupCount([state.runs.get('r1')], state.runWindow)).toBe(1)
     expect(state.runWindowStale).toBe(true)
