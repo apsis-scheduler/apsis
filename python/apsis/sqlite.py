@@ -302,7 +302,7 @@ sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 # not a scan and sort
 # rowid is the immutable run number so it is a stable cursor
 sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
-# covers a job's run IDs and timestamps so a job walk reads no run rows
+# a job's runs by rowid with their run IDs and timestamps
 sa.Index(
     "idx_runs_job_cover",
     TBL_RUNS.c.job_id,
@@ -727,9 +727,9 @@ class RunDB:
     ) -> tuple[int | None, str | None, str | None, int]:
         """
         Returns the rowid, run ID, and schedule time of the earliest or latest
-        scheduled run of `job_id` with canonical `args` in one of `states` and
-        with all of `labels`, by schedule time then rowid, and the number of
-        such runs.
+        run of `job_id` with canonical `args`, a schedule time, a state in
+        `states`, all of `labels`, and a timestamp at least `min_timestamp`, by
+        schedule time then rowid, and the number of such runs.
         """
         E = SCHEDULE_TIME_SQL
         labels = list(labels)

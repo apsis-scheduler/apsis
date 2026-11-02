@@ -2,8 +2,8 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-import ora
 from urllib.parse import parse_qs
+import ora
 import ujson
 
 from . import messages
@@ -65,8 +65,9 @@ def parse_summary_scope(query_string: str, jobs: Jobs) -> SummaryScope:
     With `time`, an ISO time or `now`, init sends a window of runs around it
     as the web UI runs list shows them, and types default to `run`.  The
     window takes a `limit` of 1 to `MAX_LIMIT` that shows at least `MIN_LIMIT`
-    runs, `grouping` of 0 or 1, `path` with empty for none, and repeatable
-    `keyword`, `label`, `state`, and `arg` of `param=value` or `param`.
+    runs, a case insensitive `grouping` of 0, 1, false, or true, `path` with
+    empty for none, and repeatable `keyword`, `label`, `state`, and `arg` of
+    `param=value` or `param`.
 
     :raise ValueError:
       An invalid param.

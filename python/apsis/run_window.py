@@ -151,7 +151,7 @@ class _Side:
         desc: bool,
         extra: list[Entry],
         live: Container[str] = (),
-    ):
+    ) -> None:
         """
         :param pages:
           Nonempty pages of entries, nearest first.
