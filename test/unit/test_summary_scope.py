@@ -122,7 +122,7 @@ def test_predicate(scope, passed):
 def test_window_predicate():
     predicate = make_summary_predicate(parse("time=now&path=a&label=l&arg=x=1"))
 
-    def run(job_id, args, labels=("l",)):
+    def run(job_id: str, args: dict[str, str], labels: tuple[str, ...] = ("l",)) -> dict:
         return {
             "type": "run_transition",
             "run_summary": {"job_id": job_id, "args": args, "labels": list(labels)},

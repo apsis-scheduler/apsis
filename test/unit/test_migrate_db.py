@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -9,7 +10,7 @@ SCRIPT = Path(__file__).parents[2] / "scripts" / "migrate-db.py"
 
 
 @pytest.fixture(scope="module")
-def migrate_db():
+def migrate_db() -> ModuleType:
     spec = importlib.util.spec_from_file_location("migrate_db", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
