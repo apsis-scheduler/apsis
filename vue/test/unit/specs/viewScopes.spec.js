@@ -83,6 +83,7 @@ describe('view summary scopes', () => {
     ['show=abc', 'now', 50, []],
     ['show=2000', 'now', 1000, []],
     ['time=garbage', 'now', 50, []],
+    ['time=00000101T000000Z', 'now', 50, []],
     ['time=20261014T100000Z', '2026-10-14T10:00:00Z', 50, []],
     ['states=bogus', 'now', 50, []],
     ['states=failure,bogus', 'now', 50, ['failure']],
