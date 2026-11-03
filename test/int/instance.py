@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import ujson
+import websockets.sync.client
 import yaml
 
 import apsis.service.client
@@ -38,10 +39,12 @@ class ApsisService:
     """
 
     def __init__(self, *, port=None, job_dir=None, cfg={}, env={}, unix=False):
-        self.port = int(port) if port is not None else find_free_port()
-
         self.tmp_dir = Path(tempfile.mkdtemp())
         self.sock_path = self.tmp_dir / "apsis.sock" if unix else None
+        if unix:
+            self.port = None
+        else:
+            self.port = int(port) if port is not None else find_free_port()
         logging.info(f"Apsis instance in {self.tmp_dir}")
         self.db_path = self.tmp_dir / "apsis.db"
         if job_dir is None:
@@ -103,7 +106,7 @@ class ApsisService:
             self.client.wait_running(2)
             return
         deadline = time.monotonic() + 2
-        with self.unix_client() as client:
+        with self.http_client() as client:
             while True:
                 try:
                     client.get("/api/v1/running", headers={"X-Remote-User": "alice"})
@@ -113,9 +116,26 @@ class ApsisService:
                         raise
                     time.sleep(0.05)
 
-    def unix_client(self) -> httpx.Client:
+    def http_client(self, **kwargs) -> httpx.Client:
+        """
+        Returns an HTTP client for this instance over its unix socket or TCP port.
+        """
+        if self.sock_path is None:
+            return httpx.Client(base_url=f"http://127.0.0.1:{self.port}", **kwargs)
         return httpx.Client(
-            transport=httpx.HTTPTransport(uds=str(self.sock_path)), base_url="http://apsis"
+            transport=httpx.HTTPTransport(uds=str(self.sock_path)),
+            base_url="http://apsis",
+            **kwargs,
+        )
+
+    def connect_ws(self, path: str, **kwargs) -> websockets.sync.client.ClientConnection:
+        """
+        Opens a websocket to `path` on this instance over its unix socket or TCP port.
+        """
+        if self.sock_path is None:
+            return websockets.sync.client.connect(f"ws://127.0.0.1:{self.port}{path}", **kwargs)
+        return websockets.sync.client.unix_connect(
+            str(self.sock_path), f"ws://apsis{path}", **kwargs
         )
 
     def is_running(self):
@@ -130,6 +150,8 @@ class ApsisService:
 
     @functools.cached_property
     def client(self):
+        if self.sock_path is not None:
+            raise RuntimeError("this instance serves on a unix socket, use http_client")
         return apsis.service.client.Client(("localhost", self.port))
 
     @contextmanager
