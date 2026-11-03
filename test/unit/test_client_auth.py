@@ -18,6 +18,7 @@ from apsis.service.client import (
     APIError,
     Client,
     get_negotiate_headers,
+    get_url,
     get_ws_msgs,
 )
 
@@ -61,9 +62,9 @@ def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
             "server address: https://apsis.example.com",
         ),
         (
-            ["--port", "6000", "version"],
+            ["--host", "localhost:6000", "version"],
             "http://localhost:6000/api/control/version",
-            "server address: localhost:6000",
+            "server address: http://localhost:6000",
         ),
     ],
 )
@@ -84,6 +85,52 @@ def test_ctl_client_url(monkeypatch, capsys, argv, url, out):
     assert exc.value.code == 0
     assert urls == [url]
     assert out in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "main, argv", [(apsis.cli.main, ["job", "j"]), (apsis.ctl.main, ["version"])]
+)
+def test_port_with_url_base_is_an_error(monkeypatch, capsys, main, argv):
+    monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
+    monkeypatch.setattr("requests.request", Mock())
+    monkeypatch.setattr("sys.argv", ["apsis", "--port", "5001", *argv])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+    assert "can't use port 5001 with URL https://apsis.example.com" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("main", [apsis.cli.main, apsis.ctl.main])
+def test_host_help_shows_default_url(monkeypatch, capsys, main):
+    monkeypatch.setenv("APSIS_HOST", "https://apsis.example.com")
+    monkeypatch.setattr("sys.argv", ["apsis", "--help"])
+    with pytest.raises(SystemExit):
+        main()
+    assert "[def: https://apsis.example.com]" in " ".join(capsys.readouterr().out.split())
+
+
+@pytest.mark.parametrize(
+    "env, host, port, url",
+    [
+        (None, None, None, f"http://localhost:{DEFAULT_PORT}"),
+        ("h:6000", None, "7000", "http://h:7000"),
+        ("h:6000", "foo", None, "http://foo:6000"),
+        ("https://apsis.example.com", "foo", None, f"http://foo:{DEFAULT_PORT}"),
+        ("https://apsis.example.com", "foo:6000", "7000", "http://foo:7000"),
+        ("h:6000", "https://other.example.com/", None, "https://other.example.com"),
+    ],
+)
+def test_get_url(monkeypatch, env, host, port, url):
+    if env is None:
+        monkeypatch.delenv("APSIS_HOST", raising=False)
+    else:
+        monkeypatch.setenv("APSIS_HOST", env)
+    assert get_url(host, port) == url
+
+
+def test_get_url_rejects_port_with_url_host():
+    with pytest.raises(ValueError, match="put the port in the URL"):
+        get_url("https://other.example.com", "7000")
 
 
 def test_ctl_serve_binds_serve_defaults(monkeypatch):
@@ -139,12 +186,14 @@ def test_spnego_auth_with_requests_gssapi(monkeypatch, url, creds, authed):
     gssapi = pytest.importorskip("gssapi")
     requests_gssapi = pytest.importorskip("requests_gssapi")
     monkeypatch.setenv("APSIS_HOST", url)
+    monkeypatch.setattr(gssapi, "Credentials", _creds(0))
+    client = Client()
     monkeypatch.setattr(gssapi, "Credentials", creds)
     auths = []
     monkeypatch.setattr(
         "requests.request", lambda method, url, auth, **kw: auths.append(auth) or _response(200)
     )
-    Client().stats()
+    client.stats()
     (auth,) = auths
     if authed:
         assert isinstance(auth, requests_gssapi.HTTPSPNEGOAuth)

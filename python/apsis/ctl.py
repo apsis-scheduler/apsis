@@ -36,22 +36,23 @@ def main():
     apsis.lib.logging.configure()
 
     parser = apsis.lib.argparse.CommandArgumentParser(prog="apsisctl")
-    addr = apsis.service.client.get_address()
     parser.add_argument(
         "--host",
         metavar="HOST",
-        help=f"connect to HOST over http [def: {addr.host}]",
+        help=f"connect to HOST, a URL, host or host:port [def: {apsis.service.client.get_url()}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        help=f"connect to PORT over http [def: {addr.port}]",
+        help="connect to PORT on a HOST that isn't a URL",
     )
 
     def get_client(args):
-        return apsis.service.client.Client(
-            apsis.service.client.get_explicit_address(args.host, args.port)
-        )
+        try:
+            url = apsis.service.client.get_url(args.host, args.port)
+        except ValueError as exc:
+            parser.error(str(exc))
+        return apsis.service.client.Client(url=url)
 
     # -------------------------------------------------------------
     # command: check-db
@@ -238,7 +239,7 @@ def main():
     def cmd_version(args):
         client = get_client(args)
         version = client.version()["version"]
-        con.print(f"server address: {client.base_url.removeprefix('http://')}")
+        con.print(f"server address: {client.base_url}")
         con.print(f"server version: {version}")
         con.print(f"client version: {apsis.__version__}")
 

@@ -29,6 +29,17 @@ from apsis.lib.json import nkey
 Address = namedtuple("Address", ("host", "port"))
 
 
+def parse_address(loc: str, port: int = apsis.service.DEFAULT_PORT) -> Address:
+    """
+    Returns the host and port in `loc`, or `port` if it has none.
+    """
+    try:
+        host, loc_port = loc.split(":", 1)
+        return Address(host, int(loc_port))
+    except ValueError:
+        return Address(loc, port)
+
+
 def get_address() -> Address:
     """
     Returns the configured host and port where Apsis runs, or the defaults if
@@ -36,36 +47,26 @@ def get_address() -> Address:
     """
     loc = os.environ.get("APSIS_HOST")
     if loc is None or "://" in loc:
-        host, port = "localhost", apsis.service.DEFAULT_PORT
-    else:
-        try:
-            host, port = loc.split(":", 1)
-            port = int(port)
-        except ValueError:
-            host, port = loc, apsis.service.DEFAULT_PORT
-        else:
-            port = int(port)
-    return Address(host, port)
+        return Address("localhost", apsis.service.DEFAULT_PORT)
+    return parse_address(loc)
 
 
-def get_url() -> str:
+def get_url(host: str | None = None, port: str | None = None) -> str:
     """
-    Returns the base URL from APSIS_HOST, defaulting to http.
+    Returns the base URL for `host` and `port`, defaulting to APSIS_HOST.
+
+    :param host:
+      A URL, host, or host:port, or none for APSIS_HOST.
+    :param port:
+      Port that replaces the host's port, not allowed with a URL.
     """
-    loc = os.environ.get("APSIS_HOST", "")
+    loc = os.environ.get("APSIS_HOST", "") if host is None else host
     if "://" in loc:
+        if port is not None:
+            raise ValueError(f"can't use port {port} with URL {loc}, put the port in the URL")
         return loc.rstrip("/")
-    return "http://{}:{}".format(*get_address())
-
-
-def get_explicit_address(host: str | None, port: str | None) -> Address | None:
-    """
-    Returns the address for an explicit `host` or `port`, or none.
-    """
-    if host is None and port is None:
-        return None
-    addr = get_address()
-    return Address(host or addr.host, port or addr.port)
+    addr = get_address() if host is None else parse_address(host, get_address().port)
+    return f"http://{addr.host}:{port or addr.port}"
 
 
 AUTH_ERROR = "not authenticated, get a Kerberos ticket and check KRB5CCNAME"
@@ -94,13 +95,20 @@ def has_ticket() -> bool:
         return False
 
 
+def use_kerberos(url: str) -> bool:
+    """
+    Returns true if requests to `url` should send a Kerberos token.
+    """
+    return urlsplit(url).scheme in ("https", "wss") and HTTPSPNEGOAuth is not None and has_ticket()
+
+
 def get_negotiate_headers(url: str) -> dict[str, str]:
     """
     Returns an SPNEGO Authorization header for a wss `url`, or no headers.
     """
-    parts = urlsplit(url)
-    if parts.scheme != "wss" or HTTPSPNEGOAuth is None or not has_ticket():
+    if not use_kerberos(url):
         return {}
+    parts = urlsplit(url)
     try:
         name = gssapi.Name(f"HTTP@{parts.hostname}", gssapi.NameType.hostbased_service)
         token = gssapi.SecurityContext(name=name, mech=SPNEGO, usage="initiate").step()
@@ -165,19 +173,16 @@ NO_ARG = object()
 
 
 class Client:
-    def __init__(self, address=None):
+    def __init__(self, address=None, *, url: str | None = None):
         """
         :param address:
-          Apsis hostname and port, or none for `get_url`.
+          Apsis hostname and port.
+        :param url:
+          Apsis base URL if `address` is none, or none for `get_url`.
         """
-        self.__base = get_url() if address is None else "http://{}:{}".format(*address)
-        self.__auth = (
-            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True)
-            if urlsplit(self.__base).scheme == "https"
-            and HTTPSPNEGOAuth is not None
-            and has_ticket()
-            else None
-        )
+        if address is not None:
+            url = "http://{}:{}".format(*address)
+        self.__base = get_url() if url is None else url
 
     @property
     def base_url(self) -> str:
@@ -200,7 +205,12 @@ class Client:
         return urlunsplit((scheme, netloc, base_path + "/".join(path), query, ""))
 
     def __send(self, method: str, url: str, **kw: Any) -> requests.Response:
-        resp = requests.request(method, url, auth=self.__auth, **kw)
+        auth = (
+            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True)
+            if use_kerberos(url)
+            else None
+        )
+        resp = requests.request(method, url, auth=auth, **kw)
         if resp.status_code == 401:
             raise get_api_error(resp, get_auth_error(url))
         return resp
