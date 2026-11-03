@@ -6,7 +6,6 @@ import subprocess
 import sys
 import time
 import websockets.exceptions
-import websockets.sync.client
 
 from instance import ApsisService
 
@@ -38,13 +37,10 @@ def test_serve_unix():
         assert inst.sock_path.stat().st_mode & 0o777 == 0o660
 
         with (
-            websockets.sync.client.unix_connect(
-                str(inst.sock_path),
-                "ws://apsis/api/v1/summary",
-                origin="http://apsis",
-                additional_headers=USER,
+            inst.connect_ws(
+                "/api/v1/summary", origin="http://apsis", additional_headers=USER
             ) as ws,
-            inst.unix_client() as client,
+            inst.http_client() as client,
         ):
             res = client.post(
                 "/api/v1/runs",
@@ -59,7 +55,7 @@ def test_serve_unix():
 
 
 def test_user_unix():
-    with ApsisService(unix=True) as inst, inst.unix_client() as client:
+    with ApsisService(unix=True) as inst, inst.http_client() as client:
         for headers in (
             {},
             [("X-Remote-User", "alice"), ("X-Remote-User", "bob")],
@@ -72,12 +68,7 @@ def test_user_unix():
         assert client.post("/api/v1/runs", json=LATER_RUN, headers=USER | EVIL).status_code == 403
         for origin, headers, status in (("http://apsis", {}, 401), (EVIL["Origin"], USER, 403)):
             with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
-                websockets.sync.client.unix_connect(
-                    str(inst.sock_path),
-                    "ws://apsis/api/v1/summary",
-                    origin=origin,
-                    additional_headers=headers,
-                )
+                inst.connect_ws("/api/v1/summary", origin=origin, additional_headers=headers)
             assert exc.value.response.status_code == status
         assert client.get("/api/control/debug", headers=USER).status_code == 403
         assert client.get("/api/v1/whoami", headers=USER).json() == {"user": "alice"}
@@ -127,7 +118,7 @@ def test_user_unix():
 def test_user_tcp():
     with (
         ApsisService() as inst,
-        httpx.Client(base_url=f"http://localhost:{inst.port}", headers=EVIL) as client,
+        inst.http_client(headers=EVIL) as client,
     ):
         assert skip_later_run(client) == ["scheduled: 2100-01-01T00:00:00+00:00", "skipped"]
 
@@ -140,7 +131,7 @@ def test_user_tcp():
 
 def test_summary_tcp():
     with ApsisService() as inst:
-        with websockets.sync.client.connect(f"ws://127.0.0.1:{inst.port}/api/v1/summary") as ws:
+        with inst.connect_ws("/api/v1/summary") as ws:
             run_id = inst.client.schedule_adhoc("now", {"program": {"type": "no-op"}})["run_id"]
             msgs = json.loads(ws.recv(timeout=10))
             assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
@@ -157,7 +148,7 @@ def test_serve_unix_refuses_running_server():
         )
         assert proc.returncode != 0
         assert f"something is already serving on {inst.sock_path}" in proc.stderr
-        with inst.unix_client() as client:
+        with inst.http_client() as client:
             assert client.get("/api/v1/running", headers=USER).status_code == 200
 
 
