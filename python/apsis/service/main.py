@@ -96,7 +96,8 @@ def build_apsis(cfg):
 def bind_unix(path: Path) -> socket.socket:
     """
     Binds a unix socket at `path` that only its owner and group can connect to,
-    replacing a stale socket file but not one a server is listening on.
+    creating its directory and replacing a stale socket file but not one a
+    server is listening on.
     """
     if path.is_socket():
         with socket.socket(socket.AF_UNIX) as probe:
@@ -106,6 +107,7 @@ def bind_unix(path: Path) -> socket.socket:
                 path.unlink()
             else:
                 raise RuntimeError(f"something is already serving on {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
     sock = socket.socket(socket.AF_UNIX)
     sock.bind(str(path))
     path.chmod(0o660)

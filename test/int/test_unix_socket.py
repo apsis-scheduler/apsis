@@ -28,6 +28,21 @@ def test_serve_unix():
             (run_id,) = res.json()["runs"]
             msgs = json.loads(ws.recv(timeout=10))
             assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
+        assert inst.wait_run(run_id)["state"] == "success"
+
+
+def test_serve_unix_creates_dir():
+    inst = ApsisService(unix=True)
+    inst.sock_path = inst.tmp_dir / "run" / "apsis.sock"
+    with inst, inst.http_client() as client:
+        assert client.get("/api/v1/running").status_code == 200
+
+
+def test_instance_unix_refuses_tcp():
+    with pytest.raises(ValueError, match="either a port or a unix socket"):
+        ApsisService(port=5000, unix=True)
+    with pytest.raises(RuntimeError, match="serves on a unix socket"):
+        ApsisService(unix=True).run_apsis_cmd("runs")
 
 
 def test_summary_tcp():
