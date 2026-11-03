@@ -454,7 +454,7 @@ async def run_skip(request, run_id):
         _, run = state.run_store.get(run_id)
     except LookupError:
         return error(f"unknown run {run_id}", 404)
-    await state.skip(run)
+    await state.skip(run, user=request.ctx.user)
     return response_json({})
 
 
@@ -465,7 +465,7 @@ async def run_start(request, run_id):
         _, run = state.run_store.get(run_id)
     except LookupError:
         return error(f"unknown run {run_id}", 404)
-    await state.start(run)
+    await state.start(run, user=request.ctx.user)
     return response_json({})
 
 
@@ -476,7 +476,7 @@ async def run_rerun(request, run_id):
         _, run = state.run_store.get(run_id)
     except LookupError:
         return error(f"unknown run {run_id}", 404)
-    new_run = await state.rerun(run)
+    new_run = await state.rerun(run, user=request.ctx.user)
     jso = runs_to_jso(request.app, ora.now(), [new_run])
     # Let UIs know to show the new run.
     jso["show_run_id"] = new_run.run_id
@@ -493,7 +493,7 @@ async def run_stop(request, run_id):
         return error(f"unknown run {run_id}", 404)
 
     try:
-        await apsis.stop_run(run)
+        await apsis.stop_run(run, user=request.ctx.user)
     except RuntimeError as exc:
         return error(str(exc), 400)
     else:
@@ -516,7 +516,7 @@ async def run_signal(request, run_id, signal):
         return error(f"invalid signal: {signal}", 400)
 
     try:
-        await apsis.send_signal(run, signal)
+        await apsis.send_signal(run, signal, user=request.ctx.user)
     except RuntimeError as exc:
         return error(str(exc), 400)
     else:
@@ -536,7 +536,7 @@ async def run_mark(request, run_id, state):
         except ValueError as err:
             return error(str(err), status=400)
 
-        await apsis.mark(run, state)
+        await apsis.mark(run, state, user=request.ctx.user)
     except Exception:
         log.error("error", exc_info=True)
         raise
@@ -670,7 +670,12 @@ async def websocket_summary(request, ws):
     apsis = request.app.apsis
 
     peer = request.socket
-    prefix = f"/summary {peer[0]}:{peer[1]}:" if peer else "/summary unix:"
+    if peer:
+        prefix = f"/summary {peer[0]}:{peer[1]}:"
+    else:
+        req_id = request.headers.get("X-Request-ID")
+        who = request.ctx.user if req_id is None else f"{request.ctx.user} {req_id}"
+        prefix = f"/summary unix {who}:"
 
     # request.query_args doesn't work correctly for ws endpoints?
     try:
@@ -792,7 +797,9 @@ async def run_post(request):
             else:
                 stop_time = (ora.now() if time == "now" else time) + duration
 
-    runs = (apsis.schedule(time, inst, stop_time=stop_time) for _ in range(count))
+    runs = (
+        apsis.schedule(time, inst, stop_time=stop_time, user=request.ctx.user) for _ in range(count)
+    )
     runs = await asyncio.gather(*runs)
     jso = runs_to_jso(request.app, ora.now(), runs)
     return response_json(jso)
