@@ -502,7 +502,9 @@ class Apsis:
                 "labels": job.meta.get("labels", []),
             }
         except Exception as exc:
-            self._run_exc(run, message=by_user(str(exc), user))
+            if user is not None:
+                self.run_log.record(run, f"created by {user}")
+            self._run_exc(run, message=str(exc))
             return run
 
         # Transition to scheduled.
