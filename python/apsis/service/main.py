@@ -75,7 +75,7 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
 
     :return:
       On a unix socket, a 401 response for a missing, repeated or invalid
-      X-Remote-User, or a 403 response for an Origin other than the host.
+      X-Remote-User, or a 403 response for an Origin on another host.
     """
     if not request.app.authenticated:
         request.ctx.user = None
@@ -85,7 +85,7 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     if USER_RE.fullmatch(user) is None:
         return error("missing or invalid X-Remote-User", 401)
     origin = request.headers.get("Origin")
-    if origin is not None and urlsplit(origin).netloc != request.host:
+    if origin is not None and urlsplit(origin).hostname != request.server_name:
         return error(f"cross origin request from {origin}", 403)
     request.ctx.user = user
 
