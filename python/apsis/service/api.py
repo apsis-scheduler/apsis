@@ -669,8 +669,8 @@ async def websocket_summary(request, ws):
 
     apsis = request.app.apsis
 
-    addr, port = request.socket
-    prefix = f"/summary {addr}:{port}:"
+    peer = request.socket
+    prefix = f"/summary {peer[0]}:{peer[1]}:" if peer else "/summary unix:"
 
     # request.query_args doesn't work correctly for ws endpoints?
     try:

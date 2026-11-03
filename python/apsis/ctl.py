@@ -162,6 +162,9 @@ def main():
     # command: serve
 
     def cmd_serve(args):
+        if args.unix is not None and (args.host is not None or args.port is not None):
+            serve_parser.error("--unix can't be used with --host or --port")
+
         # Assemble config.
         cfg = apsis.config.load(args.config)
         for ovr in args.override:
@@ -181,7 +184,13 @@ def main():
             f"GC {'enabled' if gc.isenabled() else 'disabled'}; threshold: {gc.get_threshold()}"
         )
 
-        restart = apsis.service.main.serve(cfg, host=args.host, port=args.port, debug=args.debug)
+        restart = apsis.service.main.serve(
+            cfg,
+            host="127.0.0.1" if args.host is None else args.host,
+            port=DEFAULT_PORT if args.port is None else args.port,
+            debug=args.debug,
+            unix=args.unix,
+        )
 
         if restart:
             # Start all over.
@@ -190,20 +199,29 @@ def main():
             log.info("...")
             os.execv(argv[0], argv)
 
-    cmd = parser.add_command("serve", cmd_serve, description="Runs the Apsis service.")
+    cmd = serve_parser = parser.add_command(
+        "serve", cmd_serve, description="Runs the Apsis service."
+    )
 
     cmd.add_argument("--debug", action="store_true", default=False, help="run in debug mode")
     # FIXME: Host, port collide with global options.
     # FIXME: Can't use localhost on OSX, where it resolves to an IPV6 address,
     # until we pick up this Sanic fix:
     # https://github.com/channelcat/sanic/pull/1053
-    cmd.add_argument("--host", metavar="HOST", default="127.0.0.1", help="server host address")
+    cmd.add_argument("--host", metavar="HOST", default=None, help="server host address")
     cmd.add_argument(
         "--port",
         metavar="PORT",
         type=int,
-        default=DEFAULT_PORT,
+        default=None,
         help=f"server port [def: {DEFAULT_PORT}]",
+    )
+    cmd.add_argument(
+        "--unix",
+        metavar="PATH",
+        type=Path,
+        default=None,
+        help="serve on a unix socket at PATH instead of HOST and PORT",
     )
     cmd.add_argument(
         "--config",
