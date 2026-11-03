@@ -5,10 +5,10 @@ const flush = () => new Promise(resolve => setTimeout(resolve))
 
 describe('navbar', () => {
   test('shows the user from whoami', async () => {
-    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ user: 'alice' }) }))
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ user: 'aaronf' }) }))
     const wrapper = shallow(Navbar, { stubs: ['router-link'] })
     await flush()
-    expect(wrapper.text()).toContain('alice')
+    expect(wrapper.text()).toContain('aaronf')
   })
 
   test('logs a failed whoami fetch', async () => {
