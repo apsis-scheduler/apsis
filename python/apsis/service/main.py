@@ -75,7 +75,7 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
 
     :return:
       On a unix socket, a 401 response for a missing, repeated or invalid
-      X-Remote-User, or a 403 response for an Origin other than the host.
+      X-Remote-User, or a 403 response for an Origin on another host.
     """
     if not request.app.authenticated:
         request.ctx.user = None
@@ -85,7 +85,7 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     if USER_RE.fullmatch(user) is None:
         return error("missing or invalid X-Remote-User", 401)
     origin = request.headers.get("Origin")
-    if origin is not None and urlsplit(origin).netloc != request.host:
+    if origin is not None and urlsplit(origin).hostname != request.server_name:
         return error(f"cross origin request from {origin}", 403)
     request.ctx.user = user
 
@@ -127,7 +127,8 @@ def build_apsis(cfg):
 def bind_unix(path: Path) -> socket.socket:
     """
     Binds a unix socket at `path` that only its owner and group can connect to,
-    replacing a stale socket file but not one a server is listening on.
+    creating its directory and replacing a stale socket file but not one a
+    server is listening on.
     """
     if path.is_socket():
         with socket.socket(socket.AF_UNIX) as probe:
@@ -137,6 +138,7 @@ def bind_unix(path: Path) -> socket.socket:
                 path.unlink()
             else:
                 raise RuntimeError(f"something is already serving on {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
     sock = socket.socket(socket.AF_UNIX)
     sock.bind(str(path))
     path.chmod(0o660)
