@@ -3,7 +3,6 @@ import pytest
 import socket
 import subprocess
 import sys
-import websockets.sync.client
 
 from instance import ApsisService
 
@@ -18,10 +17,8 @@ def test_serve_unix():
         assert inst.sock_path.stat().st_mode & 0o777 == 0o660
 
         with (
-            websockets.sync.client.unix_connect(
-                str(inst.sock_path), "ws://apsis/api/v1/summary"
-            ) as ws,
-            inst.unix_client() as client,
+            inst.connect_ws("/api/v1/summary") as ws,
+            inst.http_client() as client,
         ):
             res = client.post(
                 "/api/v1/runs",
@@ -35,7 +32,7 @@ def test_serve_unix():
 
 def test_summary_tcp():
     with ApsisService() as inst:
-        with websockets.sync.client.connect(f"ws://127.0.0.1:{inst.port}/api/v1/summary") as ws:
+        with inst.connect_ws("/api/v1/summary") as ws:
             run_id = inst.client.schedule_adhoc("now", {"program": {"type": "no-op"}})["run_id"]
             msgs = json.loads(ws.recv(timeout=10))
             assert any(m.get("run_summary", {}).get("run_id") == run_id for m in msgs)
@@ -52,7 +49,7 @@ def test_serve_unix_refuses_running_server():
         )
         assert proc.returncode != 0
         assert f"something is already serving on {inst.sock_path}" in proc.stderr
-        with inst.unix_client() as client:
+        with inst.http_client() as client:
             assert client.get("/api/v1/running").status_code == 200
 
 
