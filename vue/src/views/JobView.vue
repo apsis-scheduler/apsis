@@ -4,8 +4,8 @@ div.component
     span.title
       | Job 
       Job(:job-id="job_id")
-    span(v-if="job && job.metadata.labels")
-      JobLabel.label(v-for="label in job.metadata.labels" :key="label" :label="label")
+    div.job-labels(v-if="job && job.metadata.labels && job.metadata.labels.length > 0")
+      JobLabel(v-for="label in job.metadata.labels" :key="label" :label="label")
 
   div(v-if="job" style="font-size:120%;")
     | Parameters: ({{ params }})
@@ -137,6 +137,7 @@ import ConfirmationModal from '@/components/ConfirmationModal'
 import Frame from '@/components/Frame'
 import Job from '@/components/Job'
 import JobLabel from '@/components/JobLabel'
+import { setTitle } from '@/page'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
 import RunArgs from '@/components/RunArgs'
@@ -170,13 +171,13 @@ export default {
     }
   },
 
-  created() {
-    setSummaryScope(jobScope(this.job_id))
-  },
-
   watch: {
-    job_id(job_id) {
-      setSummaryScope(jobScope(job_id))
+    job_id: {
+      immediate: true,
+      handler(job_id) {
+        setTitle(job_id)
+        setSummaryScope(jobScope(job_id))
+      },
     },
   },
 
@@ -301,9 +302,19 @@ export default {
   margin-right: 1ex;
 }
 
-.label {
-  position: relative;
-  top: -4px;
+// labels wrap onto new lines as whole bubbles
+.job-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+
+  .job-label {
+    flex-shrink: 0;
+    max-width: 100%;
+    margin-left: 0;
+    white-space: nowrap;
+  }
 }
 
 // This is rubbish.
