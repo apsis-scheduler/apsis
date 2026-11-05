@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Iterable
 import itertools
 import logging
 import ora
@@ -10,6 +11,7 @@ from urllib.parse import unquote, parse_qs
 import websockets
 
 from . import messages
+from .summary import make_summary_predicate, parse_summary_scope, send_scoped_init
 from apsis import procstar
 from apsis.lib import asyn
 from apsis.lib.api import (
@@ -639,44 +641,62 @@ async def _send_chunked(msgs, ws, prefix):
         await asyncio.sleep(0)
 
 
-async def _send_raw(json_msgs, ws, prefix):
-    for chunk in apsis.lib.itr.chunks(json_msgs, WS_RAW_CHUNK):
-        json = "[" + ",".join(chunk) + "]"
-        log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
-        await ws.send(json)
+async def _send_raw(pages: Iterable[list[str]], ws, prefix: str) -> None:
+    """
+    Sends pages of json messages in frames of at least `WS_RAW_CHUNK` messages,
+    except the last, yielding to the event loop after each page.
+    """
+    chunk = []
+    for page in pages:
+        chunk.extend(page)
+        if len(chunk) >= WS_RAW_CHUNK:
+            await _send_raw_chunk(chunk, ws, prefix)
+            chunk = []
         await asyncio.sleep(0)
+    if chunk:
+        await _send_raw_chunk(chunk, ws, prefix)
 
 
-# Message types (see apsis.service.messages) to include in summary.
-SUMMARY_MSG_TYPES = {
-    "agent_conn",
-    "agent_conn_delete",
-    "job",
-    "job_add",
-    "job_delete",
-    "run_delete",
-    "run_summary",
-    "run_transition",
-}
+async def _send_raw_chunk(chunk: list[str], ws, prefix: str) -> None:
+    json = "[" + ",".join(chunk) + "]"
+    log.debug(f"{prefix} sending {len(chunk)} raw json fragments, {len(json)} bytes")
+    await ws.send(json)
 
 
 @API.websocket("/summary")
 async def websocket_summary(request, ws):
     connect_time = time.monotonic()
 
-    # request.query_args doesn't work correctly for ws endpoints?
-    init = "init" in request.query_string.split("&")
-
     apsis = request.app.apsis
 
     addr, port = request.socket
     prefix = f"/summary {addr}:{port}:"
-    log.debug(f"{prefix} connected init={init}")
 
-    predicate = lambda msg: msg["type"] in SUMMARY_MSG_TYPES
+    # request.query_args doesn't work correctly for ws endpoints?
+    try:
+        scope = parse_summary_scope(request.query_string, apsis.jobs)
+    except ValueError as exc:
+        await ws.send(ujson.dumps([{"type": "summary_error", "error": str(exc)}]))
+        await ws.close(code=4400, reason="bad summary scope")
+        return
+    except Exception:
+        log.error(f"{prefix} can't build summary scope", exc_info=True)
+        await ws.send(
+            ujson.dumps([{"type": "summary_error", "error": "can't build summary scope"}])
+        )
+        await ws.close(code=1011, reason="summary scope failed")
+        return
+    init = scope.init
+    log.debug(f"{prefix} connected {scope}")
+
+    predicate = make_summary_predicate(scope)
     with apsis.summary_publisher.subscription(predicate=predicate) as sub:
         try:
-            if init:
+            if init and scope.scoped:
+                with Timer(name=f"{prefix} send scoped init", print=log.debug):
+                    await send_scoped_init(apsis, ws, scope)
+
+            elif init:
                 # Full initialization.
 
                 with Timer(name=f"{prefix} send historical messages", print=log.debug):
