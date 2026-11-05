@@ -423,6 +423,94 @@ async def test_check_dependency_timing_transitive(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_check_dependencies_after_dep_window(tmp_path):
+    """
+    Tests that runs scheduled after the dep window are still checked against
+    the runs in it, and that other conditions and disabled dependencies are
+    ignored.
+    """
+
+    def schedule(daytime):
+        return {"type": "daily", "tz": "UTC", "calendar": "Mon-Sun", "daytime": daytime}
+
+    dump_yaml_file(
+        {
+            "params": ["date"],
+            "schedule": schedule("12:00:00"),
+            "condition": [
+                {"type": "skip_duplicate"},
+                {"type": "dependency", "job_id": "dependency"},
+                {"type": "dependency", "job_id": "unscheduled", "enabled": False},
+            ],
+            "program": {"type": "no-op"},
+        },
+        tmp_path / "dependent.yaml",
+    )
+    dump_yaml_file(
+        {"params": ["date"], "schedule": schedule("06:00:00"), "program": {"type": "no-op"}},
+        tmp_path / "dependency.yaml",
+    )
+    dump_yaml_file(
+        {"params": ["date"], "program": {"type": "no-op"}}, tmp_path / "unscheduled.yaml"
+    )
+    jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
+
+    start = ora.Time("2026-01-01T00:00:00Z")
+    results = [
+        msg
+        for _, msg in check_job_dependencies_scheduled(
+            jobs_dir,
+            jobs_dir.get_jobs(),
+            sched_times=(start, start + DAY_IN_SEC * 5),
+            dep_times=(start - DAY_IN_SEC * 8, start + DAY_IN_SEC * 3 + 9 * 3600),
+        )
+    ]
+
+    # the dep window ends on 2026-01-04 at 9am so only the 2026-01-05 dependency is missing
+    assert results == [
+        "scheduled run dependent(date=2026-01-05):"
+        " dependency dependency(date=2026-01-05) not scheduled"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_check_dependencies_in_dep_window(tmp_path):
+    """
+    Tests that only runs in the sched window are checked when the dep window
+    covers it.
+    """
+    dump_yaml_file(
+        {
+            "params": ["date"],
+            "schedule": {"type": "interval", "interval": DAY_IN_SEC},
+            "condition": [{"type": "dependency", "job_id": "unscheduled"}],
+            "program": {"type": "no-op"},
+        },
+        tmp_path / "dependent.yaml",
+    )
+    dump_yaml_file(
+        {"params": ["date"], "program": {"type": "no-op"}}, tmp_path / "unscheduled.yaml"
+    )
+    jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
+
+    start = ora.Time("2026-01-03T00:00:00Z")
+    results = [
+        msg
+        for _, msg in check_job_dependencies_scheduled(
+            jobs_dir,
+            jobs_dir.get_jobs(),
+            sched_times=(start, start + DAY_IN_SEC * 2),
+            dep_times=(start - DAY_IN_SEC * 2, start + DAY_IN_SEC * 4),
+        )
+    ]
+
+    assert results == [
+        f"scheduled run dependent(date={d}): dependency unscheduled(date={d}) not scheduled"
+        for d in ("2026-01-03", "2026-01-04")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_check_dependency_cycle(tmp_path):
     """
     Tests that a cycle in the dependency graph yields errors.

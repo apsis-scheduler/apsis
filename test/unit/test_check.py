@@ -1,13 +1,22 @@
 from typing import List
 
+import ora
 import pytest
 
 import apsis.check
-from apsis.check import PARAM_NAME_NOT_EXPANDABLE, PARAM_NAME_PROVIDED, check_param_names
+from apsis.check import (
+    PARAM_NAME_NOT_EXPANDABLE,
+    PARAM_NAME_PROVIDED,
+    check_job_dependencies_scheduled,
+    check_param_names,
+    get_downstream_job_ids,
+)
 from apsis.cond.dependency import Dependency
 import apsis.jobs
 from apsis.jobs import InMemoryJobs, Job
 from apsis.runs import Instance, Run, get_bind_args, template_expand
+from apsis.schedule import ExplicitSchedule, IntervalSchedule
+from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
 
@@ -248,3 +257,121 @@ def test_param_name_does_not_mask_other_errors():
     errors = check_job(jobs, "job1")
     assert any("'a=b'" in e for e in errors)
     assert any("missing" in e for e in errors)
+
+
+def daily_job(job_id, conds=(), params=("date",), args={}) -> Job:
+    return Job(job_id, params=list(params), schedules=[IntervalSchedule(86400, args)], conds=conds)
+
+
+def check_deps(jobs, job_ids) -> List[str]:
+    checked = [jobs.get_job(j) for j in job_ids]
+    return [msg for _, msg in check_job_dependencies_scheduled(jobs, checked)]
+
+
+def test_check_dependencies_subset():
+    """
+    Checking some jobs finds the runs of the jobs upstream of them.
+    """
+    jobs = InMemoryJobs(
+        (
+            daily_job("a"),
+            daily_job("b", [Dependency("a")]),
+            daily_job("c", [Dependency("b")]),
+            Job("unscheduled", params=["date"]),
+            daily_job("d", [Dependency("unscheduled")]),
+        )
+    )
+    assert check_deps(jobs, ["c"]) == []
+    errors = check_deps(jobs, ["d"])
+    assert errors and all("dependency unscheduled(" in e for e in errors)
+
+
+def test_check_dependencies_lists_chains_only(monkeypatch):
+    """
+    Runs are listed only for jobs with dependencies and the jobs upstream of them.
+    """
+    listed = set()
+
+    def get_insts(job, start, stop):
+        listed.add(job.job_id)
+        return get_insts_to_schedule(job, start, stop)
+
+    monkeypatch.setattr(apsis.check, "get_insts_to_schedule", get_insts)
+    jobs = InMemoryJobs(
+        (
+            daily_job("a"),
+            daily_job("b", [Dependency("a")]),
+            daily_job("c", [Dependency("b")]),
+            daily_job("other"),
+        )
+    )
+    assert check_deps(jobs, ["c", "other"]) == []
+    assert listed == {"a", "b", "c"}
+
+
+def test_check_dependencies_templated_job_id():
+    """
+    Dependency job IDs are expanded with the job ID and schedule args as when
+    binding a run.
+    """
+    jobs = InMemoryJobs(
+        (
+            daily_job("us/a"),
+            daily_job("b/init"),
+            daily_job(
+                "b",
+                [Dependency("{{ region }}/a"), Dependency("{{ job_id }}/init")],
+                params=["date", "region"],
+                args={"region": "us", "job_id": "other"},
+            ),
+            daily_job("c", [Dependency("us/a{# note #}\n")]),
+            Job("x", schedules=[IntervalSchedule(86400, {})]),
+            Job(
+                "d",
+                params=["prod"],
+                schedules=[ExplicitSchedule([ora.now() + 3600], {"prod": False})],
+                conds=[Dependency("{{ 'x' if prod else 'y' }}")],
+            ),
+        )
+    )
+    assert check_deps(jobs, ["b", "c", "d"]) == []
+    assert get_downstream_job_ids(jobs, ["us/a"]) == {"us/a", "b", "c"}
+    assert get_downstream_job_ids(jobs, ["x"]) == {"x", "d"}
+
+
+def test_check_dependencies_unexpandable_job_id():
+    """
+    A dependency job ID that doesn't expand from schedule args may name any job.
+    """
+    jobs = InMemoryJobs(
+        (
+            daily_job("a"),
+            daily_job("b", [Dependency("{{ 'a' if date else 'other' }}")]),
+            daily_job(
+                "c",
+                [Dependency("{{ 'other' if schedule_time == 'x' else 'a' }}")],
+                params=["date", "schedule_time"],
+                args={"schedule_time": "x"},
+            ),
+            Job("other"),
+        )
+    )
+    assert check_deps(jobs, ["b"]) == []
+    assert get_downstream_job_ids(jobs, ["a"]) == {"a", "b", "c"}
+    assert get_downstream_job_ids(jobs, ["other"]) == {"other", "b", "c"}
+    assert get_downstream_job_ids(jobs, []) == set()
+
+
+def test_get_downstream_job_ids():
+    jobs = InMemoryJobs(
+        (
+            Job("a"),
+            Job("b", conds=[Dependency("a")]),
+            Job("c", conds=[Dependency("a"), Dependency("b")]),
+            Job("d", conds=[Dependency("deleted")]),
+            Job("other"),
+        )
+    )
+    assert get_downstream_job_ids(jobs, ["a"]) == {"a", "b", "c"}
+    # deleted jobs aren't returned but their dependents are
+    assert get_downstream_job_ids(jobs, ["b", "deleted"]) == {"b", "c", "d"}

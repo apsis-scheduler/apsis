@@ -147,6 +147,7 @@ def test_run_id_env():
                 key, value = line.split("=", 1)
                 env_vars[key] = value
         assert env_vars["APSIS_RUN_ID"] == run_id
+        assert env_vars["APSIS_JOB_ID"] == "env"
 
 
 def test_run_args_env():
