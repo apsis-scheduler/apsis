@@ -7,6 +7,7 @@ div
     :query="query"
     @query="onQueryChange"
     :timeControls="true"
+    fill-window
   )
 
 </template>
