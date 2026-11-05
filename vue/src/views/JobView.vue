@@ -144,6 +144,7 @@ import RunArgs from '@/components/RunArgs'
 import RunsList from '@/components/RunsList'
 import showdown from 'showdown'
 import store from '@/store'
+import { jobScope, setSummaryScope } from '@/summary.js'
 import { formatTime, parseTime } from '@/time'
 import Vue from 'vue'
 
@@ -175,6 +176,7 @@ export default {
       immediate: true,
       handler(job_id) {
         setTitle(job_id)
+        setSummaryScope(jobScope(job_id))
       },
     },
   },

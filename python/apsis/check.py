@@ -1,11 +1,20 @@
 from collections import defaultdict, deque
+from collections.abc import Iterable
 import re
 
 import ora
 
 from apsis.cond.dependency import Dependency
-from apsis.jobs import JOB_RUNS_SUFFIX, Jobs
-from apsis.runs import BIND_ARGS, Instance, Run, is_template, validate_args, bind
+from apsis.jobs import JOB_RUNS_SUFFIX, Job, Jobs, JobsDir
+from apsis.runs import (
+    BIND_ARGS,
+    Instance,
+    Run,
+    is_template,
+    validate_args,
+    bind,
+    template_expand,
+)
 from apsis.scheduler import get_insts_to_schedule
 
 # -------------------------------------------------------------------------------
@@ -27,6 +36,9 @@ PARAM_NAME_NOT_EXPANDABLE = frozenset(
 # `runs.get_bind_args()`.  A param named `format` makes `{{ format(...) }}` elsewhere
 # in the job fail, and one named `run_id` silently displaces the run's ID.
 PARAM_NAME_PROVIDED = frozenset({"job_id", "run_id", *BIND_ARGS})
+
+# job id and args key of an instance
+Node = tuple[str, tuple[tuple[str, str], ...]]
 
 
 def check_param_names(params):
@@ -146,49 +158,163 @@ def _format_time(t):
     return ora.format_time("%Y-%m-%dT%H:%M:%SZ", t, "UTC")
 
 
+def _has_dependencies(job: Job) -> bool:
+    return any(isinstance(c, Dependency) for c in job.conds)
+
+
+def _node_inst(node: Node) -> Instance:
+    job_id, args_k = node
+    return Instance(job_id, dict(args_k))
+
+
+def _get_dependency_job_ids(job: Job) -> set[str] | None:
+    """Returns the ids of jobs that dependency conditions of `job` name.
+
+    Ids are expanded as when binding a run, with the job id and the args of
+    each schedule that are params other than `schedule_time`, or with no args
+    if the job has no schedules.  Returns `None` if one of them uses an arg
+    that only a run has, like `date`.
+    """
+    job_ids = set()
+    for schedule_args in [s.args for s in job.schedules] or [{}]:
+        args = {
+            a: str(v) for a, v in schedule_args.items() if a in job.params and a != "schedule_time"
+        }
+        bind_args = {**BIND_ARGS, "job_id": job.job_id, **args}
+        for cond in job.conds:
+            if not isinstance(cond, Dependency):
+                continue
+            try:
+                job_ids.add(template_expand(cond.job_id, bind_args))
+            except NameError:
+                return None
+    return job_ids
+
+
+def _get_job_graph(jobs_dir: JobsDir) -> dict[str, set[str] | None]:
+    """Returns the ids of jobs each job in `jobs_dir` depends on.
+
+    A job maps to `None` if it may depend on any job.
+    """
+    return {job.job_id: _get_dependency_job_ids(job) for job in jobs_dir.get_jobs()}
+
+
+def _get_upstream_job_ids(
+    job_graph: dict[str, set[str] | None], job_ids: Iterable[str]
+) -> set[str] | None:
+    """Returns `job_ids` and the ids of jobs they transitively depend on.
+
+    Returns `None` if that may be any job.
+    """
+    upstream = set()
+    queue = list(job_ids)
+    while queue:
+        job_id = queue.pop()
+        if job_id in upstream:
+            continue
+        upstream.add(job_id)
+        dep_ids = job_graph.get(job_id, set())
+        if dep_ids is None:
+            return None
+        queue.extend(dep_ids)
+    return upstream
+
+
+def get_downstream_job_ids(jobs_dir: JobsDir, job_ids: Iterable[str]) -> set[str]:
+    """
+    Returns ids of jobs in `jobs_dir` that are in `job_ids` or transitively
+    depend on any of them.
+
+    `job_ids` may include ids of jobs not in `jobs_dir`, such as deleted jobs,
+    whose dependents are still included.  A job whose templated dependency ids
+    fail to expand is treated as depending on every job.
+    """
+    job_graph = _get_job_graph(jobs_dir)
+    dependents = defaultdict(set)
+    any_dependents = []
+    for job_id, dep_ids in job_graph.items():
+        if dep_ids is None:
+            any_dependents.append(job_id)
+        else:
+            for dep_id in dep_ids:
+                dependents[dep_id].add(job_id)
+
+    downstream = set()
+    queue = list(job_ids)
+    if queue:
+        queue.extend(any_dependents)
+    while queue:
+        job_id = queue.pop()
+        if job_id not in downstream:
+            downstream.add(job_id)
+            queue.extend(dependents[job_id])
+    return downstream & job_graph.keys()
+
+
 def _build_instances(jobs, start, stop):
     """Build all job instances with their earliest schedule time.
 
     Returns:
-        dict of (job_id, args_key) -> earliest sched_time
+        (inst_times, job_insts) where:
+        - inst_times: (job_id, args_key) -> earliest sched_time
+        - job_insts: job_id -> ([sched_time], [(job_id, args_key)]) in
+          schedule order, for jobs with dependencies
     """
     inst_times = {}
+    job_insts = {}
     for job in jobs:
+        has_deps = _has_dependencies(job)
+        if has_deps:
+            times, nodes = job_insts[job.job_id] = ([], [])
         for sched_time, _, inst in get_insts_to_schedule(job, start, stop):
             key = (job.job_id, args_key(inst.args))
             if key not in inst_times or sched_time < inst_times[key]:
                 inst_times[key] = sched_time
-    return inst_times
+            if has_deps:
+                times.append(sched_time)
+                nodes.append(key)
+    return inst_times, job_insts
+
+
+def _bind_dependencies(job: Job, node: Node, jobs_obj: Jobs) -> list[Node]:
+    """Bind the enabled dependencies of `job` for the run of `node`.
+
+    Returns:
+        dependency nodes, in condition order
+    """
+    run = Run(_node_inst(node))
+    dep_nodes = []
+    for cond in job.conds:
+        if not isinstance(cond, Dependency):
+            continue
+        bound = cond.bind(run, jobs_obj)
+        if bound:
+            dep_nodes.append((bound.job_id, args_key(bound.args)))
+    return dep_nodes
 
 
 def _build_dep_graph(jobs_dir, jobs_obj, inst_times):
     """Build forward and reverse dependency edges for known instances.
 
     Returns:
-        (graph, deps_of) where:
+        (graph, deps_of, missing) where:
         - graph: dep_node -> [dependent_nodes]  (forward edges)
         - deps_of: node -> [its dependency nodes]  (reverse edges)
+        - missing: node -> [its dependency nodes not in inst_times]
     """
     graph = defaultdict(list)
     deps_of = defaultdict(list)
+    missing = defaultdict(list)
 
-    for job_id, args_k in inst_times:
-        job = jobs_dir.get_job(job_id)
-        inst = Instance(job_id, dict(args_k))
-        run = Run(inst)
-
-        for cond in job.conds:
-            if not isinstance(cond, Dependency):
-                continue
-            bound = cond.bind(run, jobs_obj)
-            if not bound:
-                continue
-            dep_node = (bound.job_id, args_key(bound.args))
+    for node in inst_times:
+        for dep_node in _bind_dependencies(jobs_dir.get_job(node[0]), node, jobs_obj):
             if dep_node in inst_times:
-                graph[dep_node].append((job_id, args_k))
-                deps_of[(job_id, args_k)].append(dep_node)
+                graph[dep_node].append(node)
+                deps_of[node].append(dep_node)
+            else:
+                missing[node].append(dep_node)
 
-    return graph, deps_of
+    return graph, deps_of, missing
 
 
 def _propagate_expected_starts(inst_times, graph):
@@ -269,10 +395,9 @@ def _build_delay_tree(node, deps_of, exp_start, inst_times, indent=0, seen=None)
 
     lines = []
     for dep in blocking:
-        dep_inst = Instance(dep[0], dict(dep[1]))
         time_str = _format_time(exp_start[dep])
         lines.append(
-            f"{pad}- dependency: {dep_inst} not expected to"
+            f"{pad}- dependency: {_node_inst(dep)} not expected to"
             f" start until {time_str}."
             f" This is because:"
         )
@@ -291,6 +416,10 @@ def check_job_dependencies_scheduled(
     """
     Validate that job dependencies are scheduled and respect timing constraints.
 
+    Runs are listed only for the given jobs with dependencies and the jobs
+    upstream of them.  Upstream jobs that aren't given aren't checked, apart
+    from cycle reporting.
+
     For each scheduled run of the given jobs within `sched_times`, this checks:
     - A matching scheduled run exists for each dependency within `dep_times`
     - The dependency is not scheduled too late relative to the job run
@@ -307,9 +436,18 @@ def check_job_dependencies_scheduled(
 
     jobs_obj = Jobs(jobs_dir, MockJobDb())
 
+    # list runs for the given jobs with dependencies and every job upstream of them
+    job_graph = _get_job_graph(jobs_dir)
+    list_ids = _get_upstream_job_ids(job_graph, (j.job_id for j in jobs if _has_dependencies(j)))
+    if list_ids is None:
+        list_ids = job_graph.keys()
+    upstream_ids = list_ids - {j.job_id for j in jobs}
+    list_jobs = [j for j in jobs if j.job_id in list_ids]
+    list_jobs += [j for j in jobs_dir.get_jobs() if j.job_id in upstream_ids]
+
     # Build the dependency graph and propagate expected start times.
-    inst_times = _build_instances(jobs, dep_start, dep_stop)
-    graph, deps_of = _build_dep_graph(jobs_dir, jobs_obj, inst_times)
+    inst_times, job_insts = _build_instances(list_jobs, dep_start, dep_stop)
+    graph, deps_of, missing = _build_dep_graph(jobs_dir, jobs_obj, inst_times)
     exp_start, cycle_nodes = _propagate_expected_starts(inst_times, graph)
 
     # Report cycles.
@@ -322,29 +460,39 @@ def check_job_dependencies_scheduled(
             )
 
     # Validate each job’s instances.
+    sched_in_dep = dep_start <= sched_start and sched_stop <= dep_stop
     for job in jobs:
-        dep_conds = [c for c in job.conds if isinstance(c, Dependency)]
-        if not dep_conds:
+        if not _has_dependencies(job):
             continue
+
+        if sched_in_dep:
+            insts = (
+                (sched_time, node)
+                for sched_time, node in zip(*job_insts[job.job_id])
+                if sched_start <= sched_time < sched_stop
+            )
+        else:
+            insts = (
+                (sched_time, (job.job_id, args_key(inst.args)))
+                for sched_time, _, inst in get_insts_to_schedule(job, sched_start, sched_stop)
+            )
 
         timing_reported = False
 
-        for sched_time, _, inst in get_insts_to_schedule(job, sched_start, sched_stop):
-            run = Run(inst)
-            inst_node = (job.job_id, args_key(inst.args))
-
-            # Check for unscheduled dependencies.
-            for dep in dep_conds:
-                bound = dep.bind(run, jobs_obj)
-                if not bound:
-                    continue
-                dep_node = (bound.job_id, args_key(bound.args))
-                if dep_node not in inst_times:
-                    dep_inst = Instance(bound.job_id, bound.args)
-                    yield (
-                        job,
-                        f"scheduled run {inst}: dependency {dep_inst} not scheduled",
-                    )
+        for sched_time, inst_node in insts:
+            # check for unscheduled dependencies, binding runs outside the dep window
+            if inst_node in inst_times:
+                dep_nodes = missing.get(inst_node, ())
+            else:
+                dep_nodes = [
+                    d for d in _bind_dependencies(job, inst_node, jobs_obj) if d not in inst_times
+                ]
+            for dep_node in dep_nodes:
+                yield (
+                    job,
+                    f"scheduled run {_node_inst(inst_node)}:"
+                    f" dependency {_node_inst(dep_node)} not scheduled",
+                )
 
             # Timing check: only report once per job (first violating instance).
             # Skip cycle nodes — their exp_start is invalid.
@@ -365,7 +513,7 @@ def check_job_dependencies_scheduled(
             wait_h = wait / 3600
             max_h = max_wait_time / 3600
             header = (
-                f"{inst} not expected to start until {exp_str},"
+                f"{_node_inst(inst_node)} not expected to start until {exp_str},"
                 f" {wait_h:.0f}h after scheduled time {sched_str}"
                 f" (max_wait={max_h:.0f}h)."
                 f" This is because:"
