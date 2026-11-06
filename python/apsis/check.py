@@ -374,35 +374,23 @@ def _find_cycle(cycle_nodes, deps_of):
     return ", ".join(job_id for job_id, _ in list(cycle_nodes)[:5])
 
 
-def _build_delay_tree(node, deps_of, exp_start, inst_times, indent=0, seen=None):
-    """Build indented lines explaining why `node` is delayed.
+def _format_wait(seconds: float) -> str:
+    hours, minutes = divmod(round(seconds / 60), 60)
+    return f"{hours}h {minutes}m" if minutes else f"{hours}h"
 
-    Only includes dependencies whose expected start actually pushes this
-    node later than its own schedule time.
-    """
-    if seen is None:
-        seen = set()
-    if node in seen:
-        return []
-    seen.add(node)
 
-    blocking = [d for d in deps_of.get(node, []) if exp_start[d] > inst_times[node]]
-    pad = "  " * indent
-
-    if not blocking:
-        time_str = _format_time(inst_times[node])
-        return [f"{pad}- It’s scheduled to start at {time_str}."]
-
-    lines = []
-    for dep in blocking:
-        time_str = _format_time(exp_start[dep])
-        lines.append(
-            f"{pad}- dependency: {_node_inst(dep)} not expected to"
-            f" start until {time_str}."
-            f" This is because:"
-        )
-        lines.extend(_build_delay_tree(dep, deps_of, exp_start, inst_times, indent + 1, seen))
-    return lines
+def _get_wait_chain(
+    node: Node,
+    deps_of: dict[Node, list[Node]],
+    exp_start: dict[Node, ora.Time],
+    inst_times: dict[Node, ora.Time],
+) -> list[Node]:
+    """Returns the runs `node` waits on, from its own dependency up to the latest scheduled one."""
+    chain = []
+    while blocking := [d for d in deps_of.get(node, []) if exp_start[d] > inst_times[node]]:
+        node = max(sorted(blocking), key=exp_start.__getitem__)
+        chain.append(node)
+    return chain
 
 
 def check_job_dependencies_scheduled(
@@ -508,21 +496,13 @@ def check_job_dependencies_scheduled(
             if wait <= max_wait_time:
                 continue
 
-            exp_str = _format_time(exp_start[inst_node])
-            sched_str = _format_time(sched_time)
-            wait_h = wait / 3600
-            max_h = max_wait_time / 3600
-            header = (
-                f"{_node_inst(inst_node)} not expected to start until {exp_str},"
-                f" {wait_h:.0f}h after scheduled time {sched_str}"
-                f" (max_wait={max_h:.0f}h)."
-                f" This is because:"
+            chain = _get_wait_chain(inst_node, deps_of, exp_start, inst_times)
+            yield (
+                job,
+                f"{_node_inst(inst_node)} waits {_format_wait(wait)},"
+                f" over the {_format_wait(max_wait_time)} limit\n"
+                f"  scheduled {_format_time(sched_time)} but waits on"
+                f" {' → '.join(str(_node_inst(n)) for n in chain)},"
+                f" scheduled {_format_time(exp_start[inst_node])}",
             )
-            tree_lines = _build_delay_tree(
-                inst_node,
-                deps_of,
-                exp_start,
-                inst_times,
-            )
-            yield (job, header + "\n" + "\n".join(tree_lines))
             timing_reported = True
