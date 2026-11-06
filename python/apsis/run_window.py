@@ -38,6 +38,9 @@ MAX_LIMIT = 1000
 PAGE_ROWS = 500
 # most db rows walked on each side of the anchor
 SIDE_BUDGET = 200_000
+# earlier walks end at runs scheduled this many seconds before the lookback, as
+# a run can wait up to 23 hours and run up to 24.5 hours after its schedule time
+LOOKBACK_MARGIN = 2 * 86400
 # job filtered windows with at most this many runs load them all through the job index
 JOB_PATH_ROWS = 20_000
 
@@ -207,11 +210,13 @@ class _Side:
         self.done = True
 
 
-def _schedule_pages(run_db: RunDB, anchor: str, desc: bool, labels: bool) -> Iterator[list[Entry]]:
+def _schedule_pages(
+    run_db: RunDB, anchor: str, desc: bool, labels: bool, min_time: str | None = None
+) -> Iterator[list[Entry]]:
     time, rowid = anchor, None
     while True:
         rows = run_db.schedule_page(
-            desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels
+            desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels, min_time=min_time
         )
         if not rows:
             break
@@ -337,7 +342,8 @@ async def query_window(
     """
     Returns the window of runs that the web UI runs list would show for
     `spec`, for runs with a schedule time that are expected or have a timestamp
-    at least `min_timestamp`.
+    at least `min_timestamp`.  Runs in the db before the anchor also need a
+    schedule time no more than `LOOKBACK_MARGIN` before `min_timestamp`.
 
     :param expected_runs:
       Runs that are only in memory by run ID, which runs leave as they move
@@ -406,8 +412,9 @@ async def query_window(
         if not run_db.has_window_indexes:
             raise WindowUnavailable()
         i = bisect.bisect_left([e.sched for e in expected], t)
+        min_time = None if min_timestamp is None else str(min_timestamp - LOOKBACK_MARGIN)
         before = _Side(
-            _schedule_pages(run_db, t, True, labels),
+            _schedule_pages(run_db, t, True, labels, min_time),
             keep,
             True,
             expected[i - 1 :: -1] if i else [],

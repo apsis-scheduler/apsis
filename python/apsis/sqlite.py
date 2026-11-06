@@ -657,7 +657,14 @@ class RunDB:
         return f"rowid, run_id, {SCHEDULE_TIME_SQL}, job_id, args, state, timestamp, {labels}"
 
     def schedule_page(
-        self, *, desc: bool, time: str, rowid: int | None, limit: int, labels: bool = False
+        self,
+        *,
+        desc: bool,
+        time: str,
+        rowid: int | None,
+        limit: int,
+        labels: bool = False,
+        min_time: str | None = None,
     ) -> list[tuple[int, str, str, str, str, str, float, str | None]]:
         """
         Returns up to `limit` window rows nearest `time` by schedule time.
@@ -669,6 +676,8 @@ class RunDB:
 
         :param labels:
           If true, include run labels.
+        :param min_time:
+          If not none, only runs scheduled at or after it.
         """
         E = SCHEDULE_TIME_SQL
         if desc:
@@ -677,10 +686,12 @@ class RunDB:
         else:
             where = f"{E} >= :t" if rowid is None else f"{E} >= :t AND ({E} > :t OR rowid > :r)"
             order = "ASC"
+        if min_time is not None:
+            where += f" AND {E} >= :m"
         return self.__connection.connection.execute(
             f"SELECT {self.__window_columns(labels)} FROM runs INDEXED BY idx_runs_schedule"
             f" WHERE {where} ORDER BY {E} {order}, rowid {order} LIMIT :n",
-            {"t": time, "r": rowid, "n": limit},
+            {"t": time, "r": rowid, "n": limit, "m": min_time},
         ).fetchall()
 
     def job_page(
