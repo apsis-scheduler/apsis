@@ -5,7 +5,16 @@ Windows of runs around a schedule time, as shown in the web UI runs list.
 import asyncio
 import bisect
 from collections import defaultdict
-from collections.abc import AsyncIterator, Awaitable, Callable, Container, Iterable, Iterator
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Container,
+    Iterable,
+    Iterator,
+    Mapping,
+    Set,
+)
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -37,7 +46,10 @@ MAX_LIMIT = 1000
 # db rows per page
 PAGE_ROWS = 500
 # most db rows walked on each side of the anchor
-SIDE_BUDGET = 200_000
+SIDE_BUDGET = 100_000
+# earlier walks end at runs scheduled this many seconds before the lookback, as
+# a run can wait up to 23 hours and run up to 24.5 hours after its schedule time
+LOOKBACK_MARGIN = 2 * 86400
 # job filtered windows with at most this many runs load them all through the job index
 JOB_PATH_ROWS = 20_000
 
@@ -207,11 +219,13 @@ class _Side:
         self.done = True
 
 
-def _schedule_pages(run_db: RunDB, anchor: str, desc: bool, labels: bool) -> Iterator[list[Entry]]:
+def _schedule_pages(
+    run_db: RunDB, anchor: str, desc: bool, labels: bool, min_time: str | None = None
+) -> Iterator[list[Entry]]:
     time, rowid = anchor, None
     while True:
         rows = run_db.schedule_page(
-            desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels
+            desc=desc, time=time, rowid=rowid, limit=PAGE_ROWS, labels=labels, min_time=min_time
         )
         if not rows:
             break
@@ -333,15 +347,20 @@ async def query_window(
     spec: WindowSpec,
     *,
     min_timestamp: ora.Time | None,
+    label_jobs: Mapping[str, Set[str]] | None = None,
 ) -> RunWindow:
     """
     Returns the window of runs that the web UI runs list would show for
     `spec`, for runs with a schedule time that are expected or have a timestamp
-    at least `min_timestamp`.
+    at least `min_timestamp`.  Runs in the db before the anchor also need a
+    schedule time no more than `LOOKBACK_MARGIN` before `min_timestamp`.
 
     :param expected_runs:
       Runs that are only in memory by run ID, which runs leave as they move
       to the db or are removed while the window is built.
+    :param label_jobs:
+      Job IDs of runs with each label, to narrow label filters to, or none to
+      check the labels of every run.
     :raise WindowUnavailable:
       The window walks runs by schedule time and the db is missing one of
       `WINDOW_INDEXES`.
@@ -353,6 +372,10 @@ async def query_window(
     runs = list(expected_runs.values())
     # narrow job ID filters to the job IDs of runs they match
     job_ids = spec.job_ids
+    if labels and label_jobs is not None:
+        for label in job_filter.labels:
+            jobs = label_jobs.get(label, frozenset())
+            job_ids = frozenset(jobs) if job_ids is None else job_ids & jobs
     if job_ids is None and (job_filter.path is not None or job_filter.keywords):
         job_ids = run_db.get_job_ids() + [r.inst.job_id for r in runs]
         await asyncio.sleep(0)
@@ -406,8 +429,9 @@ async def query_window(
         if not run_db.has_window_indexes:
             raise WindowUnavailable()
         i = bisect.bisect_left([e.sched for e in expected], t)
+        min_time = None if min_timestamp is None else str(min_timestamp - LOOKBACK_MARGIN)
         before = _Side(
-            _schedule_pages(run_db, t, True, labels),
+            _schedule_pages(run_db, t, True, labels, min_time),
             keep,
             True,
             expected[i - 1 :: -1] if i else [],

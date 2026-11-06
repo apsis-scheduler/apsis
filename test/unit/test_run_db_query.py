@@ -485,3 +485,17 @@ def test_job_rows(tmp_path):
         a1.run_id,
     ]
     assert [r[1] for r in run_db.job_page("job/a", max_rowid=a2._rowid, limit=10)] == [a1.run_id]
+
+
+def test_job_ids(tmp_path):
+    """Each job ID shows once and reading them doesn't step through every run."""
+    run_db = _setup(tmp_path)
+    for i in range(300):
+        _make_run(run_db, f"job/{i % 3}", {})
+    steps = []
+    conn = run_db._RunDB__connection.connection
+    conn.set_progress_handler(lambda: steps.append(1), 1)
+    assert sorted(run_db.get_job_ids()) == ["job/0", "job/1", "job/2"]
+    conn.set_progress_handler(None, 0)
+    # a seek per job takes fewer vm steps than there are runs
+    assert len(steps) < 300

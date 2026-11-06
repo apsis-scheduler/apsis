@@ -657,7 +657,14 @@ class RunDB:
         return f"rowid, run_id, {SCHEDULE_TIME_SQL}, job_id, args, state, timestamp, {labels}"
 
     def schedule_page(
-        self, *, desc: bool, time: str, rowid: int | None, limit: int, labels: bool = False
+        self,
+        *,
+        desc: bool,
+        time: str,
+        rowid: int | None,
+        limit: int,
+        labels: bool = False,
+        min_time: str | None = None,
     ) -> list[tuple[int, str, str, str, str, str, float, str | None]]:
         """
         Returns up to `limit` window rows nearest `time` by schedule time.
@@ -669,6 +676,8 @@ class RunDB:
 
         :param labels:
           If true, include run labels.
+        :param min_time:
+          If not none, only runs scheduled at or after it.
         """
         E = SCHEDULE_TIME_SQL
         if desc:
@@ -677,10 +686,12 @@ class RunDB:
         else:
             where = f"{E} >= :t" if rowid is None else f"{E} >= :t AND ({E} > :t OR rowid > :r)"
             order = "ASC"
+        if min_time is not None:
+            where += f" AND {E} >= :m"
         return self.__connection.connection.execute(
             f"SELECT {self.__window_columns(labels)} FROM runs INDEXED BY idx_runs_schedule"
             f" WHERE {where} ORDER BY {E} {order}, rowid {order} LIMIT :n",
-            {"t": time, "r": rowid, "n": limit},
+            {"t": time, "r": rowid, "n": limit, "m": min_time},
         ).fetchall()
 
     def job_page(
@@ -700,8 +711,15 @@ class RunDB:
         """
         Returns the job IDs of all runs.
         """
+        # seeks the job ID index once per job instead of reading every run
         return [
-            j for (j,) in self.__connection.connection.execute("SELECT DISTINCT job_id FROM runs")
+            j
+            for (j,) in self.__connection.connection.execute(
+                "WITH RECURSIVE ids(job_id) AS (SELECT min(job_id) FROM runs"
+                " UNION ALL SELECT (SELECT min(job_id) FROM runs WHERE job_id > ids.job_id)"
+                " FROM ids WHERE ids.job_id IS NOT NULL)"
+                " SELECT job_id FROM ids WHERE job_id IS NOT NULL"
+            )
         ]
 
     def count_job_rows(self, job_ids: Iterable[str], cap: int) -> int:
@@ -872,6 +890,24 @@ class RunSummaryDB:
                 (json.dumps(list(run_ids)),),
             ).fetchall()
         )
+
+    def query_labels(
+        self, min_timestamp: ora.Time | None
+    ) -> Iterator[list[tuple[str, str | None]]]:
+        """
+        Yields pages of the job ID and labels json of runs with timestamp at
+        least `min_timestamp`.
+        """
+        ts = float("-inf") if min_timestamp is None else dump_time(min_timestamp)
+        rowid = 0
+        while rows := self.__connection.connection.execute(
+            "SELECT timestamp, rowid, json_extract(payload, '$.run_summary.job_id'),"
+            " json_extract(payload, '$.run_summary.labels') FROM run_summary"
+            " WHERE (timestamp, rowid) > (?, ?) ORDER BY timestamp, rowid LIMIT ?",
+            (ts, rowid, SUMMARY_PAGE_SIZE),
+        ).fetchall():
+            yield [(job_id, labels) for _, _, job_id, labels in rows]
+            ts, rowid = rows[-1][:2]
 
     def query_job(
         self, job_id: str, *, min_timestamp: ora.Time | None, page_size: int
