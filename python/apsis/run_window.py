@@ -46,7 +46,7 @@ MAX_LIMIT = 1000
 # db rows per page
 PAGE_ROWS = 500
 # most db rows walked on each side of the anchor
-SIDE_BUDGET = 200_000
+SIDE_BUDGET = 100_000
 # earlier walks end at runs scheduled this many seconds before the lookback, as
 # a run can wait up to 23 hours and run up to 24.5 hours after its schedule time
 LOOKBACK_MARGIN = 2 * 86400
