@@ -36,7 +36,7 @@ MAX_JOB_IDS = 500
 PAGE_ROWS = 500
 JOB_CHUNK = 100
 # window walks that run at once
-_WINDOW_WALKS = asyncio.Semaphore(2)
+_WINDOW_WALKS = asyncio.Semaphore(8)
 
 
 @dataclass(frozen=True)
