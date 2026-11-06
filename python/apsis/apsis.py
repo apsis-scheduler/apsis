@@ -189,6 +189,8 @@ class Apsis:
         # Start a loop to monitor the async event loop.
         self.__tasks.add("check_async", self.__check_async())
 
+        self.__tasks.add("load_label_jobs", self.run_store.load_label_jobs())
+
         # Set up the scheduler.
         log.info("starting scheduler loop")
         self.__tasks.add("scheduler_loop", self.scheduler.loop())
@@ -476,6 +478,8 @@ class Apsis:
         # Create the run and add it to the run store, which assigns it a run ID
         # and persists it.
         run = Run(inst, expected=expected)
+        # runs that fail to validate or bind keep their schedule time
+        run.times["schedule"] = times["schedule"]
         self.run_store.add(run)
 
         # Check that the run is valid and get it ready.

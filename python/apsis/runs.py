@@ -1,4 +1,5 @@
-from collections import namedtuple
+import asyncio
+from collections import defaultdict, namedtuple
 import itertools
 import jinja2
 import logging
@@ -6,7 +7,7 @@ import ora
 from ora import now, Time
 import re
 import shlex
-from typing import Iterable, Iterator
+from typing import TYPE_CHECKING, Iterable, Iterator
 
 import ujson
 
@@ -16,6 +17,9 @@ from .lib.calendar import get_calendar
 from .lib.itr import chunks
 from .lib.memo import memoize
 from .lib.py import format_ctor, iterize
+
+if TYPE_CHECKING:
+    from .run_window import RunWindow, WindowSpec
 
 log = logging.getLogger(__name__)
 
@@ -430,6 +434,11 @@ class RunStore:
         # query(); evicted on transition to a finished state.
         self.__active_runs: dict[str, Run] = {}
 
+        # job IDs of runs with each label, from every updated run and once
+        # loaded from runs in the lookback window
+        self.__label_jobs: defaultdict[str, set[str]] = defaultdict(set)
+        self.__label_jobs_loaded = False
+
         # Publisher for run transitions.  Messages are `Message` objects;
         # `state` is none if the run is removed.
         self.publisher = Publisher()
@@ -470,6 +479,9 @@ class RunStore:
 
         Persists the run if necessary.
         """
+        for label in run.meta.get("job", {}).get("labels", ()):
+            self.__label_jobs[label].add(run.inst.job_id)
+
         # Persist the changes, but not for expected runs.
         if not run.expected:
             self.__run_db.upsert(run)
@@ -783,6 +795,50 @@ class RunStore:
         return self.__summary_db.query_job(
             job_id, min_timestamp=self.__min_timestamp(), page_size=page_size
         )
+
+    async def load_label_jobs(self) -> None:
+        """
+        Loads the job IDs of runs with each label in the lookback window.
+        """
+        pairs = set()
+        for page in self.__summary_db.query_labels(self.__min_timestamp()):
+            pairs.update(page)
+            await asyncio.sleep(0)
+        for job_id, labels in pairs:
+            for label in ujson.loads(labels or "[]"):
+                self.__label_jobs[label].add(job_id)
+        self.__label_jobs_loaded = True
+
+    async def query_window(self, spec: "WindowSpec") -> "RunWindow":
+        """
+        Returns the `RunWindow` for `WindowSpec` `spec` over expected runs
+        and runs in the lookback window.
+        """
+        from .run_window import query_window
+
+        return await query_window(
+            self.__run_db,
+            self.__expected_runs,
+            spec,
+            min_timestamp=self.__min_timestamp(),
+            label_jobs=self.__label_jobs if self.__label_jobs_loaded else None,
+        )
+
+    def get_summaries(self, run_ids: list[str]) -> list[str]:
+        """
+        Returns summary messages of `run_ids` in order, skipping unknown runs.
+        """
+        from .lib.api import run_to_summary_jso
+
+        expected = self.__expected_runs
+        payloads = self.__summary_db.get_payloads(r for r in run_ids if r not in expected)
+        return [
+            ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(expected[r])})
+            if r in expected
+            else payloads[r]
+            for r in run_ids
+            if r in expected or r in payloads
+        ]
 
     def count_runs(
         self, *, job_id=None, state=None, args=None, with_args=None, limit_lookback=True
