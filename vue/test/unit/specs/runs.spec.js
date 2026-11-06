@@ -60,6 +60,56 @@ describe('run windows', () => {
   })
 })
 
+describe('state filtered run windows', () => {
+  const run = (run_id, state) => ({
+    run_id, job_id: 'a', args: {}, state, times: {schedule: '2026-10-14T00:00:00+00:00'},
+  })
+  const EDGE = {time: '2026-10-13T00:00:00+00:00', stopped: false}
+
+  function load(window, states = ['failure']) {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
+    runs.processMsgs([
+      {type: 'run_summary', run_summary: run('r1', 'failure')},
+      {type: 'run_window', states, earlier: null, later: null, ...window},
+    ], state)
+    return state
+  }
+
+  test('a shown run leaving the states goes stale when a run could replace it', () => {
+    for (const [window, stale] of [
+      // its row hid an older failure of the same group
+      [{groups: {r1: 2}}, true],
+      // a single row with more matches past an edge
+      [{groups: {r1: 1}, earlier: EDGE}, true],
+      // a single row with nothing past either edge
+      [{groups: {r1: 1}}, false],
+    ]) {
+      const state = load(window)
+      runs.processMsgs([{type: 'run_transition', run_summary: run('r1', 'success')}], state)
+      expect(state.runWindowStale).toBe(stale)
+    }
+  })
+
+  test('a shown run that still matches the states or has no state filter stays fresh', () => {
+    let state = load({groups: {r1: 2}, earlier: EDGE}, ['failure', 'error'])
+    runs.processMsgs([{type: 'run_transition', run_summary: run('r1', 'error')}], state)
+    expect(state.runWindowStale).toBe(false)
+
+    state = load({groups: {r1: 2}, earlier: EDGE}, [])
+    runs.processMsgs([{type: 'run_transition', run_summary: run('r1', 'success')}], state)
+    expect(state.runWindowStale).toBe(false)
+  })
+
+  test('a run that already left the states when the window loads makes it stale', () => {
+    const state = {runs: new Map(), jobs: new Map(), agentConns: new Map(), runWindow: null, runWindowStale: false}
+    runs.processMsgs([
+      {type: 'run_summary', run_summary: run('r1', 'success')},
+      {type: 'run_window', states: ['failure'], groups: {r1: 2}, earlier: null, later: null},
+    ], state)
+    expect(state.runWindowStale).toBe(true)
+  })
+})
+
 describe('run window span', () => {
   const run = (run_id, hour) => ({
     run_id, job_id: 'a', args: {}, state: 'success', times: {schedule: `2026-10-14T${hour}:00:00+00:00`},
