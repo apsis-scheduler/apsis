@@ -711,8 +711,15 @@ class RunDB:
         """
         Returns the job IDs of all runs.
         """
+        # seeks the job ID index once per job instead of reading every run
         return [
-            j for (j,) in self.__connection.connection.execute("SELECT DISTINCT job_id FROM runs")
+            j
+            for (j,) in self.__connection.connection.execute(
+                "WITH RECURSIVE ids(job_id) AS (SELECT min(job_id) FROM runs"
+                " UNION ALL SELECT (SELECT min(job_id) FROM runs WHERE job_id > ids.job_id)"
+                " FROM ids WHERE ids.job_id IS NOT NULL)"
+                " SELECT job_id FROM ids WHERE job_id IS NOT NULL"
+            )
         ]
 
     def count_job_rows(self, job_ids: Iterable[str], cap: int) -> int:
