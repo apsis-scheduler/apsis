@@ -5,7 +5,16 @@ Windows of runs around a schedule time, as shown in the web UI runs list.
 import asyncio
 import bisect
 from collections import defaultdict
-from collections.abc import AsyncIterator, Awaitable, Callable, Container, Iterable, Iterator
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Container,
+    Iterable,
+    Iterator,
+    Mapping,
+    Set,
+)
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -338,6 +347,7 @@ async def query_window(
     spec: WindowSpec,
     *,
     min_timestamp: ora.Time | None,
+    label_jobs: Mapping[str, Set[str]] | None = None,
 ) -> RunWindow:
     """
     Returns the window of runs that the web UI runs list would show for
@@ -348,6 +358,9 @@ async def query_window(
     :param expected_runs:
       Runs that are only in memory by run ID, which runs leave as they move
       to the db or are removed while the window is built.
+    :param label_jobs:
+      Job IDs of runs with each label, to narrow label filters to, or none to
+      check the labels of every run.
     :raise WindowUnavailable:
       The window walks runs by schedule time and the db is missing one of
       `WINDOW_INDEXES`.
@@ -359,6 +372,10 @@ async def query_window(
     runs = list(expected_runs.values())
     # narrow job ID filters to the job IDs of runs they match
     job_ids = spec.job_ids
+    if labels and label_jobs is not None:
+        for label in job_filter.labels:
+            jobs = label_jobs.get(label, frozenset())
+            job_ids = frozenset(jobs) if job_ids is None else job_ids & jobs
     if job_ids is None and (job_filter.path is not None or job_filter.keywords):
         job_ids = run_db.get_job_ids() + [r.inst.job_id for r in runs]
         await asyncio.sleep(0)

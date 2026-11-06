@@ -189,6 +189,8 @@ class Apsis:
         # Start a loop to monitor the async event loop.
         self.__tasks.add("check_async", self.__check_async())
 
+        self.__tasks.add("load_label_jobs", self.run_store.load_label_jobs())
+
         # Set up the scheduler.
         log.info("starting scheduler loop")
         self.__tasks.add("scheduler_loop", self.scheduler.loop())

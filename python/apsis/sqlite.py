@@ -891,6 +891,24 @@ class RunSummaryDB:
             ).fetchall()
         )
 
+    def query_labels(
+        self, min_timestamp: ora.Time | None
+    ) -> Iterator[list[tuple[str, str | None]]]:
+        """
+        Yields pages of the job ID and labels json of runs with timestamp at
+        least `min_timestamp`.
+        """
+        ts = float("-inf") if min_timestamp is None else dump_time(min_timestamp)
+        rowid = 0
+        while rows := self.__connection.connection.execute(
+            "SELECT timestamp, rowid, json_extract(payload, '$.run_summary.job_id'),"
+            " json_extract(payload, '$.run_summary.labels') FROM run_summary"
+            " WHERE (timestamp, rowid) > (?, ?) ORDER BY timestamp, rowid LIMIT ?",
+            (ts, rowid, SUMMARY_PAGE_SIZE),
+        ).fetchall():
+            yield [(job_id, labels) for _, _, job_id, labels in rows]
+            ts, rowid = rows[-1][:2]
+
     def query_job(
         self, job_id: str, *, min_timestamp: ora.Time | None, page_size: int
     ) -> Iterator[list[str]]:
