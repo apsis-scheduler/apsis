@@ -47,7 +47,7 @@ MAX_LIMIT = 1000
 PAGE_ROWS = 500
 # most db rows walked on each side of the anchor
 SIDE_BUDGET = 100_000
-# earlier walks end at runs scheduled this many seconds before the lookback, as
+# walks skip runs scheduled more than this many seconds before the lookback, as
 # a run can wait up to 23 hours and run up to 24.5 hours after its schedule time
 LOOKBACK_MARGIN = 2 * 86400
 # job filtered windows with at most this many runs load them all through the job index
@@ -352,8 +352,8 @@ async def query_window(
     """
     Returns the window of runs that the web UI runs list would show for
     `spec`, for runs with a schedule time that are expected or have a timestamp
-    at least `min_timestamp`.  Runs in the db before the anchor also need a
-    schedule time no more than `LOOKBACK_MARGIN` before `min_timestamp`.
+    at least `min_timestamp`.  Walks of the db by schedule time also skip runs
+    scheduled more than `LOOKBACK_MARGIN` before `min_timestamp`.
 
     :param expected_runs:
       Runs that are only in memory by run ID, which runs leave as they move
@@ -438,7 +438,11 @@ async def query_window(
             expected_runs,
         )
         after = _Side(
-            _schedule_pages(run_db, t, False, labels), keep, False, expected[i:], expected_runs
+            _schedule_pages(run_db, t if min_time is None else max(t, min_time), False, labels),
+            keep,
+            False,
+            expected[i:],
+            expected_runs,
         )
 
         expected_groups = defaultdict(list)

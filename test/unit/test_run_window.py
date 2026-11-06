@@ -237,15 +237,15 @@ async def test_window_budget(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_walk_ends_before_lookback(tmp_path, monkeypatch):
+async def test_walks_skip_runs_before_lookback(tmp_path, monkeypatch):
     """
-    The earlier walk ends at runs scheduled well before the lookback, without
+    Walks on both sides skip runs scheduled well before the lookback, without
     dropping a run scheduled just before it that changed in it or old expected
     runs.
     """
     day = 86400
     old = [
-        make_run(i, "a", {"i": str(i)}, State.success, MIN_TIMESTAMP - (5 + i / 10) * day, old=True)
+        make_run(i, "a", {"i": str(i)}, State.success, MIN_TIMESTAMP - (3 + i / 2) * day, old=True)
         for i in range(1, 21)
     ]
     late = make_run(30, "a", {}, State.success, MIN_TIMESTAMP - day)
@@ -253,8 +253,8 @@ async def test_walk_ends_before_lookback(tmp_path, monkeypatch):
     expected = make_run(31, "a", {}, State.scheduled, MIN_TIMESTAMP - 10 * day, expected=True)
     monkeypatch.setattr(run_window, "PAGE_ROWS", 2)
     monkeypatch.setattr(run_window, "SIDE_BUDGET", 4)
-    # an anchor before the lookback and one after it
-    for anchor in MIN_TIMESTAMP - 4 * day, NOW:
+    # an anchor among the old runs and one after the lookback starts
+    for anchor in MIN_TIMESTAMP - 8 * day, NOW:
         window = await query_window(
             run_db,
             {expected.run_id: expected},
@@ -263,6 +263,7 @@ async def test_walk_ends_before_lookback(tmp_path, monkeypatch):
         )
         assert window.run_ids == [expected.run_id, late.run_id]
         assert window.earlier is None and not window.earlier_stopped
+        assert window.later is None and not window.later_stopped
 
 
 @pytest.mark.parametrize("grouping", [True, False])
