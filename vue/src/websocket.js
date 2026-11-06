@@ -36,9 +36,9 @@ export class Socket {
 
     this.websocket.onmessage = this.onMessage
 
-    this.websocket.onclose = () => {
+    this.websocket.onclose = (event) => {
       console.log('websocket closed:', this.url.toString())
-      this.onClose()
+      this.onClose(event)
       this.websocket = null
       // Retry the connection after a second.
       if (this.isOpen && this.reconnect)
