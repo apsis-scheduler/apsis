@@ -413,8 +413,9 @@ async def test_check_dependency_timing_transitive(tmp_path):
     # The message should show the chain from b up to c.
     assert re.fullmatch(
         r"a\(date=(\S+)\) waits 20h 30m, over the 12h limit\n"
-        r"  scheduled \1T01:00:00Z but waits on b\(date=\1\) → c\(date=\1\),"
-        r" scheduled \1T21:30:00Z",
+        r"  scheduled \1T01:00:00Z but waits on\n"
+        r"    b\(date=\1\)\n"
+        r"    c\(date=\1\), scheduled \1T21:30:00Z",
         a_errors[0],
     )
 

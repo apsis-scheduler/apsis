@@ -496,13 +496,15 @@ def check_job_dependencies_scheduled(
             if wait <= max_wait_time:
                 continue
 
-            chain = _get_wait_chain(inst_node, deps_of, exp_start, inst_times)
+            chain = [
+                f"    {_node_inst(n)}"
+                for n in _get_wait_chain(inst_node, deps_of, exp_start, inst_times)
+            ]
+            chain[-1] += f", scheduled {_format_time(exp_start[inst_node])}"
             yield (
                 job,
                 f"{_node_inst(inst_node)} waits {_format_wait(wait)},"
                 f" over the {_format_wait(max_wait_time)} limit\n"
-                f"  scheduled {_format_time(sched_time)} but waits on"
-                f" {' → '.join(str(_node_inst(n)) for n in chain)},"
-                f" scheduled {_format_time(exp_start[inst_node])}",
+                f"  scheduled {_format_time(sched_time)} but waits on\n" + "\n".join(chain),
             )
             timing_reported = True
