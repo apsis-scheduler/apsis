@@ -379,18 +379,33 @@ def _format_wait(seconds: float) -> str:
     return f"{hours}h {minutes}m" if minutes else f"{hours}h"
 
 
-def _get_wait_chain(
-    node: Node,
-    deps_of: dict[Node, list[Node]],
-    exp_start: dict[Node, ora.Time],
-    inst_times: dict[Node, ora.Time],
-) -> list[Node]:
-    """Returns the runs `node` waits on, from its own dependency up to the latest scheduled one."""
-    chain = []
-    while blocking := [d for d in deps_of.get(node, []) if exp_start[d] > inst_times[node]]:
-        node = max(sorted(blocking), key=exp_start.__getitem__)
-        chain.append(node)
-    return chain
+def _build_delay_tree(
+    node, deps_of, exp_start, inst_times, sched_time, max_wait_time, indent=1, seen=None
+):
+    """Builds indented lines for the dependencies that make `node` wait past `max_wait_time`."""
+    if seen is None:
+        seen = set()
+
+    lines = []
+    for dep in deps_of.get(node, []):
+        if exp_start[dep] <= max(inst_times[node], sched_time + max_wait_time):
+            continue
+        line = f"{'  ' * indent}{_node_inst(dep)}"
+        if dep in seen:
+            lines.append(line + ", see above")
+            continue
+        seen.add(dep)
+        sub = _build_delay_tree(
+            dep, deps_of, exp_start, inst_times, sched_time, max_wait_time, indent + 1, seen
+        )
+        if not sub:
+            line += (
+                f", scheduled {_format_time(inst_times[dep])},"
+                f" waits {_format_wait(inst_times[dep] - sched_time)}"
+            )
+        lines.append(line)
+        lines.extend(sub)
+    return lines
 
 
 def check_job_dependencies_scheduled(
@@ -496,15 +511,13 @@ def check_job_dependencies_scheduled(
             if wait <= max_wait_time:
                 continue
 
-            chain = [
-                f"    {_node_inst(n)}"
-                for n in _get_wait_chain(inst_node, deps_of, exp_start, inst_times)
-            ]
-            chain[-1] += f", scheduled {_format_time(exp_start[inst_node])}"
+            tree_lines = _build_delay_tree(
+                inst_node, deps_of, exp_start, inst_times, sched_time, max_wait_time
+            )
             yield (
                 job,
-                f"{_node_inst(inst_node)} waits {_format_wait(wait)},"
-                f" over the {_format_wait(max_wait_time)} limit\n"
-                f"  scheduled {_format_time(sched_time)} but waits on\n" + "\n".join(chain),
+                f"{_node_inst(inst_node)}, scheduled {_format_time(sched_time)},"
+                f" waits {_format_wait(wait)}, over the {_format_wait(max_wait_time)} limit\n"
+                + "\n".join(tree_lines),
             )
             timing_reported = True
