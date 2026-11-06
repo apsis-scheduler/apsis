@@ -97,6 +97,16 @@ export function groupCount(runs, runWindow) {
 /**
  * Updates store `state` with runs from run summaries in `msgs`.
  */
+/**
+ * Returns true if `run` shown in `runWindow` left the window's states and another
+ * run could take its row, because an edge is set or its group had `count` runs.
+ */
+function isReplaceable(run, runWindow, count) {
+  const states = runWindow.states || []
+  return states.length > 0 && !states.includes(run.state)
+    && Boolean(runWindow.earlier || runWindow.later || count > 1)
+}
+
 export function processMsgs(msgs, state) {
   const seq = nextSeq++
 
@@ -159,6 +169,8 @@ export function processMsgs(msgs, state) {
           const counted = state.runWindow.groups[run.run_id]
           if (counted && counted.count > 1 && counted.key !== run.group_key)
             state.runWindowStale = true
+          if (runIds.has(run.run_id) && isReplaceable(run, state.runWindow, counted ? counted.count : 1))
+            state.runWindowStale = true
         }
         if (runs === null)
           runs = new Map(state.runs)
@@ -185,6 +197,8 @@ export function processMsgs(msgs, state) {
           groups: mapValues(msg.groups, (count, run_id) => {
             const run = windowRuns.get(run_id)
             if (run && run.group_key[0] === 'R' && count > 1)
+              state.runWindowStale = true
+            if (run && isReplaceable(run, msg, count))
               state.runWindowStale = true
             return {count, key: run ? run.group_key : null}
           }),
