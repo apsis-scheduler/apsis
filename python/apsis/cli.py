@@ -48,18 +48,15 @@ def main():
     # top-level argument parser
 
     parser = apsis.lib.argparse.CommandArgumentParser(prog="apsis")
-    addr = apsis.service.client.get_address()
     parser.add_argument(
         "--host",
         metavar="HOST",
-        default=addr.host,
-        help=f"connect to HOST [def: {addr.host}]",
+        help=f"connect to HOST, a URL, host or host:port [def: {apsis.service.client.get_url()}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        default=addr.port,
-        help=f"connect to PORT [def: {addr.port}]",
+        help="connect to PORT on a HOST that isn't a URL",
     )
 
     # --- command: adhoc ----------------------------------------------
@@ -455,7 +452,11 @@ def main():
     # -------------------------------------------------------------
 
     args = parser.parse_args()
-    client = apsis.service.client.Client((args.host, args.port))
+    try:
+        url = apsis.service.client.get_url(args.host, args.port)
+    except ValueError as exc:
+        parser.error(str(exc))
+    client = apsis.service.client.Client(url=url)
     con = apsis.cmdline.get_console()
 
     try:
