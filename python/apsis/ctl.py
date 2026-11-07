@@ -151,6 +151,21 @@ def main():
     cmd.add_argument("--quiet", action="store_true", default=False, help="don't print job changes")
 
     # -------------------------------------------------------------
+    # command: rename_job_history
+
+    def cmd_rename_job_history(args):
+        result = get_client(args).rename_job_history(args.old_job_id, args.new_job_id)
+        con.print(f"moved {result['runs']} runs to [job]{args.new_job_id}[/]")
+
+    cmd = parser.add_command(
+        "rename-job-history",
+        cmd_rename_job_history,
+        description="Moves the run history of a removed job to a new job ID.",
+    )
+    cmd.add_argument("old_job_id", metavar="OLD-JOB-ID")
+    cmd.add_argument("new_job_id", metavar="NEW-JOB-ID")
+
+    # -------------------------------------------------------------
     # command: restart
 
     def cmd_restart(args):

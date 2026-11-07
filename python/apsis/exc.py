@@ -33,6 +33,12 @@ class JobsDirErrors(Exception):
             yield f"{error.job_id}: {error}"
 
 
+class RenameJobError(RuntimeError):
+    """
+    A job's run history can't be moved to another job.
+    """
+
+
 class ConditionError(RuntimeError):
     """
     An error in specification of a condition.
