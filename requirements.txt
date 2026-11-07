@@ -3,7 +3,7 @@ aiohttp
 brotli
 httpx
 jinja2
-ora <0.9.0
+ora >=0.10.3
 pyyaml
 ruamel.yaml
 requests
