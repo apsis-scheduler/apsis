@@ -32,16 +32,27 @@ def run_apsisctl(*argv):
     subprocess.run(["apsisctl", *(str(a) for a in argv)], check=True)
 
 
+# stands in for the instance's own user in http_client and connect_ws
+INSTANCE_USER = object()
+
+
 class ApsisService:
     """
     An Apsis service instance running in a separate process.
     """
 
-    def __init__(self, *, port=None, job_dir=None, cfg={}, env={}, unix=False):
+    def __init__(
+        self, *, port=None, job_dir=None, cfg={}, env={}, unix=False, user: str | None = None
+    ):
+        """
+        :param user:
+          X-Remote-User the proxy would send, which clients send on a unix socket.
+        """
         if unix and port is not None:
             raise ValueError("an instance serves on either a port or a unix socket")
         self.tmp_dir = Path(tempfile.mkdtemp())
         self.sock_path = self.tmp_dir / "apsis.sock" if unix else None
+        self.user = user
         if unix:
             self.port = None
         else:
@@ -117,26 +128,50 @@ class ApsisService:
                         raise
                     time.sleep(0.05)
 
-    def http_client(self, **kwargs) -> httpx.Client:
+    def _user_headers(self, user: str | None | object, headers: dict[str, str]) -> dict[str, str]:
         """
-        Returns an HTTP client for this instance over its unix socket or TCP port.
+        Returns `headers` with X-Remote-User for `user`, by default the instance's.
+        """
+        user = self.user if user is INSTANCE_USER else user
+        return headers if user is None else {"X-Remote-User": user} | headers
+
+    def http_client(
+        self, *, user: str | None | object = INSTANCE_USER, headers: dict[str, str] = {}, **kwargs
+    ) -> httpx.Client:
+        """
+        Returns an HTTP client for this instance over its unix socket or TCP port,
+        sending `user` as X-Remote-User on a unix socket.
         """
         if self.sock_path is None:
-            return httpx.Client(base_url=f"http://127.0.0.1:{self.port}", **kwargs)
+            return httpx.Client(base_url=f"http://127.0.0.1:{self.port}", headers=headers, **kwargs)
         return httpx.Client(
             transport=httpx.HTTPTransport(uds=str(self.sock_path)),
             base_url="http://apsis",
+            headers=self._user_headers(user, headers),
             **kwargs,
         )
 
-    def connect_ws(self, path: str, **kwargs) -> websockets.sync.client.ClientConnection:
+    def connect_ws(
+        self,
+        path: str,
+        *,
+        user: str | None | object = INSTANCE_USER,
+        additional_headers: dict[str, str] = {},
+        **kwargs,
+    ) -> websockets.sync.client.ClientConnection:
         """
-        Opens a websocket to `path` on this instance over its unix socket or TCP port.
+        Opens a websocket to `path` on this instance over its unix socket or TCP port,
+        sending `user` as X-Remote-User on a unix socket.
         """
         if self.sock_path is None:
-            return websockets.sync.client.connect(f"ws://127.0.0.1:{self.port}{path}", **kwargs)
+            return websockets.sync.client.connect(
+                f"ws://127.0.0.1:{self.port}{path}", additional_headers=additional_headers, **kwargs
+            )
         return websockets.sync.client.unix_connect(
-            str(self.sock_path), f"ws://apsis{path}", **kwargs
+            str(self.sock_path),
+            f"ws://apsis{path}",
+            additional_headers=self._user_headers(user, additional_headers),
+            **kwargs,
         )
 
     def is_running(self):
