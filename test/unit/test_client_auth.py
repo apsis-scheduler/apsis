@@ -34,6 +34,7 @@ def _response(status: int, content: bytes = b"{}") -> requests.Response:
 def clear_apsis_env(monkeypatch):
     monkeypatch.delenv("APSIS_URL", raising=False)
     monkeypatch.delenv("APSIS_HOST", raising=False)
+    monkeypatch.delenv("APSIS_KRB5CCNAME", raising=False)
 
 
 @pytest.mark.parametrize(
@@ -45,7 +46,7 @@ def clear_apsis_env(monkeypatch):
 )
 def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
     monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
-    monkeypatch.setattr("apsis.service.client.has_ticket", lambda: False)
+    monkeypatch.setattr("apsis.service.client.get_kerberos_creds", lambda url: None)
     monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
     urls = []
     monkeypatch.setattr(
@@ -75,7 +76,7 @@ def test_cli_url_and_auth_error(monkeypatch, capsys, flags, url, error):
     ],
 )
 def test_ctl_client_url(monkeypatch, capsys, argv, url, out):
-    monkeypatch.setattr("apsis.service.client.has_ticket", lambda: False)
+    monkeypatch.setattr("apsis.service.client.get_kerberos_creds", lambda url: None)
     monkeypatch.setenv("APSIS_URL", "https://apsis.example.com")
     urls = []
     body = {"version": "v"}
@@ -166,7 +167,7 @@ def test_ctl_serve_binds_serve_defaults(monkeypatch):
 )
 def test_ws_scheme_follows_base_url(monkeypatch, host, base):
     http, ws, netloc = base
-    monkeypatch.setattr("apsis.service.client.has_ticket", lambda: False)
+    monkeypatch.setattr("apsis.service.client.get_kerberos_creds", lambda url: None)
     client = Client(url=get_url(host))
     assert client._Client__url("/api/v1/runs") == f"{http}://{netloc}/api/v1/runs"
     assert client._Client__url("/api/v1/runs", ws=True) == f"{ws}://{netloc}/api/v1/runs"
@@ -289,6 +290,36 @@ def test_negotiate_header_only_for_wss_with_requests_gssapi(monkeypatch):
     assert get_negotiate_headers("wss://apsis.example.com/x") == {"Authorization": "Negotiate dG9r"}
     monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", None)
     assert get_negotiate_headers("wss://apsis.example.com/x") == {}
+
+
+@pytest.mark.parametrize(
+    "env, store",
+    [
+        ({"APSIS_KRB5CCNAME": "FILE:/tmp/krb5cc_apsis"}, {"ccache": "FILE:/tmp/krb5cc_apsis"}),
+        ({}, None),
+    ],
+)
+def test_creds_from_apsis_krb5ccname(monkeypatch, env, store):
+    gssapi = pytest.importorskip("gssapi")
+    pytest.importorskip("requests_gssapi")
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        gssapi, "Credentials", lambda usage, **kw: Mock(lifetime=1, store=kw.get("store"))
+    )
+    used = []
+    monkeypatch.setattr(
+        gssapi,
+        "SecurityContext",
+        lambda creds, **kw: used.append(creds) or Mock(step=lambda: b"tok"),
+    )
+    monkeypatch.setattr(
+        "requests.request",
+        lambda method, url, auth, **kw: used.append(auth.creds) or _response(200),
+    )
+    Client(url="https://apsis.example.com").stats()
+    get_negotiate_headers("wss://apsis.example.com/x")
+    assert [c.store for c in used] == [store, store]
 
 
 @pytest.mark.parametrize("failing", ["Credentials", "SecurityContext"])

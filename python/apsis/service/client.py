@@ -68,7 +68,7 @@ def get_url(host: str | None = None, port: str | None = None) -> str:
     return f"http://{addr.host}:{port or addr.port}"
 
 
-AUTH_ERROR = "not authenticated, get a Kerberos ticket and check KRB5CCNAME"
+AUTH_ERROR = "not authenticated, get a Kerberos ticket and check APSIS_KRB5CCNAME or KRB5CCNAME"
 NO_KERBEROS_ERROR = "not authenticated, install requests-gssapi for Kerberos"
 NO_HTTPS_ERROR = "not authenticated, use an https URL for Kerberos"
 
@@ -84,33 +84,41 @@ def get_auth_error(url: str) -> str:
     return AUTH_ERROR
 
 
-def has_ticket() -> bool:
+def get_credentials() -> "gssapi.Credentials":
     """
-    Returns true if the user has an unexpired Kerberos ticket.
+    Returns Kerberos initiate credentials from APSIS_KRB5CCNAME if set, else the default cache.
     """
+    ccache = os.environ.get("APSIS_KRB5CCNAME")
+    if ccache:
+        return gssapi.Credentials(usage="initiate", store={"ccache": ccache})
+    return gssapi.Credentials(usage="initiate")
+
+
+def get_kerberos_creds(url: str) -> "gssapi.Credentials | None":
+    """
+    Returns credentials with an unexpired ticket to send to `url`, or None to send no token.
+    """
+    if urlsplit(url).scheme not in ("https", "wss") or HTTPSPNEGOAuth is None:
+        return None
     try:
-        return gssapi.Credentials(usage="initiate").lifetime != 0
+        creds = get_credentials()
+        return creds if creds.lifetime != 0 else None
     except gssapi.exceptions.GSSError:
-        return False
-
-
-def use_kerberos(url: str) -> bool:
-    """
-    Returns true if requests to `url` should send a Kerberos token.
-    """
-    return urlsplit(url).scheme in ("https", "wss") and HTTPSPNEGOAuth is not None and has_ticket()
+        return None
 
 
 def get_negotiate_headers(url: str) -> dict[str, str]:
     """
     Returns an SPNEGO Authorization header for a wss `url`, or no headers.
     """
-    if not use_kerberos(url):
+    creds = get_kerberos_creds(url)
+    if creds is None:
         return {}
     parts = urlsplit(url)
     try:
         name = gssapi.Name(f"HTTP@{parts.hostname}", gssapi.NameType.hostbased_service)
-        token = gssapi.SecurityContext(name=name, mech=SPNEGO, usage="initiate").step()
+        ctx = gssapi.SecurityContext(name=name, mech=SPNEGO, usage="initiate", creds=creds)
+        token = ctx.step()
     except gssapi.exceptions.GSSError as exc:
         logging.debug(f"no negotiate token for {parts.hostname}: {exc}")
         return {}
@@ -204,9 +212,10 @@ class Client:
         return urlunsplit((scheme, netloc, base_path + "/".join(path), query, ""))
 
     def __send(self, method: str, url: str, **kw: Any) -> requests.Response:
+        creds = get_kerberos_creds(url)
         auth = (
-            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True)
-            if use_kerberos(url)
+            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True, creds=creds)
+            if creds is not None
             else None
         )
         resp = requests.request(method, url, auth=auth, **kw)
