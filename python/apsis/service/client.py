@@ -88,6 +88,8 @@ def get_credentials() -> "gssapi.Credentials":
     """
     Returns Kerberos initiate credentials from APSIS_KRB5CCNAME if set, else the default cache.
     """
+    # KRB5CCNAME can point at a ticket that expires too quickly, so this uses a longer lived one
+    # remove APSIS_KRB5CCNAME and go back to KRB5CCNAME once it points at the longer lived ticket
     ccache = os.environ.get("APSIS_KRB5CCNAME")
     if ccache:
         return gssapi.Credentials(usage="initiate", store={"ccache": ccache})
