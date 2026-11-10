@@ -42,30 +42,29 @@ def parse_address(loc: str, port: int = apsis.service.DEFAULT_PORT) -> Address:
 
 def get_address() -> Address:
     """
-    Returns the configured host and port where Apsis runs, or the defaults if
-    APSIS_HOST is a URL.
+    Returns the configured host and port where Apsis runs.
     """
     loc = os.environ.get("APSIS_HOST")
-    if loc is None or "://" in loc:
-        return Address("localhost", apsis.service.DEFAULT_PORT)
-    return parse_address(loc)
+    return Address("localhost", apsis.service.DEFAULT_PORT) if loc is None else parse_address(loc)
 
 
 def get_url(host: str | None = None, port: str | None = None) -> str:
     """
-    Returns the base URL for `host` and `port`, defaulting to APSIS_HOST.
-
-    :param host:
-      A URL, host, or host:port, or none for APSIS_HOST.
-    :param port:
-      Port that replaces the host's port, not allowed with a URL.
+    Returns the base URL for a URL, host or host:port, defaulting to APSIS_URL or APSIS_HOST.
     """
-    loc = os.environ.get("APSIS_HOST", "") if host is None else host
-    if "://" in loc:
+    if host is None:
+        url = os.environ.get("APSIS_URL")
+        if url:
+            if port is not None:
+                raise ValueError(f"can't use --port with APSIS_URL {url}, pass --host too")
+            return url.rstrip("/")
+        addr = get_address()
+    elif "://" in host:
         if port is not None:
-            raise ValueError(f"can't use port {port} with URL {loc}, put the port in the URL")
-        return loc.rstrip("/")
-    addr = get_address() if host is None else parse_address(host, get_address().port)
+            raise ValueError(f"can't use --port with URL {host}, put the port in the URL")
+        return host.rstrip("/")
+    else:
+        addr = parse_address(host, get_address().port)
     return f"http://{addr.host}:{port or addr.port}"
 
 
