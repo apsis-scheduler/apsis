@@ -146,6 +146,9 @@ async def test_wait_for():
     with pytest.raises(asyncio.TimeoutError):
         await apsis.lib.asyn.wait_for(waiter, 0.01)
     assert waiter.cr_frame is None
+    # a timeout that has already passed doesn't let the coro run
+    with pytest.raises(asyncio.TimeoutError):
+        await apsis.lib.asyn.wait_for(value(), 0)
 
     # a cancel that lands after the wrapped coro finished still cancels
     task = asyncio.ensure_future(apsis.lib.asyn.wait_for(value(), 10))
@@ -154,3 +157,21 @@ async def test_wait_for():
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.asyncio
+async def test_task_group_reuses_key_of_finished_task():
+    async def nop():
+        pass
+
+    group = apsis.lib.asyn.TaskGroup()
+    group.add("key", nop())
+    # the task has finished but hasn't removed itself yet
+    await asyncio.sleep(0)
+    assert "key" not in group
+
+    group.add("key", asyncio.sleep(10))
+    await asyncio.sleep(0)
+    assert "key" in group
+    await group.cancel_all()
+    assert len(group) == 0

@@ -267,8 +267,7 @@ As a result, these rules generally describe a run's relationship to its job:
    job's schedules.
 
 2. A run that hasn't started yet reflects its job's current program,
-   conditions, and actions, unless the job changed while Apsis was down or the
-   change didn't fit the run.
+   conditions, and actions, unless the change didn't fit the run.
 
 3. If you rerun a run, the rerun always reflects its job's current program,
    conditions, and actions.

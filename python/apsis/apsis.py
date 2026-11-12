@@ -558,14 +558,9 @@ class Apsis:
         """
         Rebinds a scheduled or waiting run to the current config of its job.
 
-        Replaces the run's program, conditions, actions, and job labels, and
-        does nothing if they haven't changed.  A waiting run checks its new
-        conditions from the first one.
-
         :raise RunError:
-          The run isn't scheduled or waiting, a concurrent operation moved it,
-          or its job's current config doesn't bind for it.  The run keeps its
-          old config.
+          The run isn't scheduled or waiting, or its job's current config
+          doesn't bind for it.
         """
         if run.state not in {State.scheduled, State.waiting}:
             raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
@@ -964,10 +959,7 @@ async def reschedule_runs(apsis, job_id):
 async def _refresh_runs(apsis: Apsis, job_ids: frozenset[str]) -> None:
     """
     Refreshes waiting and scheduled runs of `job_ids` that weren't rebuilt from
-    their schedules, so they pick up their job's current config.
-
-    A run that the current config doesn't fit keeps its old config, and its run
-    log says why.
+    their schedules.
     """
     run_ids = [
         r.run_id
