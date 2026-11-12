@@ -109,7 +109,8 @@ class TaskGroup:
         return len(self.__tasks)
 
     def __contains__(self, key) -> bool:
-        return key in self.__tasks
+        task = self.__tasks.get(key)
+        return task is not None and not task.done()
 
     def add(self, key, coro):
         task = asyncio.get_event_loop().create_task(coro)
@@ -124,7 +125,9 @@ class TaskGroup:
             except:
                 logger.warning(f"task: {key}", exc_info=True)
             finally:
-                self.__tasks.pop(key)
+                # a newer task may have taken the key
+                if self.__tasks.get(key) is task:
+                    del self.__tasks[key]
 
         task.add_done_callback(done)
 

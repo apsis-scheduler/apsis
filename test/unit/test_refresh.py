@@ -178,3 +178,25 @@ async def test_refresh_racing_override(tmp_path, op, ready, delayed, state, erro
     assert await asyncio.wait_for(finished(apsis, run.run_id), 5) == state
     assert num_waiting(apsis) == 0
     await apsis.shut_down()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("op", ["refresh", "skip", "start"])
+async def test_cancelled_caller_keeps_wait_task(tmp_path, op):
+    apsis, db = await make_apsis(tmp_path)
+    for steps in range(6):
+        run = await apsis.schedule(None, Instance("job", {}))
+        write_job(tmp_path / "jobs", success=steps % 2 == 0, ready=False)
+        await load_without_refresh(apsis, db, tmp_path)
+
+        # cancel the caller after it has run for this many event loop steps
+        task = asyncio.ensure_future(getattr(apsis, op)(run))
+        for _ in range(steps):
+            await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0)
+
+        _, waiting = apsis.run_store.query(state=State.waiting)
+        assert num_waiting(apsis) == len(list(waiting)), steps
+    await apsis.shut_down()
