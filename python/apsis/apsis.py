@@ -141,6 +141,7 @@ class Apsis:
                 assert not run.expected
                 time = run.times["schedule"]
                 self.run_log.record(run, "restored")
+                self.__refresh_restored(run)
                 await self.scheduled.schedule(time, run)
 
             # Restore waiting runs from DB.
@@ -152,6 +153,7 @@ class Apsis:
                 # get()s and mutations converge on this object.
                 self.run_store.attach(run)
                 self.run_log.record(run, "restored")
+                self.__refresh_restored(run)
                 self._wait(run)
 
             # If a run is starting in the DB, we can't know if it actually
@@ -567,13 +569,7 @@ class Apsis:
         """
         if run.state not in {State.scheduled, State.waiting}:
             raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
-        fresh = self.__rebind(run)
-        if (fresh.program, fresh.conds, fresh.actions, fresh.meta["job"]) == (
-            run.program,
-            run.conds,
-            run.actions,
-            run.meta.get("job"),
-        ):
+        if not self.__differs(run, self.__rebind(run)):
             return
 
         if run.state == State.waiting:
@@ -583,19 +579,47 @@ class Apsis:
 
         try:
             # bind again against the jobs loaded now
-            fresh = self.__rebind(run)
-            run.program = fresh.program
-            run.conds = fresh.conds
-            run.actions = fresh.actions
-            run.meta["job"] = fresh.meta["job"]
-            self.run_store.update(run, now())
-            self.summary_publisher.publish(messages.make_run_transition(run))
-            self.run_log.info(run, "refreshed from job config")
+            self.__set_config(run, self.__rebind(run))
         finally:
             if run.state == State.waiting:
                 self._wait(run)
             else:
                 await self.scheduled.schedule(run.times["schedule"], run)
+
+    def __refresh_restored(self, run: Run) -> None:
+        """
+        Rebinds a run restored from the DB to the current config of its job.
+        """
+        try:
+            fresh = self.__rebind(run)
+        except RunError as exc:
+            self.run_log.info(run, str(exc))
+        else:
+            if self.__differs(run, fresh):
+                self.__set_config(run, fresh)
+
+    def __differs(self, run: Run, fresh: Run) -> bool:
+        """
+        Returns whether `fresh` is bound to different config than `run`.
+        """
+        return (fresh.program, fresh.conds, fresh.actions, fresh.meta["job"]) != (
+            run.program,
+            run.conds,
+            run.actions,
+            run.meta.get("job"),
+        )
+
+    def __set_config(self, run: Run, fresh: Run) -> None:
+        """
+        Gives `run` the program, conditions, actions, and job labels of `fresh`.
+        """
+        run.program = fresh.program
+        run.conds = fresh.conds
+        run.actions = fresh.actions
+        run.meta["job"] = fresh.meta["job"]
+        self.run_store.update(run, now())
+        self.summary_publisher.publish(messages.make_run_transition(run))
+        self.run_log.info(run, "refreshed from job config")
 
     def __rebind(self, run: Run) -> Run:
         """

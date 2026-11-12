@@ -134,6 +134,30 @@ async def test_reload_keeps_runs_it_cant_refresh(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_restart_refreshes_runs(tmp_path):
+    apsis, _ = await make_apsis(tmp_path)
+    waiting = (await apsis.schedule(None, Instance("job", {}))).run_id
+    scheduled = (await apsis.schedule(ora.now() + 3600, Instance("job", {}))).run_id
+    await apsis.shut_down()
+
+    write_job(tmp_path / "jobs", success=True, ready=False)
+    apsis, db = await make_apsis(tmp_path)
+    await apsis.restore()
+    assert db.run_db.get(waiting).program.success
+    assert db.run_db.get(scheduled).program.success
+    assert num_waiting(apsis) == 1
+    await apsis.shut_down()
+
+    # a run the job no longer fits keeps its config
+    write_job(tmp_path / "jobs", success=False, ready=False, params=("date",))
+    apsis, db = await make_apsis(tmp_path)
+    await apsis.restore()
+    assert db.run_db.get(waiting).program.success
+    assert any("missing" in m for m in run_log(apsis, waiting))
+    await apsis.shut_down()
+
+
+@pytest.mark.asyncio
 async def test_reload_refreshes_run_started_while_reloading(tmp_path):
     apsis, db = await make_apsis(tmp_path)
     await apsis.schedule(None, Instance("job", {}))

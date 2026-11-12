@@ -257,9 +257,8 @@ run's args to the job's current definition, for example because the job's
 params changed and no longer match the run's args, it leaves the run's program,
 conditions, and actions unchanged and records the error in the run's log.
 
-Apsis doesn't do this when it restarts.  It restores scheduled and waiting runs
-from its database with the program, conditions, and actions stored there, so a
-restored run changes only when a later reload changes its job.
+Apsis does the same when it restarts, for the scheduled and waiting runs it
+restores from its database.
 
 As a result, these rules generally describe a run's relationship to its job:
 
