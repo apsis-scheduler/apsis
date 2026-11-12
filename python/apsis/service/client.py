@@ -427,6 +427,10 @@ class Client:
     def reload_jobs(self, *, dry_run=False):
         return self.__post("/api/control/reload_jobs", data={}, dry_run=dry_run)
 
+    def rename_job_history(self, old_job_id, new_job_id):
+        data = {"old_job_id": old_job_id, "new_job_id": new_job_id}
+        return self.__post("/api/control/rename_job_history", data=data)
+
     def shut_down(self, restart=False):
         query = {"restart": NO_ARG} if restart else {}
         self.__post("/api/control/shut_down", data={}, **query)
