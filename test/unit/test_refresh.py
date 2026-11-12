@@ -26,18 +26,22 @@ def write_job(
     ready: bool | None,
     params: tuple[str, ...] = (),
     description: str = "",
+    dep: bool = False,
 ) -> None:
     """
     Writes a no-op job whose condition is const `ready`, or has no condition
-    if `ready` is none.
+    if `ready` is none.  With `dep`, a dependency on the job `dep` comes first.
     """
     text = (
         f"params: {list(params)}\n"
         f"metadata:\n  description: '{description}'\n"
         f"program:\n  type: no-op\n  success: {str(success).lower()}\n"
     )
+    conds = ["{type: dependency, job_id: dep}"] * dep
     if ready is not None:
-        text += f"condition:\n  type: const\n  value: {str(ready).lower()}\n"
+        conds.append(f"{{type: const, value: {str(ready).lower()}}}")
+    if conds:
+        text += "condition:\n" + "".join(f"  - {c}\n" for c in conds)
     (job_dir / "job.yaml").write_text(text)
 
 
@@ -53,7 +57,10 @@ async def make_apsis(tmp_path: Path) -> tuple[Apsis, SqliteDB]:
         write_job(job_dir, success=False, ready=False)
         SqliteDB.create(db_path)
     db = SqliteDB.open(db_path)
-    cfg = check({"job_dir": str(job_dir), "database": str(db_path)}, tmp_path)
+    cfg = check(
+        {"job_dir": str(job_dir), "database": str(db_path), "waiting": {"max_time": 3600}},
+        tmp_path,
+    )
     return Apsis(cfg, await load_jobs_dir(job_dir), db), db
 
 
@@ -75,12 +82,13 @@ def run_log(apsis: Apsis, run_id: str) -> list[str]:
     return [r["message"] for r in apsis.get_run_log(run_id)]
 
 
-async def after_yield(coro: Coroutine[Any, Any, None]) -> None:
+async def after_yields(coro: Coroutine[Any, Any, None], steps: int) -> None:
     """
-    Awaits `coro` one event loop step later, so it lands after a concurrent
-    cancel has finished the wait task but before the task leaves its group.
+    Awaits `coro` after `steps` event loop steps, so it can land part way
+    through a concurrent operation.
     """
-    await asyncio.sleep(0)
+    for _ in range(steps):
+        await asyncio.sleep(0)
     await coro
 
 
@@ -167,7 +175,9 @@ async def test_reload_refreshes_run_started_while_reloading(tmp_path):
     await load_without_refresh(apsis, db, tmp_path)
     _, run = apsis.run_store.get(scheduled)
     # start the scheduled run while the waiting run's refresh yields
-    await asyncio.gather(_refresh_runs(apsis, frozenset({"job"})), after_yield(apsis.start(run)))
+    await asyncio.gather(
+        _refresh_runs(apsis, frozenset({"job"})), after_yields(apsis.start(run), 1)
+    )
 
     _, run = apsis.run_store.get(scheduled)
     assert run.state == State.waiting
@@ -177,17 +187,17 @@ async def test_reload_refreshes_run_started_while_reloading(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "op, ready, delayed, state, errors",
+    "op, ready, steps, state, errors",
     [
         # refresh restarts the wait before the override cancels it
-        ("start", False, False, State.success, [False, False]),
+        ("start", False, 0, State.success, [False, False]),
         # refresh starts a run with no conditions before the override
-        ("skip", None, False, State.success, [False, True]),
-        # the override lands while the cancelled wait task is leaving its group
-        ("start", False, True, State.failure, [True, False]),
+        ("skip", None, 0, State.success, [False, True]),
+        # the override takes the run while refresh is still cancelling its wait
+        ("start", False, 3, State.failure, [True, False]),
     ],
 )
-async def test_refresh_racing_override(tmp_path, op, ready, delayed, state, errors):
+async def test_refresh_racing_override(tmp_path, op, ready, steps, state, errors):
     apsis, db = await make_apsis(tmp_path)
     run = await apsis.schedule(None, Instance("job", {}))
 
@@ -195,7 +205,7 @@ async def test_refresh_racing_override(tmp_path, op, ready, delayed, state, erro
     await load_without_refresh(apsis, db, tmp_path)
     override = getattr(apsis, op)(run)
     results = await asyncio.gather(
-        apsis.refresh(run), after_yield(override) if delayed else override, return_exceptions=True
+        apsis.refresh(run), after_yields(override, steps), return_exceptions=True
     )
 
     assert [isinstance(r, RunError) for r in results] == errors
@@ -223,4 +233,24 @@ async def test_cancelled_caller_keeps_wait_task(tmp_path, op):
 
         _, waiting = apsis.run_store.query(state=State.waiting)
         assert num_waiting(apsis) == len(list(waiting)), steps
+    await apsis.shut_down()
+
+
+@pytest.mark.asyncio
+async def test_refresh_run_whose_dependency_just_finished(tmp_path):
+    apsis, db = await make_apsis(tmp_path)
+    (tmp_path / "jobs" / "dep.yaml").write_text("program:\n  type: no-op\n")
+    write_job(tmp_path / "jobs", success=False, ready=False, dep=True)
+    await load_without_refresh(apsis, db, tmp_path)
+    run = await apsis.schedule(None, Instance("job", {}))
+    dep = await apsis.schedule(ora.now() + 3600, Instance("dep", {}))
+    await asyncio.sleep(0.01)
+
+    write_job(tmp_path / "jobs", success=True, ready=False, dep=True)
+    await load_without_refresh(apsis, db, tmp_path)
+    # the dependency finishes in the same event loop step the refresh starts in
+    apsis._transition(dep, State.success, force=True)
+    await asyncio.wait_for(apsis.refresh(run), 2)
+    assert run.state == State.waiting
+    assert run.program.success
     await apsis.shut_down()

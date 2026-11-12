@@ -132,3 +132,25 @@ async def test_task_group():
     assert len(group) == 2
     await group.cancel_all()
     assert len(group) == 0
+
+
+@pytest.mark.asyncio
+async def test_wait_for():
+    async def value():
+        return 1
+
+    assert await apsis.lib.asyn.wait_for(value(), None) == 1
+
+    stuck = asyncio.Event()
+    waiter = stuck.wait()
+    with pytest.raises(asyncio.TimeoutError):
+        await apsis.lib.asyn.wait_for(waiter, 0.01)
+    assert waiter.cr_frame is None
+
+    # a cancel that lands after the wrapped coro finished still cancels
+    task = asyncio.ensure_future(apsis.lib.asyn.wait_for(value(), 10))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task

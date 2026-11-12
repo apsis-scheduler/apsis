@@ -80,6 +80,23 @@ async def cancel_task(task, name=None, log=None):
             log.info(f"task cancelled with return: {name}")
 
 
+async def wait_for(coro, timeout: float | None):
+    """
+    Like `asyncio.wait_for`, but a cancel always raises `CancelledError`, even
+    if `coro` has just finished.
+    """
+    task = asyncio.ensure_future(coro)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout)
+    except asyncio.CancelledError:
+        await cancel_task(task)
+        raise
+    if not done:
+        await cancel_task(task)
+        raise asyncio.TimeoutError()
+    return task.result()
+
+
 async def poll(fn, interval, immediate=False):
     """
     Invokes async `fn` every `interval`.

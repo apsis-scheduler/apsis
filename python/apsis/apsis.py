@@ -16,7 +16,7 @@ from .cond.base import PolledCondition, RunStoreCondition, NonmonotonicRunStoreC
 from .host_group import config_host_groups
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
-from .lib.asyn import TaskGroup, Publisher, KeyPublisher
+from .lib.asyn import TaskGroup, Publisher, KeyPublisher, wait_for
 from .lib.py import more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
@@ -853,7 +853,7 @@ async def _wait_loop(apsis, run, timeout):
             else:
                 # Subtract time we have already waited from the timeout.
                 waiting_timeout = timeout - (now() - waiting_time)
-        return asyncio.wait_for(cond_wait, waiting_timeout)
+        return wait_for(cond_wait, waiting_timeout)
 
     if len(conds) > 0:
         apsis.run_log.record(run, f"waiting until: {conds[0]}")
