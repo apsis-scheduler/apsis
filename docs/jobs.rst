@@ -250,12 +250,16 @@ Apsis recreates a run, it uses the current definition of its job, and picks up
 any changes to programs, conditions, and actions.
 
 When Apsis reloads jobs, it also updates the other scheduled and waiting runs of
-each changed job, like runs scheduled by hand and reruns, to the job's current
-program, conditions, and actions, and a waiting run checks its updated
-conditions again from the first one.  If the changed job no longer fits a run,
-the run keeps what it had and its run log says why.  A restart doesn't do
-this, so a run restored after a restart keeps what it had until a reload changes
-its job.
+each changed job, like runs scheduled by hand and reruns.  It binds the run's
+args to the job's current program, conditions, and actions, and a waiting run
+checks its updated conditions again from the first one.  If Apsis can't bind the
+run's args to the job's current definition, for example because the job's
+params changed and no longer match the run's args, it leaves the run's program,
+conditions, and actions unchanged and records the error in the run's log.
+
+Apsis doesn't do this when it restarts.  It restores scheduled and waiting runs
+from its database with the program, conditions, and actions stored there, so a
+restored run changes only when a later reload changes its job.
 
 As a result, these rules generally describe a run's relationship to its job:
 
