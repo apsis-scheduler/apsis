@@ -293,3 +293,9 @@ def test_test_condition_enabled_jso_roundtrip():
     restored = Condition.from_jso(jso)
     assert isinstance(restored, TestThreadPolledCondition)
     assert restored.enabled == '{{ foo == "apple" }}'
+
+
+def test_dependency_states_order():
+    states = [State.skipped, State.error, State.failure, State.success]
+    jso = Dependency("testjob0", states=states, exist=states).to_jso()
+    assert jso["states"] == jso["exist"] == ["success", "failure", "error", "skipped"]
