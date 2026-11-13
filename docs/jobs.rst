@@ -249,16 +249,14 @@ changes to a job's schedules immediately affect future scheduled runs.  When
 Apsis recreates a run, it uses the current definition of its job, and picks up
 any changes to programs, conditions, and actions.
 
-When Apsis reloads jobs, it also updates the other scheduled and waiting runs of
-each changed job, like runs scheduled by hand and reruns.  It binds the run's
-args to the job's current program, conditions, and actions, and a waiting run
-checks its updated conditions again from the first one.  If Apsis can't bind the
-run's args to the job's current definition, for example because the job's
-params changed and no longer match the run's args, it leaves the run's program,
-conditions, and actions unchanged and records the error in the run's log.
-
-Apsis does the same when it restarts, for the scheduled and waiting runs it
-restores from its database.
+When Apsis reloads jobs or restarts, it also updates the other scheduled and
+waiting runs of each changed job, like runs scheduled by hand and reruns.  It
+binds the run's args to the job's current program, conditions, and actions, and
+a waiting run checks its updated conditions again from the first one.  If Apsis
+can't bind the run's args to the job's current definition, for example because
+the job's params changed and no longer match the run's args, it leaves the run's
+program, conditions, and actions unchanged and records the error in the run's
+log.
 
 As a result, these rules generally describe a run's relationship to its job:
 
