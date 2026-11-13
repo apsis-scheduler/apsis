@@ -1,10 +1,14 @@
 import asyncio
+from collections.abc import Coroutine, Hashable
 from contextlib import contextmanager, suppress
+from typing import Any, TypeVar
 import weakref
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 # -------------------------------------------------------------------------------
 
@@ -80,6 +84,25 @@ async def cancel_task(task, name=None, log=None):
             log.info(f"task cancelled with return: {name}")
 
 
+async def wait_for(coro: Coroutine[Any, Any, T], timeout: float | None) -> T:
+    """
+    Like `asyncio.wait_for`, but a cancel that lands just as `coro` finishes
+    still raises `CancelledError`.
+    """
+    task = asyncio.ensure_future(coro)
+    done = set()
+    if timeout is None or timeout > 0:
+        try:
+            done, _ = await asyncio.wait({task}, timeout=timeout)
+        except asyncio.CancelledError:
+            await cancel_task(task)
+            raise
+    if not done:
+        await cancel_task(task)
+        raise asyncio.TimeoutError()
+    return task.result()
+
+
 async def poll(fn, interval, immediate=False):
     """
     Invokes async `fn` every `interval`.
@@ -108,6 +131,10 @@ class TaskGroup:
     def __len__(self):
         return len(self.__tasks)
 
+    def __contains__(self, key: Hashable) -> bool:
+        task = self.__tasks.get(key)
+        return task is not None and not task.done()
+
     def add(self, key, coro):
         task = asyncio.get_event_loop().create_task(coro)
         task.key = key
@@ -121,7 +148,9 @@ class TaskGroup:
             except:
                 logger.warning(f"task: {key}", exc_info=True)
             finally:
-                self.__tasks.pop(key)
+                # a newer task may have taken the key
+                if self.__tasks.get(key) is task:
+                    del self.__tasks[key]
 
         task.add_done_callback(done)
 
