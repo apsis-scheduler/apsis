@@ -63,8 +63,8 @@ app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
 
 
-# the default useradd name pattern, without the trailing $ for machine accounts
-USER_RE = re.compile(r"[a-z_][a-z0-9_-]*")
+# the default useradd name pattern, up to 32 characters, without the trailing $ for machine accounts
+USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 
 
 @app.middleware("request")
@@ -85,8 +85,13 @@ async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     if USER_RE.fullmatch(user) is None:
         return error("missing or invalid X-Remote-User", 401)
     origin = request.headers.get("Origin")
-    if origin is not None and urlsplit(origin).hostname != request.server_name:
-        return error(f"cross origin request from {origin}", 403)
+    if origin is not None:
+        try:
+            origin_host = urlsplit(origin).hostname
+        except ValueError:
+            origin_host = None
+        if origin_host != request.server_name:
+            return error(f"cross origin request from {origin!r}", 403)
     request.ctx.user = user
 
 

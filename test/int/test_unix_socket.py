@@ -62,7 +62,7 @@ def test_serve_unix():
         assert inst.wait_run(run_id)["state"] == "success"
         lines = inst.get_log_lines()
         assert any("/summary unix aaronf:" in l for l in lines)
-        assert any("/summary unix aaronf req-1:" in l for l in lines)
+        assert any("/summary unix aaronf request_id='req-1':" in l for l in lines)
 
 
 def test_user_unix():
@@ -77,11 +77,20 @@ def test_user_unix():
             {"X-Remote-User": "mallory, aaronf"},
             # the kelvin sign lowercases to k
             {"X-Remote-User": "\u212aaaronf".encode()},
+            {"X-Remote-User": "a" * 33},
         ):
             assert anon.get("/api/v1/runs", headers=headers).status_code == 401
 
-        assert client.post("/api/v1/runs", json=LATER_RUN, headers=EVIL).status_code == 403
-        for origin, user, status in (("http://apsis", None, 401), (EVIL["Origin"], USER, 403)):
+        for origin in (EVIL["Origin"], "http://[::1"):
+            assert (
+                client.post("/api/v1/runs", json=LATER_RUN, headers={"Origin": origin}).status_code
+                == 403
+            )
+        for origin, user, status in (
+            ("http://apsis", None, 401),
+            (EVIL["Origin"], USER, 403),
+            ("http://[::1", USER, 403),
+        ):
             with pytest.raises(websockets.exceptions.InvalidStatus) as exc:
                 inst.connect_ws("/api/v1/summary", origin=origin, user=user)
             assert exc.value.response.status_code == status
@@ -209,3 +218,20 @@ def test_serve_unix_rejects_host_or_port(opt):
     )
     assert proc.returncode == 2
     assert "--unix can't be used with --host or --port" in proc.stderr
+
+
+def test_summary_log_escapes_request_id():
+    with ApsisService(unix=True, user=USER) as inst:
+        with socket.socket(socket.AF_UNIX) as sock:
+            sock.connect(str(inst.sock_path))
+            # a raw handshake, since websocket clients refuse control characters in headers
+            sock.sendall(
+                b"GET /api/v1/summary HTTP/1.1\r\nHost: apsis\r\nUpgrade: websocket\r\n"
+                b"Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
+                b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                b"X-Remote-User: aaronf@EXAMPLE.COM\r\nX-Request-ID: req\x1b[2K\r\n\r\n"
+            )
+            assert sock.recv(1024).startswith(b"HTTP/1.1 101")
+    lines = "".join(inst.get_log_lines())
+    assert "/summary unix aaronf request_id='req\\x1b[2K':" in lines
+    assert "\x1b" not in lines

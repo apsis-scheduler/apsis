@@ -680,7 +680,7 @@ async def websocket_summary(request, ws):
         prefix = f"/summary {peer[0]}:{peer[1]}:"
     else:
         req_id = request.headers.get("X-Request-ID")
-        who = request.ctx.user if req_id is None else f"{request.ctx.user} {req_id}"
+        who = request.ctx.user if req_id is None else f"{request.ctx.user} request_id={req_id!r}"
         prefix = f"/summary unix {who}:"
 
     # request.query_args doesn't work correctly for ws endpoints?
