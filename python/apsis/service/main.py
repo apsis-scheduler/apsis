@@ -1,10 +1,13 @@
 import asyncio
 import logging
+import os
 from pathlib import Path
 import sanic
 import sanic.response
 import sanic.router
 import signal
+import socket
+import stat
 
 from apsis import __version__
 from apsis.apsis import Apsis
@@ -92,11 +95,61 @@ def build_apsis(cfg):
     return Apsis(cfg, jobs, db)
 
 
+def check_unix_dir(path: Path) -> None:
+    """
+    Raises `RuntimeError` if another user could replace a folder holding `path`,
+    up to the first sticky one.
+    """
+    parent = Path(os.path.abspath(path.parent))
+    for folder in (parent, *parent.parents):
+        st = os.lstat(folder)
+        if stat.S_ISLNK(st.st_mode):
+            raise RuntimeError(f"socket folder {folder} is a symlink")
+        if st.st_mode & stat.S_ISVTX:
+            return
+        if st.st_uid not in (os.geteuid(), 0):
+            raise RuntimeError(f"socket folder {folder} is owned by another user")
+        if st.st_mode & 0o022:
+            raise RuntimeError(f"socket folder {folder} is writable by group or others")
+
+
+def bind_unix(path: Path) -> socket.socket:
+    """
+    Binds a unix socket at `path` that only its owner and group can connect to,
+    creating its directory and refusing one other users could replace, and
+    replacing a stale socket file but not one a server is listening on.
+    """
+    umask = os.umask(0o022)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    finally:
+        os.umask(umask)
+    check_unix_dir(path)
+    if path.is_socket():
+        with socket.socket(socket.AF_UNIX) as probe:
+            try:
+                probe.connect(str(path))
+            except ConnectionRefusedError:
+                path.unlink()
+            else:
+                raise RuntimeError(f"something is already serving on {path}")
+    sock = socket.socket(socket.AF_UNIX)
+    umask = os.umask(0o117)
+    try:
+        sock.bind(str(path))
+    finally:
+        os.umask(umask)
+    sock.listen()
+    return sock
+
+
 # FIXME: Get host, port from config.
-def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
+def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | None = None):
     """
     Runs the Apsis service.
 
+    :param unix:
+      Path of a unix socket to serve on instead of `host` and `port`.
     :return:
       True if the service should be restarted on exit.
     """
@@ -105,6 +158,8 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.set_debug(True)
+
+    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
 
     apsis = build_apsis(cfg)
 
@@ -115,12 +170,7 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
-    server = app.create_server(
-        host=host,
-        port=port,
-        debug=debug,
-        return_asyncio_server=True,
-    )
+    server = app.create_server(**addr, debug=debug, return_asyncio_server=True)
     server_task = asyncio.ensure_future(server)
 
     # Get Apsis running.
