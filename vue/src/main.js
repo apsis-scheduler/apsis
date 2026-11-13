@@ -1,4 +1,5 @@
 import './styles/index.scss'
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 
 import App from './App'
 import router from './router'
