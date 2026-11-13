@@ -1,4 +1,5 @@
-from collections import namedtuple
+import asyncio
+from collections import defaultdict, namedtuple
 import itertools
 import jinja2
 import logging
@@ -6,17 +7,25 @@ import ora
 from ora import now, Time
 import re
 import shlex
-from typing import Iterable, Iterator
+from typing import TYPE_CHECKING, Iterable, Iterator
 
 import ujson
 
 from .states import State, TRANSITIONS, ACTIVE_STATES, to_state
 from .lib.asyn import Publisher
 from .lib.calendar import get_calendar
+from .lib.itr import chunks
 from .lib.memo import memoize
 from .lib.py import format_ctor, iterize
 
+if TYPE_CHECKING:
+    from .run_window import RunWindow, WindowSpec
+
 log = logging.getLogger(__name__)
+
+# Chosen empirically to balance performance and GC pressure. Smaller batches can be deallocated before they cause a
+# gen 0 collection
+SUMMARY_PAGE_SIZE = 256
 
 # -------------------------------------------------------------------------------
 
@@ -405,12 +414,16 @@ class RunStore:
 
     Message = namedtuple("Message", ("run_id", "job_id", "args", "state"))
 
-    def __init__(self, db, *, min_timestamp):
+    def __init__(self, db, *, lookback: float | None):
+        """
+        :param lookback:
+          Max run age in seconds for lookback limited queries, or None for no limit.
+        """
         self.__run_db = db.run_db
         self.__summary_db = db.run_summary_db
         self.__next_run_id_db = db.next_run_id_db
 
-        self.__min_timestamp = min_timestamp
+        self.__lookback = lookback
 
         # in-memory storage of scheduled runs that came from a schedule ie not reruns or adhoc runs
         # all runs are not expected unless they came from the scheduler
@@ -421,9 +434,20 @@ class RunStore:
         # query(); evicted on transition to a finished state.
         self.__active_runs: dict[str, Run] = {}
 
+        # job IDs of runs with each label, from every updated run and once
+        # loaded from runs in the lookback window
+        self.__label_jobs: defaultdict[str, set[str]] = defaultdict(set)
+        self.__label_jobs_loaded = False
+
         # Publisher for run transitions.  Messages are `Message` objects;
         # `state` is none if the run is removed.
         self.publisher = Publisher()
+
+    def __min_timestamp(self) -> Time | None:
+        """
+        The oldest run timestamp in the lookback window as of now, or None for no limit.
+        """
+        return None if self.__lookback is None else now() - self.__lookback
 
     def __query_run_db(self, *args, min_timestamp=None, **kwargs) -> list[Run]:
         """
@@ -455,6 +479,9 @@ class RunStore:
 
         Persists the run if necessary.
         """
+        for label in run.meta.get("job", {}).get("labels", ()):
+            self.__label_jobs[label].add(run.inst.job_id)
+
         # Persist the changes, but not for expected runs.
         if not run.expected:
             self.__run_db.upsert(run)
@@ -560,7 +587,7 @@ class RunStore:
         :param state:
           Limits results to runs in the specified state(s).
         :param since:
-          Return only runs with timestamp >= since. Bounded to RunStore min_timestamp if limit_lookback=True.
+          Return only runs with timestamp >= since. Bounded to the lookback window if limit_lookback=True.
         :param args:
           Limits results to runs with exactly the specified args.
         :param with_args:
@@ -644,22 +671,21 @@ class RunStore:
             in_memory = (r for r in in_memory if r.inst.job_id == job_id)
 
         # compute effective min_timestamp for DB query
-        if limit_lookback and self.__min_timestamp is not None:
+        lookback_ts = self.__min_timestamp() if limit_lookback else None
+        if lookback_ts is not None:
             if since is not None:
                 # use the more restrictive of user's since or lookback window
-                min_ts = max(self.__min_timestamp, ora.Time(since))
+                min_ts = max(lookback_ts, ora.Time(since))
             else:
                 # just use lookback window
-                min_ts = self.__min_timestamp
+                min_ts = lookback_ts
         else:
             # no lookback, but respect user's since if provided
             min_ts = ora.Time(since) if since is not None else None
 
-        # apply the same time filter to in-memory runs so lookback semantics
-        # are consistent regardless of whether a run lives in the mirror or
-        # only in SQLite.
-        if min_ts is not None:
-            in_memory = (r for r in in_memory if r.timestamp >= min_ts)
+        # the lookback applies to active runs in memory like the db, not to expected runs
+        if lookback_ts is not None:
+            in_memory = (r for r in in_memory if r.expected or r.timestamp >= lookback_ts)
 
         # materialize in-memory results so we can filter DB rows to avoid
         # duplicating active runs that are also persisted.
@@ -739,14 +765,86 @@ class RunStore:
         next_cursor = page[-1].run_id if page and len(merged) > limit else None
         return page, next_cursor
 
-    def summaries(self) -> Iterator[str]:
+    def summaries(self) -> Iterator[list[str]]:
+        """
+        Yields run summary messages as json strings in pages of at most
+        `SUMMARY_PAGE_SIZE`, with expected runs first.
+        """
         from .lib.api import run_to_summary_jso
 
         # expected (scheduled) runs are only in-memory; emit them first.
-        for run in list(self.__expected_runs.values()):
-            yield ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(run)})
+        for runs in chunks(list(self.__expected_runs.values()), SUMMARY_PAGE_SIZE):
+            yield [
+                ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(r)})
+                for r in runs
+            ]
 
-        yield from self.__summary_db.query(min_timestamp=self.__min_timestamp)
+        yield from self.__summary_db.query(min_timestamp=self.__min_timestamp())
+
+    def expected_summaries(self, job_ids: frozenset[str]) -> list[str]:
+        """
+        Returns summary messages of expected runs of `job_ids`.
+        """
+        from .lib.api import run_to_summary_jso
+
+        return [
+            ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(r)})
+            for r in self.__expected_runs.values()
+            if r.inst.job_id in job_ids
+        ]
+
+    def job_summaries(self, job_id: str, *, page_size: int) -> Iterator[list[str]]:
+        """
+        Yields pages of summary messages of `job_id` runs in the lookback
+        window, newest run first, excluding expected runs.
+        """
+        return self.__summary_db.query_job(
+            job_id, min_timestamp=self.__min_timestamp(), page_size=page_size
+        )
+
+    async def load_label_jobs(self) -> None:
+        """
+        Loads the job IDs of runs with each label in the lookback window.
+        """
+        pairs = set()
+        for page in self.__summary_db.query_labels(self.__min_timestamp()):
+            pairs.update(page)
+            await asyncio.sleep(0)
+        for job_id, labels in pairs:
+            for label in ujson.loads(labels or "[]"):
+                self.__label_jobs[label].add(job_id)
+        self.__label_jobs_loaded = True
+
+    async def query_window(self, spec: "WindowSpec") -> "RunWindow":
+        """
+        Returns the `RunWindow` for `WindowSpec` `spec` over expected runs
+        and runs in the lookback window.
+        """
+        from .run_window import query_window
+
+        return await query_window(
+            self.__run_db,
+            self.__expected_runs,
+            spec,
+            min_timestamp=self.__min_timestamp(),
+            label_jobs=self.__label_jobs if self.__label_jobs_loaded else None,
+        )
+
+    def get_summaries(self, run_ids: list[str]) -> list[str]:
+        """
+        Returns summary messages of `run_ids` in order, skipping unknown runs.
+        """
+        from .lib.api import run_to_summary_jso
+
+        expected = self.__expected_runs
+        payloads = self.__summary_db.get_payloads(r for r in run_ids if r not in expected)
+        return [
+            ujson.dumps({"type": "run_summary", "run_summary": run_to_summary_jso(expected[r])})
+            if r in expected
+            else payloads[r]
+            for r in run_ids
+            if r in expected or r in payloads
+        ]
 
     def count_runs(
         self, *, job_id=None, state=None, args=None, with_args=None, limit_lookback=True
@@ -777,7 +875,7 @@ class RunStore:
                 r for r in expected if all(r.inst.args.get(k) == v for k, v in with_args.items())
             )
 
-        min_ts = self.__min_timestamp if limit_lookback else None
+        min_ts = self.__min_timestamp() if limit_lookback else None
         return len(list(expected)) + self.__run_db.count_runs(
             job_id=job_id,
             state=state,

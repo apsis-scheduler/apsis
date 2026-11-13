@@ -17,7 +17,8 @@ from .host_group import config_host_groups
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
 from .lib.asyn import TaskGroup, Publisher, KeyPublisher, wait_for
-from .lib.py import more_gc_stats
+from .lib.parse import nparse_duration
+from .lib.py import get_cfg, more_gc_stats
 from .lib.sys import to_signal
 from .output import OutputStore
 from .program.base import _InternalProgram
@@ -95,16 +96,7 @@ class Apsis:
         # Actions applied to all runs.
         self.__actions = [Action.from_jso(o) for o in cfg["actions"]]
 
-        # Calculate how far back we should load runs into the run store.
-        try:
-            lookback = cfg["runs"]["lookback"]
-        except KeyError:
-            min_timestamp = None
-        else:
-            # NOTE: min_timestamp is frozen at process start; the effective query window grows with uptime. Fine for a
-            # typical weekly restart cadence
-            min_timestamp = now() - lookback
-        self.run_store = RunStore(db, min_timestamp=min_timestamp)
+        self.run_store = RunStore(db, lookback=get_lookback(cfg))
 
         self.outputs = OutputStore(db.output_db)
 
@@ -199,6 +191,8 @@ class Apsis:
     def start_loops(self):
         # Start a loop to monitor the async event loop.
         self.__tasks.add("check_async", self.__check_async())
+
+        self.__tasks.add("load_label_jobs", self.run_store.load_label_jobs())
 
         # Set up the scheduler.
         log.info("starting scheduler loop")
@@ -487,6 +481,8 @@ class Apsis:
         # Create the run and add it to the run store, which assigns it a run ID
         # and persists it.
         run = Run(inst, expected=expected)
+        # runs that fail to validate or bind keep their schedule time
+        run.times["schedule"] = times["schedule"]
         self.run_store.add(run)
 
         # Check that the run is valid and get it ready.
@@ -916,11 +912,24 @@ async def _wait_loop(apsis, run, timeout):
         apsis._start(run)
 
 
+def get_lookback(cfg: dict) -> float | None:
+    """
+    Returns `runs.lookback` in seconds, or None for no lookback.
+
+    :raise ValueError:
+      The lookback isn't a positive duration.
+    """
+    lookback = nparse_duration(get_cfg(cfg, "runs.lookback", None))
+    if lookback is not None and lookback <= 0:
+        raise ValueError(f"runs.lookback must be positive: {lookback}")
+    return lookback
+
+
 def _unschedule_runs(apsis, job_id):
     """
     Deletes all scheduled expected runs of `job_id`.
     """
-    _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled)
+    _, runs = apsis.run_store.query(job_id=job_id, state=State.scheduled, limit_lookback=False)
     runs = [r for r in runs if r.expected]
 
     for run in runs:

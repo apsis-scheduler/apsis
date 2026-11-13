@@ -17,7 +17,7 @@ from .cond.base import Condition
 from .jobs import jso_to_job, job_to_jso
 from .lib import itr, py
 from .lib.timing import Timer
-from .runs import Instance, Run, run_number
+from .runs import SUMMARY_PAGE_SIZE, Instance, Run, run_number
 from .states import State
 from .program import Program, Output, OutputMetadata
 
@@ -302,6 +302,22 @@ sa.Index("idx_runs_job_args", TBL_RUNS.c.job_id, TBL_RUNS.c.args)
 # not a scan and sort
 # rowid is the immutable run number so it is a stable cursor
 sa.Index("idx_runs_job_rowid", TBL_RUNS.c.job_id, TBL_RUNS.c.rowid)
+# a job's runs by rowid with their run IDs and timestamps
+sa.Index(
+    "idx_runs_job_cover",
+    TBL_RUNS.c.job_id,
+    TBL_RUNS.c.rowid,
+    TBL_RUNS.c.run_id,
+    TBL_RUNS.c.timestamp,
+)
+
+# schedule time of a run, written the same as idx_runs_schedule
+SCHEDULE_TIME_SQL = "json_extract(times, '$.schedule')"
+# labels of the job when the run was created
+RUN_LABELS_SQL = "json_extract(meta, '$.job.labels')"
+sa.Index("idx_runs_schedule", sa.func.json_extract(TBL_RUNS.c.times, "$.schedule"))
+# indexes that run window queries name with INDEXED BY
+WINDOW_INDEXES = frozenset({"idx_runs_schedule", "idx_runs_job_args"})
 
 TBL_RUNS_SELECT = sa.select(
     [
@@ -332,6 +348,16 @@ class RunDB:
         self.__engine = engine
         self.__connection = engine.raw_connection()
         # FIXME: Do we need to clean this up?
+        self.has_window_indexes = self.__check_window_indexes()
+
+    def __check_window_indexes(self) -> bool:
+        """
+        Returns true if every index in `WINDOW_INDEXES` exists.
+        """
+        rows = self.__connection.connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        ).fetchall()
+        return WINDOW_INDEXES <= {name for (name,) in rows}
 
     @staticmethod
     def __build_where(
@@ -622,6 +648,132 @@ class RunDB:
         )
         return runs
 
+    @staticmethod
+    def __window_columns(labels: bool) -> str:
+        """
+        Returns window row columns, with run labels as a json array or null.
+        """
+        labels = RUN_LABELS_SQL if labels else "NULL"
+        return f"rowid, run_id, {SCHEDULE_TIME_SQL}, job_id, args, state, timestamp, {labels}"
+
+    def schedule_page(
+        self,
+        *,
+        desc: bool,
+        time: str,
+        rowid: int | None,
+        limit: int,
+        labels: bool = False,
+        min_time: str | None = None,
+    ) -> list[tuple[int, str, str, str, str, str, float, str | None]]:
+        """
+        Returns up to `limit` window rows nearest `time` by schedule time.
+
+        With `desc`, returns runs scheduled before `time`, latest first, else
+        runs scheduled at or after it, earliest first.  To continue a walk,
+        pass the schedule time and rowid of the last row as `time` and `rowid`.
+        Requires idx_runs_schedule.
+
+        :param labels:
+          If true, include run labels.
+        :param min_time:
+          If not none, only runs scheduled at or after it.
+        """
+        E = SCHEDULE_TIME_SQL
+        if desc:
+            where = f"{E} < :t" if rowid is None else f"{E} <= :t AND ({E} < :t OR rowid < :r)"
+            order = "DESC"
+        else:
+            where = f"{E} >= :t" if rowid is None else f"{E} >= :t AND ({E} > :t OR rowid > :r)"
+            order = "ASC"
+        if min_time is not None:
+            where += f" AND {E} >= :m"
+        return self.__connection.connection.execute(
+            f"SELECT {self.__window_columns(labels)} FROM runs INDEXED BY idx_runs_schedule"
+            f" WHERE {where} ORDER BY {E} {order}, rowid {order} LIMIT :n",
+            {"t": time, "r": rowid, "n": limit, "m": min_time},
+        ).fetchall()
+
+    def job_page(
+        self, job_id: str, *, max_rowid: int, limit: int, labels: bool = False
+    ) -> list[tuple[int, str, str | None, str, str, str, float, str | None]]:
+        """
+        Returns up to `limit` window rows of `job_id` below `max_rowid`, by
+        rowid descending.
+        """
+        return self.__connection.connection.execute(
+            f"SELECT {self.__window_columns(labels)} FROM runs"
+            " WHERE job_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT ?",
+            (job_id, max_rowid, limit),
+        ).fetchall()
+
+    def get_job_ids(self) -> list[str]:
+        """
+        Returns the job IDs of all runs.
+        """
+        # seeks the job ID index once per job instead of reading every run
+        return [
+            j
+            for (j,) in self.__connection.connection.execute(
+                "WITH RECURSIVE ids(job_id) AS (SELECT min(job_id) FROM runs"
+                " UNION ALL SELECT (SELECT min(job_id) FROM runs WHERE job_id > ids.job_id)"
+                " FROM ids WHERE ids.job_id IS NOT NULL)"
+                " SELECT job_id FROM ids WHERE job_id IS NOT NULL"
+            )
+        ]
+
+    def count_job_rows(self, job_ids: Iterable[str], cap: int) -> int:
+        """
+        Returns the number of runs of `job_ids`, counting at most `cap`.
+        """
+        ((count,),) = self.__connection.connection.execute(
+            "SELECT count(*) FROM (SELECT 1 FROM runs"
+            " WHERE job_id IN (SELECT value FROM json_each(?)) LIMIT ?)",
+            (json.dumps(list(job_ids)), cap),
+        ).fetchall()
+        return count
+
+    def group_stats(
+        self,
+        job_id: str,
+        args: str,
+        states: Iterable[str],
+        min_timestamp: ora.Time | None,
+        *,
+        earliest: bool,
+        labels: Iterable[str] = (),
+    ) -> tuple[int | None, str | None, str | None, int]:
+        """
+        Returns the rowid, run ID, and schedule time of the earliest or latest
+        run of `job_id` with canonical `args`, a schedule time, a state in
+        `states`, all of `labels`, and a timestamp at least `min_timestamp`, by
+        schedule time then rowid, and the number of such runs.
+        """
+        E = SCHEDULE_TIME_SQL
+        labels = list(labels)
+        where = (
+            "job_id = :job_id AND args = :args AND state IN (SELECT value FROM json_each(:states))"
+            f" AND timestamp >= :min_ts AND {E} IS NOT NULL"
+        ) + "".join(
+            f" AND EXISTS (SELECT 1 FROM json_each({RUN_LABELS_SQL}) WHERE value = :label{i})"
+            for i in range(len(labels))
+        )
+        order = "ASC" if earliest else "DESC"
+        row = self.__connection.connection.execute(
+            f"SELECT rowid, run_id, {E},"
+            f" (SELECT count(*) FROM runs INDEXED BY idx_runs_job_args WHERE {where})"
+            f" FROM runs INDEXED BY idx_runs_job_args WHERE {where}"
+            f" ORDER BY {E} {order}, rowid {order} LIMIT 1",
+            {
+                "job_id": job_id,
+                "args": args,
+                "states": json.dumps(list(states)),
+                "min_ts": float("-inf") if min_timestamp is None else dump_time(min_timestamp),
+                **{f"label{i}": label for i, label in enumerate(labels)},
+            },
+        ).fetchone()
+        return (None, None, None, 0) if row is None else row
+
     def count_runs(
         self,
         *,
@@ -649,10 +801,6 @@ class RunDB:
 
 
 # -------------------------------------------------------------------------------
-
-# Chosen empirically to balance performance and GC pressure. Smaller batches can be deallocated before they cause a
-# gen 0 collection
-_SUMMARY_BATCH_SIZE = 256
 
 
 class RunSummaryDB:
@@ -693,7 +841,10 @@ class RunSummaryDB:
         )
         self.__connection.connection.commit()
 
-    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[str]:
+    def query(self, min_timestamp: ora.Time | None = None) -> Iterator[list[str]]:
+        """
+        Yields run summary payloads newest first, one list per DB page.
+        """
         # Use independent paged queries to prevent holding a read cursor across the yield, which seems to cause
         # write-lock errors when paired with litestream. Note that his problem isn't fully understood and hasn't been
         # satisfactorily reproduced in isolation.
@@ -711,7 +862,7 @@ class RunSummaryDB:
                 if max_ts is not None:
                     stmt = stmt.where(self.TABLE.c.timestamp < max_ts)
                 stmt = stmt.order_by(self.TABLE.c.timestamp.desc())
-                stmt = stmt.limit(_SUMMARY_BATCH_SIZE)
+                stmt = stmt.limit(SUMMARY_PAGE_SIZE)
                 rows = conn.execute(stmt).fetchall()
 
             if not rows:
@@ -722,11 +873,73 @@ class RunSummaryDB:
             payloads = [r[1] for r in rows]
             del rows
 
-            yield from payloads
+            yield payloads
 
             del payloads
-            if count < _SUMMARY_BATCH_SIZE:
+            if count < SUMMARY_PAGE_SIZE:
                 break
+
+    def get_payloads(self, run_ids: Iterable[str]) -> dict[str, str]:
+        """
+        Returns summary payloads of `run_ids` by run ID, skipping missing runs.
+        """
+        return dict(
+            self.__connection.connection.execute(
+                "SELECT run_id, payload FROM run_summary"
+                " WHERE run_id IN (SELECT value FROM json_each(?))",
+                (json.dumps(list(run_ids)),),
+            ).fetchall()
+        )
+
+    def query_labels(
+        self, min_timestamp: ora.Time | None
+    ) -> Iterator[list[tuple[str, str | None]]]:
+        """
+        Yields pages of the job ID and labels json of runs with timestamp at
+        least `min_timestamp`.
+        """
+        ts = float("-inf") if min_timestamp is None else dump_time(min_timestamp)
+        rowid = 0
+        while rows := self.__connection.connection.execute(
+            "SELECT timestamp, rowid, json_extract(payload, '$.run_summary.job_id'),"
+            " json_extract(payload, '$.run_summary.labels') FROM run_summary"
+            " WHERE (timestamp, rowid) > (?, ?) ORDER BY timestamp, rowid LIMIT ?",
+            (ts, rowid, SUMMARY_PAGE_SIZE),
+        ).fetchall():
+            yield [(job_id, labels) for _, _, job_id, labels in rows]
+            ts, rowid = rows[-1][:2]
+
+    def query_job(
+        self, job_id: str, *, min_timestamp: ora.Time | None, page_size: int
+    ) -> Iterator[list[str]]:
+        """
+        Yields pages of summary payloads of `job_id` runs, newest run first.
+
+        Each page reads the next `page_size` runs of the job in its own
+        transaction and keeps those with timestamp at least `min_timestamp`.
+        """
+        stmt = sa.text("""
+            SELECT r.rowid, s.payload
+            FROM runs r
+            LEFT JOIN run_summary s ON s.run_id = r.run_id AND r.timestamp >= :min_ts
+            WHERE r.job_id = :job_id AND r.rowid < :max_rowid
+            ORDER BY r.rowid DESC
+            LIMIT :limit
+        """)
+        params = {
+            "min_ts": float("-inf") if min_timestamp is None else dump_time(min_timestamp),
+            "job_id": job_id,
+            "max_rowid": 2**63 - 1,
+            "limit": page_size,
+        }
+        while True:
+            with self.__engine.begin() as conn:
+                rows = conn.execute(stmt, params).fetchall()
+            payloads = [p for _, p in rows if p is not None]
+            yield payloads
+            if len(rows) < page_size:
+                break
+            params["max_rowid"] = rows[-1][0]
 
 
 # -------------------------------------------------------------------------------
