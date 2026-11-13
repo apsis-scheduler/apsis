@@ -221,7 +221,8 @@ def main():
         metavar="PATH",
         type=Path,
         default=None,
-        help="serve on a unix socket at PATH instead of HOST and PORT",
+        help="serve on a unix socket at PATH instead of HOST and PORT, "
+        "whose folders must not be replaceable by other users",
     )
     cmd.add_argument(
         "--config",
