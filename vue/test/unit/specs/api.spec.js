@@ -22,4 +22,8 @@ describe('Urls', () => {
   test('run URL matches', () => {
     expect(api.getRunUrl('r1234').href).toEqual('http://localhost/api/v1/runs/r1234')
   })
+
+  test('whoami URL matches', () => {
+    expect(api.getWhoamiUrl().href).toEqual('http://localhost/api/v1/whoami')
+  })
 })
