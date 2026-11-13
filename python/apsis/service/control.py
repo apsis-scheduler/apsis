@@ -17,6 +17,8 @@ API = sanic.Blueprint("control")
 
 @API.route("/debug")
 async def on_debug(request):
+    if request.app.authenticated:
+        return error("debug is disabled on a unix socket", 403)
     breakpoint()
     return response_json({})
 
@@ -27,7 +29,7 @@ async def on_reload_jobs(request):
     dry_run = to_bool(dry_run)
     try:
         rem_ids, add_ids, chg_ids = await apsis.apsis.reload_jobs(
-            request.app.apsis, dry_run=dry_run
+            request.app.apsis, dry_run=dry_run, user=request.ctx.user
         )
     except JobsDirErrors as exc:
         return error(exc, job_errors=[[str(e.job_id), str(e)] for e in exc.errors])
@@ -52,7 +54,7 @@ async def on_shut_down(request):
     request.json  # FIXME: Ignored.
 
     # Request to restart after shutdown.
-    log.info(f"shut down starting; restart={restart}")
+    log.info(apsis.apsis.by_user(f"shut down starting; restart={restart}", request.ctx.user))
     request.app.restart = restart
 
     # Shut down the application.
