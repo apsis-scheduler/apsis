@@ -1,4 +1,4 @@
-from apsis.states import State, reachable
+from apsis.states import State, reachable, states_to_jso
 
 # -------------------------------------------------------------------------------
 
@@ -23,3 +23,11 @@ def test_reachable():
     assert reachable(State.failure) == {State.failure}
     assert reachable(State.skipped) == {State.skipped, State.error}
     assert reachable(State.error) == {State.error}
+
+
+def test_states_to_jso_order():
+    assert states_to_jso({State.skipped, State.error, State.success}) == [
+        "success",
+        "error",
+        "skipped",
+    ]
