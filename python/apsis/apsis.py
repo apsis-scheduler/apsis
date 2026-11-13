@@ -565,6 +565,9 @@ class Apsis:
 
         if run.state == State.waiting:
             await self.__cancel_wait(run, "refresh")
+            # the run now has no wait task until the finally below starts one.
+            # don't await anything in between, since a caller cancelled there
+            # would leave the run waiting forever with nothing checking it
         elif not self.scheduled.unschedule(run):
             raise RunError(f"can't refresh {run.run_id}, it isn't on the schedule")
 
@@ -647,6 +650,8 @@ class Apsis:
         """
         while run.run_id in self.__wait_tasks:
             await self.__wait_tasks.cancel(run.run_id)
+        # don't await anything after the loop, so the caller can't be cancelled
+        # between the wait ending and what it does with the run next
         if run.state != State.waiting:
             raise RunError(f"can't {operation} {run.run_id} in state {run.state.name}")
 

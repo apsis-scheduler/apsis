@@ -254,9 +254,10 @@ waiting runs of each changed job, like runs scheduled by hand and reruns.  It
 binds the run's args to the job's current program, conditions, and actions, and
 a waiting run checks its updated conditions again from the first one.  If Apsis
 can't bind the run's args to the job's current definition, for example because
-the job's params changed and no longer match the run's args, it leaves the run's
-program, conditions, and actions unchanged and records the error in the run's
-log.
+the job's params changed and no longer match the run's args, the run doesn't
+transition to error.  It stays scheduled or waiting with the program,
+conditions, and actions it already had, and Apsis adds a message to its run log
+that says why.
 
 As a result, these rules generally describe a run's relationship to its job:
 
@@ -269,7 +270,4 @@ As a result, these rules generally describe a run's relationship to its job:
 
 3. If you rerun a run, the rerun always reflects its job's current program,
    conditions, and actions.
-
-A run that has already started won't pick up changes, so kill it if necessary
-and rerun it.
 
