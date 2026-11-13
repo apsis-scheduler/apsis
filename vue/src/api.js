@@ -53,7 +53,8 @@ export function getRunUrl(run_id) {
 
 /**
  * Returns the summary websocket URL with init for `scope`, an object with
- * optional `types`, `job_ids` and `dependents_of` arrays.
+ * optional `types`, `job_ids` and `dependents_of` arrays, and `window`, an
+ * array of run window `[param, value]` pairs.
  */
 export function getSummaryUrl(scope = {}) {
   const url = getUrl('summary')
@@ -66,6 +67,8 @@ export function getSummaryUrl(scope = {}) {
     params.push('job_id=' + encodeURIComponent(job_id))
   for (const job_id of scope.dependents_of || [])
     params.push('dependents_of=' + encodeURIComponent(job_id))
+  for (const [param, value] of scope.window || [])
+    params.push(param + '=' + encodeURIComponent(value))
   url.search = '?' + params.join('&')
   return url
 }

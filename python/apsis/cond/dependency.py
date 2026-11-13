@@ -3,7 +3,7 @@ import logging
 from apsis.lib.json import check_schema
 from apsis.lib.py import format_ctor, iterize
 from apsis.runs import Instance, get_bind_args, template_expand
-from apsis.states import State, reachable
+from apsis.states import State, reachable, state_names
 from .base import RunStoreCondition, _bind
 
 log = logging.getLogger(__name__)
@@ -68,9 +68,9 @@ class Dependency(RunStoreCondition):
             "args": self.args,
         }
         if self.states != {self.DEFAULT_STATE}:
-            jso["states"] = [s.name for s in self.states]
+            jso["states"] = state_names(self.states)
         if self.exist is not None:
-            jso["exist"] = [s.name for s in self.exist]
+            jso["exist"] = state_names(self.exist)
         return jso
 
     @classmethod
