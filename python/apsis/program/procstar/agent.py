@@ -29,7 +29,7 @@ from apsis.program.base import (
     get_global_runtime_timeout,
 )
 from apsis.program.process import Stop, BoundStop
-from apsis.runs import join_args, template_expand
+from apsis.runs import is_template, join_args, template_expand
 
 log = logging.getLogger(__name__)
 
@@ -342,9 +342,9 @@ class Resources:
     Specification for resource limits for a running job.
     """
 
-    # A positive number of GB (10**9 bytes), or `None` to inherit the
-    # configured default.
-    mem_max_gb: int | float | None = None
+    # A positive number of GB (10**9 bytes), a template expanding to one, or
+    # `None` to inherit the configured default.
+    mem_max_gb: int | float | str | None = None
 
     def to_jso(self):
         return if_not_none("mem_max_gb", self.mem_max_gb)
@@ -352,11 +352,19 @@ class Resources:
     @classmethod
     def from_jso(cls, jso: dict):
         with check_schema(jso) as pop:
-            mem_max_gb = _parse_mem_max_gb(pop("mem_max_gb", default=None))
+            mem_max_gb = pop("mem_max_gb", default=None)
+        if not is_template(mem_max_gb):
+            # Parse a literal now, so a bad value is caught when the job is
+            # loaded.  A template can only be checked once args are known.
+            mem_max_gb = _parse_mem_max_gb(mem_max_gb)
         return cls(mem_max_gb=mem_max_gb)
 
     def bind(self, args):
-        return BoundResources(mem_max_gb=self.mem_max_gb)
+        mem_max_gb = self.mem_max_gb
+        if isinstance(mem_max_gb, str):
+            # `from_jso` parses a literal, so only a template is still a string.
+            mem_max_gb = _parse_mem_max_gb(template_expand(mem_max_gb, args))
+        return BoundResources(mem_max_gb=mem_max_gb)
 
 
 @dataclass

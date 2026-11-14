@@ -117,6 +117,48 @@ def test_systemd_properties():
         )
 
 
+def _mem_max_program(mem_max_gb):
+    return Program.from_jso(
+        {
+            "type": "apsis.program.procstar.agent.ProcstarShellProgram",
+            "command": "/usr/bin/true",
+            "resources": {"mem_max_gb": mem_max_gb},
+        }
+    )
+
+
+def test_mem_max_gb_template():
+    # A template is kept unexpanded until the program is bound.
+    program = _mem_max_program("{{ mem_limit }}")
+    assert program.resources.mem_max_gb == "{{ mem_limit }}"
+    assert program.bind({"mem_limit": "150"}).resources.mem_max_gb == 150
+
+    running = program.bind({"mem_limit": "150"}).run("r123", {})
+    assert running._spec.to_jso()["systemd_properties"]["slice"]["memory_max"] == 150 * 10**9
+
+    # The same job can bind a different limit per run.
+    assert program.bind({"mem_limit": "2"}).resources.mem_max_gb == 2
+
+
+def test_mem_max_gb_template_bad_value():
+    # A template that does not expand to a positive number fails when bound,
+    # since there is nothing to check at load.
+    program = _mem_max_program("{{ mem_limit }}")
+    for value in ("", "none", "-1", "0"):
+        with pytest.raises(SchemaError):
+            program.bind({"mem_limit": value})
+    with pytest.raises(NameError):
+        program.bind({})
+
+
+def test_mem_max_gb_literal_unchanged():
+    # A literal is still parsed and normalized at load, including a quoted one.
+    for value, expected in ((2, 2), (1.5, 1.5), ("16", 16)):
+        program = _mem_max_program(value)
+        assert program.resources.mem_max_gb == expected
+        assert program.bind({}).resources.mem_max_gb == expected
+
+
 def _spec_env(bound, args=None, run_id="r123", job_id="job1", cfg={}):
     """Runs `bound`, applies job ID and run args (as `_start` does), returns the proc spec env."""
     running = bound.run(run_id, cfg)
