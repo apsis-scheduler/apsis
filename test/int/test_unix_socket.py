@@ -191,19 +191,13 @@ def test_serve_unix_refuses_running_server():
             assert client.get("/api/v1/running").status_code == 200
 
 
-def test_serve_unix_refuses_group_writable_dir():
+def test_serve_unix_warns_about_group_writable_dir():
     inst = ApsisService(unix=True)
-    inst.write_cfg()
     inst.tmp_dir.chmod(0o770)
-    proc = subprocess.run(
-        ["apsisctl", "serve", "--config", inst.cfg_path, "--unix", inst.sock_path],
-        stderr=subprocess.PIPE,
-        text=True,
-        timeout=30,
-    )
-    assert proc.returncode != 0
-    assert f"socket folder {inst.tmp_dir} is writable by group or others" in proc.stderr
-    assert not inst.sock_path.exists()
+    with inst:
+        assert inst.sock_path.stat().st_mode & 0o777 == 0o660
+    lines = "".join(inst.get_log_lines())
+    assert f"socket folder {inst.tmp_dir} is writable by group or others" in lines
 
 
 def test_bind_unix_refuses_bound_socket(tmp_path):
