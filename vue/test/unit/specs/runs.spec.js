@@ -166,3 +166,10 @@ test('isRunWindowStale', () => {
   expect(runs.isRunWindowStale({...at('2026-10-14T10:00:00Z'), runWindowStale: true}, false)).toBe(true)
   expect(runs.isRunWindowStale(at('2026-10-14T10:00:00Z', null), true)).toBe(false)
 })
+
+test('retryAttempt describes the attempt and whether a retry is coming', () => {
+  expect(runs.retryAttempt(undefined, 'failure')).toBe(null)
+  expect(runs.retryAttempt({attempt: 1, count: 2, original: 'r100'}, 'running')).toBe('attempt 2 of 3')
+  expect(runs.retryAttempt({attempt: 0, count: 2, pending: true}, 'failure')).toBe('attempt 1 of 3, retry pending')
+  expect(runs.retryAttempt({attempt: 2, count: 2, original: 'r100', pending: false}, 'error')).toBe('attempt 3 of 3, no retry coming')
+})
