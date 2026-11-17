@@ -456,7 +456,7 @@ class Apsis:
 
     # FIXME: Move the API elsewhere.
 
-    async def schedule(self, time, inst, *, expected=False, stop_time=None):
+    async def schedule(self, time, inst, *, expected=False, stop_time=None, meta={}):
         """
         Creates and schedules a new run.
 
@@ -467,6 +467,8 @@ class Apsis:
           is run now, instead of scheduled.
         :param stop_time:
           If not none, time at which to stop the program.
+        :param meta:
+          Initial run metadata.
         :return:
           The run, either scheduled or error.
         """
@@ -481,6 +483,7 @@ class Apsis:
         # Create the run and add it to the run store, which assigns it a run ID
         # and persists it.
         run = Run(inst, expected=expected)
+        run.meta.update(meta)
         # runs that fail to validate or bind keep their schedule time
         run.times["schedule"] = times["schedule"]
         self.run_store.add(run)
@@ -682,17 +685,21 @@ class Apsis:
         self.run_store.get(run_id)
         return self.__db.run_log_db.query(run_id=run_id)
 
-    async def rerun(self, run, *, time=None):
+    async def rerun(self, run, *, time=None, meta={}):
         """
         Creates a rerun of `run`.
 
         :param time:
           The time at which to schedule the rerun.  If `None`, runs the rerun
           immediately.
+        :param meta:
+          Initial metadata for the rerun.
         """
         # Create the new run.
         log.info(f"rerun: {run.run_id} at {time or 'now'}")
-        new_run = await self.schedule(time, run.inst, stop_time=run.times.get("stop", None))
+        new_run = await self.schedule(
+            time, run.inst, stop_time=run.times.get("stop", None), meta=meta
+        )
         self.run_log.info(new_run, f"scheduled as rerun of {run.run_id}")
         return new_run
 

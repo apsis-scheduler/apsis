@@ -16,6 +16,7 @@ A job config contains these top-level keys:
 - `metadata` (optional), additional information not interpreted by Apsis
 - `conditions` (optional) that must be met for a run
 - `actions` (optional) to take when a run changes state
+- `retry` (optional), to rerun a run that fails
 
 For durations in seconds, you may also use durations like `30s`, `10 min` (600
 seconds), `1.5h` (5400 seconds), and `1 day` (86400 seconds).
@@ -152,6 +153,40 @@ Actions
 -------
 
 FIXME: Write this.
+
+
+Retry
+-----
+
+The `retry` key makes Apsis rerun a run of the job when it fails.  `count` is
+how many times to retry after the original run, from 1 to 5, and `delay` is how
+long after a failure the retry is scheduled, in seconds or as a duration.
+
+.. code:: yaml
+
+    retry:
+      count: 2
+      delay: 5 min
+
+Each retry is a new run of the same instance with the same args, and it goes
+through the job's conditions again.  Apsis uses the retry setting the job has
+when a run fails, so a change to it applies to the next retry.  A job without
+`retry` is never retried, and a manual rerun counts as a new original run.
+
+A run that errors after its program started, for example because Apsis lost
+its agent, is retried the same way as a failed run.  Apsis does not retry a run
+that
+
+- errors before its program starts, for example because of bad args
+- is stopped, by hand or by its stop time
+- is marked as failure by hand
+- would have its retry start after the run's stop time
+- has no retries left
+
+A run of a job with retries has a `retry` key in its metadata with the
+`attempt`, which is 0 for the original run, the `count`, the `original` run ID
+on a retry, and `pending`, which is true when the run failed and another retry
+is scheduled.
 
 
 .. _binding:

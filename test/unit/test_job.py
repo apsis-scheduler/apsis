@@ -1,6 +1,8 @@
 import ora
+import pytest
 
-from apsis.jobs import Job, Jobs, JobsDir
+from apsis.exc import SchemaError
+from apsis.jobs import Job, Jobs, JobsDir, Retry
 from apsis.schedule.stop import DurationStopSchedule
 
 # -------------------------------------------------------------------------------
@@ -159,3 +161,44 @@ def test_get_dependents():
     # disabled and failing dependencies are skipped and the rest are returned
     assert jobs.get_dependents("up/a") == {"on_tmpl", "plain"}
     assert jobs.get_dependents("up/1") == {"num"}
+
+
+def _retry_job(retry):
+    jso = {"program": {"type": "no-op"}}
+    if retry is not None:
+        jso["retry"] = retry
+    return Job.from_jso(jso, "test job")
+
+
+@pytest.mark.parametrize("delay, seconds", [(30, 30), ("5 min", 300)])
+def test_retry_jso(delay, seconds):
+    job = _retry_job({"count": 2, "delay": delay})
+    assert job.retry == Retry(2, seconds)
+    assert f"retry={job.retry!r}" in repr(job)
+    assert Job.from_jso(job.to_jso(), job.job_id) == job
+
+
+def test_retry_job_eq():
+    job = _retry_job(None)
+    assert job.retry is None
+    assert "retry" not in job.to_jso()
+    assert Job.from_jso(job.to_jso(), job.job_id) == job
+    assert job != _retry_job({"count": 2, "delay": 30})
+    assert _retry_job({"count": 2, "delay": 30}) != _retry_job({"count": 3, "delay": 30})
+    assert _retry_job({"count": 2, "delay": 30}) != _retry_job({"count": 2, "delay": 60})
+
+
+@pytest.mark.parametrize(
+    "retry",
+    [
+        {"count": 0, "delay": 30},
+        {"count": 6, "delay": 30},
+        {"count": 1.5, "delay": 30},
+        {"count": 2, "delay": -30},
+        {"delay": 30},
+        {"count": 2},
+    ],
+)
+def test_retry_invalid(retry):
+    with pytest.raises(SchemaError):
+        _retry_job(retry)

@@ -4,8 +4,9 @@ Managing runs in the _running_ state.
 
 import asyncio
 import logging
-from ora import now
+from ora import Time, now
 import traceback
+from typing import TYPE_CHECKING
 
 from apsis.lib.cmpr import compress_async
 from apsis.program.base import (
@@ -17,7 +18,11 @@ from apsis.program.base import (
     ProgramSuccess,
     ProgramUpdate,
 )
+from apsis.runs import Run
 from apsis.states import State
+
+if TYPE_CHECKING:
+    from apsis.apsis import Apsis
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +62,41 @@ def _program_meta(meta: dict | None) -> dict:
     lost track of.
     """
     return {"program": meta} if meta else {}
+
+
+def _retry(apsis: "Apsis", run: Run) -> tuple[dict, Time | None]:
+    """Returns retry metadata updates for `run` finishing now, and its retry time or none."""
+    try:
+        retry = apsis.jobs.get_job(run.inst.job_id).retry
+    except LookupError:
+        retry = None
+    meta = run.meta.get("retry")
+    if meta is None and retry is None:
+        return {}, None
+    meta = meta or {"attempt": 0}
+    if retry is None:
+        return {"retry": meta | {"pending": False}}, None
+    time = now() + retry.delay
+    stop = run.times.get("stop")
+    if (
+        meta["attempt"] >= retry.count
+        or run.state == State.stopping
+        or (stop is not None and time > stop)
+    ):
+        time = None
+    return {"retry": meta | {"count": retry.count, "pending": time is not None}}, time
+
+
+async def _schedule_retry(apsis: "Apsis", run: Run, time: Time) -> None:
+    """Schedules the next attempt of finished `run` at `time`."""
+    retry = run.meta["retry"]
+    meta = {
+        "attempt": retry["attempt"] + 1,
+        "count": retry["count"],
+        "original": retry.get("original", run.run_id),
+    }
+    new_run = await apsis.rerun(run, time=time, meta={"retry": meta})
+    apsis.run_log.info(run, f"retry scheduled as {new_run.run_id}")
 
 
 async def _process_updates(apsis, run):
@@ -147,24 +187,30 @@ async def _process_updates(apsis, run):
                     # Program ran and failed.
                     apsis.run_log.record(run, f"failure: {failure.message}")
                     apsis._update_output_data(run, await _maybe_compress(failure.outputs), True)
+                    retry_meta, retry_time = _retry(apsis, run)
                     apsis._transition(
                         run,
                         State.failure,
                         reason=failure.message,
-                        meta=_program_meta(failure.meta),
+                        meta=_program_meta(failure.meta) | retry_meta,
                         times=failure.times,
                     )
+                    if retry_time is not None:
+                        await _schedule_retry(apsis, run, retry_time)
 
                 case ProgramError() as error:
                     apsis.run_log.info(run, f"error: {error.message}")
                     apsis._update_output_data(run, await _maybe_compress(error.outputs), True)
+                    retry_meta, retry_time = _retry(apsis, run)
                     apsis._transition(
                         run,
                         State.error,
                         reason=error.message,
-                        meta=_program_meta(error.meta),
+                        meta=_program_meta(error.meta) | retry_meta,
                         times=error.times,
                     )
+                    if retry_time is not None:
+                        await _schedule_retry(apsis, run, retry_time)
 
                 case _ as update:
                     assert False, f"unexpected update: {update}"
