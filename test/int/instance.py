@@ -46,7 +46,7 @@ class ApsisService:
     ):
         """
         :param user:
-          X-Remote-User the proxy would send, which clients send on a unix socket.
+          X-Remote-User the proxy would send, which clients send by default.
         """
         if unix and port is not None:
             raise ValueError("an instance serves on either a port or a unix socket")
@@ -114,9 +114,6 @@ class ApsisService:
             )
 
     def wait_for_serve(self):
-        if self.sock_path is None:
-            self.client.wait_running(2)
-            return
         deadline = time.monotonic() + 2
         with self.http_client() as client:
             while True:
@@ -140,14 +137,15 @@ class ApsisService:
     ) -> httpx.Client:
         """
         Returns an HTTP client for this instance over its unix socket or TCP port,
-        sending `user` as X-Remote-User on a unix socket.
+        sending `user` as X-Remote-User.
         """
+        headers = self._user_headers(user, headers)
         if self.sock_path is None:
             return httpx.Client(base_url=f"http://127.0.0.1:{self.port}", headers=headers, **kwargs)
         return httpx.Client(
             transport=httpx.HTTPTransport(uds=str(self.sock_path)),
             base_url="http://apsis",
-            headers=self._user_headers(user, headers),
+            headers=headers,
             **kwargs,
         )
 
@@ -161,8 +159,9 @@ class ApsisService:
     ) -> websockets.sync.client.ClientConnection:
         """
         Opens a websocket to `path` on this instance over its unix socket or TCP port,
-        sending `user` as X-Remote-User on a unix socket.
+        sending `user` as X-Remote-User.
         """
+        additional_headers = self._user_headers(user, additional_headers)
         if self.sock_path is None:
             return websockets.sync.client.connect(
                 f"ws://127.0.0.1:{self.port}{path}", additional_headers=additional_headers, **kwargs
@@ -170,7 +169,7 @@ class ApsisService:
         return websockets.sync.client.unix_connect(
             str(self.sock_path),
             f"ws://apsis{path}",
-            additional_headers=self._user_headers(user, additional_headers),
+            additional_headers=additional_headers,
             **kwargs,
         )
 
