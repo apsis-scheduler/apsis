@@ -1,6 +1,7 @@
 from contextlib import closing
 from pathlib import Path
 import pytest
+import requests
 import sqlite3
 
 from instance import ApsisService, run_apsisctl
@@ -47,6 +48,12 @@ def test_jobs_exact_match(inst):
     ret, out = inst.run_apsis_cmd("job", "match prefix")
     # Exact match despite additional prefix match.
     assert ret == 0
+
+
+def test_reload_jobs_without_dry_run(inst):
+    resp = requests.post(f"http://localhost:{inst.port}/api/control/reload_jobs")
+    assert resp.status_code == 200
+    assert resp.json() == {"removed": [], "added": [], "changed": [], "dry_run": False}
 
 
 def test_stop_serve(inst):

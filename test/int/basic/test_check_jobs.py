@@ -1,3 +1,4 @@
+import re
 import shutil
 from pathlib import Path
 
@@ -313,7 +314,7 @@ async def test_check_dependency_timing(tmp_path):
     # max_wait_time=1h: 2h gap exceeds limit, should error.
     results = await check(max_wait_time=3600)
     assert len(results) == 1
-    assert "not expected to start until" in results[0]
+    assert "waits 2h, over the 1h limit" in results[0]
 
     # Dependency scheduled BEFORE dependent (04:00 vs 06:00) — never an issue.
     dependency["schedule"]["daytime"] = "04:00:00"
@@ -332,7 +333,7 @@ async def test_check_dependency_timing(tmp_path):
     # But with max_wait_time=18h, the 20h gap should fail.
     results = await check(max_wait_time=64800)
     assert len(results) == 1
-    assert "not expected to start until" in results[0]
+    assert "waits 20h, over the 18h limit" in results[0]
 
 
 @pytest.mark.asyncio
@@ -410,7 +411,7 @@ async def test_check_dependency_timing_transitive(tmp_path):
     a_errors = [msg for job, msg in results if job.job_id == "a"]
     assert len(a_errors) > 0, "Expected transitive timing error for job A"
     # The tree should mention c as the transitive bottleneck.
-    assert any("dependency: c(" in msg for msg in a_errors)
+    assert any("    c(" in msg for msg in a_errors)
 
     # B->C direct gap (10h) is fine, so B itself should not be flagged.
     b_errors = [msg for job, msg in results if job.job_id == "b"]
@@ -420,6 +421,148 @@ async def test_check_dependency_timing_transitive(tmp_path):
     results = await check(max_wait_time=79200)
     a_errors = [msg for job, msg in results if job.job_id == "a"]
     assert len(a_errors) == 0
+
+
+@pytest.mark.asyncio
+async def test_check_dependency_timing_tree(tmp_path):
+    """
+    Tests that the timing message shows each branch over the limit and each upstream run once.
+    """
+    jobs_path = tmp_path
+    now = ora.now()
+
+    for job_id, daytime, deps in [
+        ("a", "01:00:00", ["b", "e", "f", "h", "d"]),
+        ("b", "11:00:00", ["c"]),
+        ("e", "12:00:00", ["c"]),
+        ("c", "21:30:00", []),
+        ("f", "15:00:00", ["g"]),
+        ("g", "09:00:00", []),
+        ("h", "13:00:00", []),
+        ("d", "05:00:00", []),
+    ]:
+        job = {
+            "params": ["date"],
+            "schedule": {
+                "type": "daily",
+                "tz": "UTC",
+                "calendar": "Mon-Sun",
+                "daytime": daytime,
+            },
+            "program": {"type": "no-op"},
+        }
+        if deps:
+            job["condition"] = [{"type": "dependency", "job_id": d} for d in deps]
+        dump_yaml_file(job, jobs_path / f"{job_id}.yaml")
+
+    jobs_dir = await apsis.jobs.load_jobs_dir(jobs_path)
+    results = list(
+        check_job_dependencies_scheduled(
+            jobs_dir,
+            jobs_dir.get_jobs(),
+            sched_times=(now, now + DAY_IN_SEC * 30),
+            dep_times=(now - DAY_IN_SEC * 8, now + DAY_IN_SEC * 38),
+            max_wait_time=43200,
+        )
+    )
+    assert [job.job_id for job, _ in results] == ["a"]
+    assert re.fullmatch(
+        r"a\(date=(\S+)\), scheduled \1T01:00:00Z, waits 20h 30m, over the 12h limit\n"
+        r"  b\(date=\1\)\n"
+        r"    c\(date=\1\), scheduled \1T21:30:00Z, waits 20h 30m\n"
+        r"  e\(date=\1\)\n"
+        r"    c\(date=\1\), see above\n"
+        r"  f\(date=\1\), scheduled \1T15:00:00Z, waits 14h",
+        results[0][1],
+    )
+
+
+@pytest.mark.asyncio
+async def test_check_dependencies_after_dep_window(tmp_path):
+    """
+    Tests that runs scheduled after the dep window are still checked against
+    the runs in it, and that other conditions and disabled dependencies are
+    ignored.
+    """
+
+    def schedule(daytime):
+        return {"type": "daily", "tz": "UTC", "calendar": "Mon-Sun", "daytime": daytime}
+
+    dump_yaml_file(
+        {
+            "params": ["date"],
+            "schedule": schedule("12:00:00"),
+            "condition": [
+                {"type": "skip_duplicate"},
+                {"type": "dependency", "job_id": "dependency"},
+                {"type": "dependency", "job_id": "unscheduled", "enabled": False},
+            ],
+            "program": {"type": "no-op"},
+        },
+        tmp_path / "dependent.yaml",
+    )
+    dump_yaml_file(
+        {"params": ["date"], "schedule": schedule("06:00:00"), "program": {"type": "no-op"}},
+        tmp_path / "dependency.yaml",
+    )
+    dump_yaml_file(
+        {"params": ["date"], "program": {"type": "no-op"}}, tmp_path / "unscheduled.yaml"
+    )
+    jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
+
+    start = ora.Time("2026-01-01T00:00:00Z")
+    results = [
+        msg
+        for _, msg in check_job_dependencies_scheduled(
+            jobs_dir,
+            jobs_dir.get_jobs(),
+            sched_times=(start, start + DAY_IN_SEC * 5),
+            dep_times=(start - DAY_IN_SEC * 8, start + DAY_IN_SEC * 3 + 9 * 3600),
+        )
+    ]
+
+    # the dep window ends on 2026-01-04 at 9am so only the 2026-01-05 dependency is missing
+    assert results == [
+        "scheduled run dependent(date=2026-01-05):"
+        " dependency dependency(date=2026-01-05) not scheduled"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_check_dependencies_in_dep_window(tmp_path):
+    """
+    Tests that only runs in the sched window are checked when the dep window
+    covers it.
+    """
+    dump_yaml_file(
+        {
+            "params": ["date"],
+            "schedule": {"type": "interval", "interval": DAY_IN_SEC},
+            "condition": [{"type": "dependency", "job_id": "unscheduled"}],
+            "program": {"type": "no-op"},
+        },
+        tmp_path / "dependent.yaml",
+    )
+    dump_yaml_file(
+        {"params": ["date"], "program": {"type": "no-op"}}, tmp_path / "unscheduled.yaml"
+    )
+    jobs_dir = await apsis.jobs.load_jobs_dir(tmp_path)
+
+    start = ora.Time("2026-01-03T00:00:00Z")
+    results = [
+        msg
+        for _, msg in check_job_dependencies_scheduled(
+            jobs_dir,
+            jobs_dir.get_jobs(),
+            sched_times=(start, start + DAY_IN_SEC * 2),
+            dep_times=(start - DAY_IN_SEC * 2, start + DAY_IN_SEC * 4),
+        )
+    ]
+
+    assert results == [
+        f"scheduled run dependent(date={d}): dependency unscheduled(date={d}) not scheduled"
+        for d in ("2026-01-03", "2026-01-04")
+    ]
 
 
 @pytest.mark.asyncio
