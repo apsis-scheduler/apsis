@@ -7,16 +7,21 @@ div
     :query="query"
     @query="onQueryChange"
     :timeControls="true"
+    windowed
   )
 
 </template>
 
 <script>
-import { isEqual } from 'lodash'
-import { argsToArray, arrayToArgs } from '@/runs'
+import { clamp, intersection, isEqual } from 'lodash'
+import { STATES, argsToArray, arrayToArgs, isRunWindowStale } from '@/runs'
 import RunsList from '@/components/RunsList'
-import { setSummaryScope } from '@/summary.js'
+import store from '@/store.js'
+import { reloadSummaryScope, setSummaryScope, windowScope } from '@/summary.js'
 import { formatCompactUTCTime, parseCompactUTCTime } from '@/time'
+
+// most runs the server sends in a window
+const MAX_SHOW = 1000
 
 /**
  * Strips off all occurrences of `suffix` at the end of `string`.
@@ -41,7 +46,18 @@ export default {
   },
 
   created() {
-    setSummaryScope()
+    setSummaryScope(windowScope(this.query))
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+  },
+
+  destroyed() {
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
+  },
+
+  computed: {
+    windowStale() {
+      return isRunWindowStale(store.state, this.query.time === 'now')
+    },
   },
 
   watch: {
@@ -49,24 +65,42 @@ export default {
     // trigger an update to the query.
     '$route'(to) {
       this.$set(this, 'query', this.urlToQuery(to.query))
-    }
+    },
+
+    query() {
+      setSummaryScope(windowScope(this.query))
+    },
+
+    // reload a stale window, keeping its runs until the new one arrives
+    windowStale(stale) {
+      if (stale)
+        reloadSummaryScope()
+    },
   },
 
   methods: {
+    // reloads a window that went stale while the page was hidden
+    onVisibilityChange() {
+      if (this.windowStale)
+        reloadSummaryScope()
+    },
+
     /**
      * Converts the query part of a URL to a query object for RunsList.
      */
     urlToQuery(url) {
       const splitWords = (param) => param ? param.split(',') : null
+      const states = intersection(splitWords(url.states), STATES)
+      const show = parseInt(url.show)
       return {
         path: url.path ? rstrip(url.path, '/') : null,
         keywords: splitWords(url.keywords),
         labels: splitWords(url.labels),
-        states: splitWords(url.states),
+        states: states.length > 0 ? states : null,
         args: url.args ? arrayToArgs(splitWords(url.args)) : null,
         grouping: url.ungroup !== null,
-        show: url.show ? parseInt(url.show) : 50,
-        time: url.time ? parseCompactUTCTime(url.time) : 'now',
+        show: isNaN(show) ? 50 : clamp(show, 1, MAX_SHOW),
+        time: (url.time && parseCompactUTCTime(url.time)) || 'now',
         asc: url.asc === 'true',
       }
     },

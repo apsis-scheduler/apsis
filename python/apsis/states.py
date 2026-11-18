@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 import enum
 
 from apsis.lib import py
@@ -72,9 +73,16 @@ def states_from_jso(jso):
     return frozenset(State[s] for s in py.tupleize(jso))
 
 
+def state_names(states: Iterable[State]) -> list[str]:
+    """
+    Returns the names of `states` in the order `State` declares them.
+    """
+    return [s.name for s in sorted(states, key=lambda s: s.value)]
+
+
 def states_to_jso(states):
     states = frozenset(states)
-    return None if states == frozenset(State) else [s.name for s in states]
+    return None if states == frozenset(State) else state_names(states)
 
 
 def reachable(state):
