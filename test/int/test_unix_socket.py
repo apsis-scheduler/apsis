@@ -1,6 +1,7 @@
 import httpx
 import json
 import pytest
+import re
 import socket
 import subprocess
 import sys
@@ -152,6 +153,9 @@ def test_proxy_auth_tcp():
     ):
         assert anon.get("/api/v1/runs").status_code == 401
         assert skip_later_run(client)[-1] == "skipped by aaronf"
+        with inst.connect_ws("/api/v1/summary"):
+            pass
+    assert re.search(r"/summary 127\.0\.0\.1:\d+ aaronf:", "".join(inst.get_log_lines()))
 
 
 def test_no_proxy_auth_unix():
@@ -165,6 +169,9 @@ def test_no_proxy_auth_unix():
         assert client.post(f"/api/v1/runs/{run_id}/start").status_code == 200
         assert "scheduled run started by override" in run_log(client, run_id)
         assert client.get("/api/v1/whoami").json() == {"user": None}
+        with inst.connect_ws("/api/v1/summary"):
+            pass
+    assert "/summary unix:" in "".join(inst.get_log_lines())
 
 
 def test_serve_unix_creates_dir():

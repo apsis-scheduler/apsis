@@ -681,12 +681,13 @@ async def websocket_summary(request, ws):
     apsis = request.app.apsis
 
     peer = request.socket
-    if peer:
-        prefix = f"/summary {peer[0]}:{peer[1]}:"
-    else:
+    who = f"{peer[0]}:{peer[1]}" if peer else "unix"
+    if request.ctx.user is not None:
+        who += f" {request.ctx.user}"
         req_id = request.headers.get("X-Request-ID")
-        who = request.ctx.user if req_id is None else f"{request.ctx.user} request_id={req_id!r}"
-        prefix = f"/summary unix {who}:"
+        if req_id is not None:
+            who += f" request_id={req_id!r}"
+    prefix = f"/summary {who}:"
 
     # request.query_args doesn't work correctly for ws endpoints?
     try:
