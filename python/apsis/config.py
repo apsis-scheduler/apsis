@@ -56,6 +56,11 @@ def check(cfg, base_path: Path):
         raise ValueError("adhoc.enabled must be a boolean")
     set_cfg(cfg, "adhoc.enabled", adhoc_enabled)
 
+    proxy_auth_enabled = get_cfg(cfg, "proxy_auth.enabled", False)
+    if not isinstance(proxy_auth_enabled, bool):
+        raise ValueError("proxy_auth.enabled must be a boolean")
+    set_cfg(cfg, "proxy_auth.enabled", proxy_auth_enabled)
+
     _check_duration("waiting.max_time")
     _check_duration("procstar.agent.connection.start_timeout")
     _check_duration("procstar.agent.connection.reconnect_timeout")

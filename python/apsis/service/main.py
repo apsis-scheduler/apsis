@@ -72,14 +72,14 @@ USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 @app.middleware("request")
 async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
     """
-    Sets `request.ctx.user` from the proxy's X-Remote-User header on a unix
-    socket, or to none over TCP where anyone can send the header.
+    Sets `request.ctx.user` from the proxy's X-Remote-User header with proxy
+    auth enabled, or to none with it disabled.
 
     :return:
-      On a unix socket, a 401 response for a missing, repeated or invalid
-      X-Remote-User, or a 403 response for an Origin on another host.
+      With proxy auth enabled, a 401 response for a missing, repeated or
+      invalid X-Remote-User, or a 403 response for an Origin on another host.
     """
-    if not request.app.authenticated:
+    if not request.app.proxy_auth:
         request.ctx.user = None
         return
     users = request.headers.getall("X-Remote-User", [])
@@ -206,7 +206,7 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | No
     # Flag to indicate whether to restart after shutting down.
     app.restart = False
     app.running = True  # FIXME: ??  Remove?
-    app.authenticated = unix is not None
+    app.proxy_auth = cfg["proxy_auth"]["enabled"]
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
