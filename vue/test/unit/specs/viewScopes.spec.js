@@ -1,16 +1,21 @@
 import Vue from 'vue'
 import router from '@/router'
+import { clearRunState, processMsgs } from '@/runs.js'
 import store from '@/store.js'
-import { JOBS_SCOPE, jobScope, runScope, setSummaryScope } from '@/summary.js'
+import { JOBS_SCOPE, jobScope, reloadSummaryScope, runScope, setSummaryScope } from '@/summary.js'
 
 jest.mock('@/summary.js', () => Object.assign(
-  {}, require.requireActual('@/summary.js'), {setSummaryScope: jest.fn()},
+  {}, require.requireActual('@/summary.js'), {setSummaryScope: jest.fn(), reloadSummaryScope: jest.fn()},
 ))
 jest.mock('@/websocket.js', () => ({
   Socket: class { open() {} close() {} },
 }))
 
 const flush = () => new Promise(resolve => setTimeout(resolve))
+
+function windowScope(show) {
+  return {window: [['time', 'now'], ['limit', show], ['grouping', 1]]}
+}
 
 function makeRun(run_id) {
   return {run_id, job_id: 'job/' + run_id, args: {}, state: 'new', times: {}, dependencies: [['dep/' + run_id, {}]]}
@@ -28,8 +33,8 @@ beforeEach(async () => {
   // a path no view matches
   await router.push('/none').catch(() => {})
   setSummaryScope.mockClear()
-  store.state.runs = new Map()
-  store.state.jobs = new Map()
+  reloadSummaryScope.mockClear()
+  clearRunState(store.state)
   fetches = []
   global.fetch = jest.fn(() => new Promise(resolve => fetches.push(resolve)))
   vm = new Vue({router, render: h => h('router-view')}).$mount()
@@ -49,8 +54,49 @@ describe('view summary scopes', () => {
     await go('/jobs')
     await go('/agents')
     await go('/runs')
-    expect(setSummaryScope.mock.calls).toEqual([[JOBS_SCOPE], [JOBS_SCOPE], []])
+    expect(setSummaryScope.mock.calls).toEqual([[JOBS_SCOPE], [JOBS_SCOPE], [windowScope(50)]])
   })
+
+  test('the runs page follows its query and reloads a stale window, also when shown', async () => {
+    await go('/runs')
+    await go('/runs?show=20')
+    processMsgs([{type: 'run_window', groups: {}, earlier: null, later: null}], store.state)
+    store.state.runWindowStale = true
+    await flush()
+    expect(setSummaryScope.mock.calls).toEqual([[windowScope(50)], [windowScope(20)]])
+    expect(reloadSummaryScope).toHaveBeenCalledTimes(1)
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(reloadSummaryScope).toHaveBeenCalledTimes(2)
+    // a fresh window doesn't reload when shown
+    store.state.runWindowStale = false
+    await flush()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(reloadSummaryScope).toHaveBeenCalledTimes(2)
+    // and a stale one doesn't once the page is left
+    store.state.runWindowStale = true
+    await flush()
+    await go('/jobs')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(reloadSummaryScope).toHaveBeenCalledTimes(3)
+  })
+
+  // bad url values fall back to a window the server can send
+  for (const [url, time, limit, states] of [
+    ['show=0', 'now', 1, []],
+    ['show=abc', 'now', 50, []],
+    ['show=2000', 'now', 1000, []],
+    ['time=garbage', 'now', 50, []],
+    ['time=00000101T000000Z', 'now', 50, []],
+    ['time=20261014T100000Z', '2026-10-14T10:00:00Z', 50, []],
+    ['states=bogus', 'now', 50, []],
+    ['states=failure,bogus', 'now', 50, ['failure']],
+  ])
+    test(`the runs page window for ${url}`, async () => {
+      await go('/runs?' + url)
+      const window = [['time', time], ['limit', limit], ['grouping', 1], ...states.map(s => ['state', s])]
+      expect(setSummaryScope.mock.calls).toEqual([[{window}]])
+    })
 
   test('the job page rescopes when the job changes', async () => {
     await go('/job/job/a')

@@ -1,3 +1,4 @@
+import random
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -6,8 +7,9 @@ import ora
 import pytest
 import ujson
 
-from apsis import procstar
+from apsis import procstar, run_window
 from apsis.jobs import InMemoryJobs, Job
+from apsis.run_window import JobFilter, WindowSpec
 from apsis.runs import Instance, Run, RunStore
 from apsis.service import summary
 from apsis.service.summary import SummaryScope, send_scoped_init
@@ -353,3 +355,141 @@ async def test_send_scoped_init_jobs_and_conns(tmp_path, monkeypatch):
     ws = FakeWs()
     await send_scoped_init(apsis, ws, SummaryScope(init=True))
     assert ws.ids() == [["x", "y"], [run.run_id]]
+
+
+@pytest.mark.asyncio
+async def test_window_summaries(tmp_path):
+    run_store = make_run_store(tmp_path)
+    t = ora.now()
+    expected = Run(Instance("a", {}), expected=True)
+    expected.times["schedule"] = t + 60
+    run_store.add(expected)
+    (run,) = add_runs(run_store, "a", 1)
+    run._transition(t, State.scheduled, times={"schedule": t})
+    run_store.update(run, t)
+
+    window = await run_store.query_window(WindowSpec(anchor=t, grouping=False))
+    assert window.run_ids == [run.run_id, expected.run_id]
+    summaries = run_store.get_summaries([expected.run_id, "r999", run.run_id])
+    assert run_ids(summaries) == [expected.run_id, run.run_id]
+
+
+@pytest.mark.asyncio
+async def test_window_lookback_keeps_expected_runs(tmp_path):
+    """A window drops db runs older than the lookback but keeps old expected runs."""
+    run_store = make_run_store(tmp_path, lookback=3600)
+    t = ora.now()
+    (done,) = add_runs(run_store, "a", 1)
+    done._transition(t - 7200, State.success, times={"schedule": t - 7200}, force=True)
+    run_store.update(done, t - 7200)
+    old, new = Run(Instance("a", {}), expected=True), Run(Instance("a", {}), expected=True)
+    for run, ts, sched in (old, t - 7200, t + 60), (new, t, t + 120):
+        run_store.add(run)
+        run._transition(ts, State.scheduled, times={"schedule": sched})
+        run_store.update(run, ts)
+
+    window = await run_store.query_window(WindowSpec(anchor=t))
+    assert window.run_ids == [old.run_id]
+    assert window.counts == {old.run_id: 2}
+
+
+def add_labeled_run(
+    run_store: RunStore,
+    job_id: str,
+    labels: list[str],
+    sched: ora.Time,
+    *,
+    state: State = State.scheduled,
+    timestamp: ora.Time | None = None,
+    expected: bool = False,
+) -> Run:
+    """Adds a run of `job_id` with job `labels`, scheduled at `sched`."""
+    run = Run(Instance(job_id, {}), expected=expected)
+    run_store.add(run)
+    run.meta["job"] = {"labels": labels}
+    run._transition(
+        sched if timestamp is None else timestamp, state, times={"schedule": sched}, force=True
+    )
+    run_store.update(run, run.timestamp)
+    return run
+
+
+@pytest.mark.asyncio
+async def test_window_label_jobs(tmp_path, monkeypatch):
+    """
+    A label window reads only runs of jobs whose runs had the label, saved
+    before the store started or updated since, and checks each run's labels.
+    """
+    monkeypatch.setattr("apsis.sqlite.SUMMARY_PAGE_SIZE", 1)
+    db = make_db(tmp_path)
+    t = ora.now()
+    old_store = RunStore(db, lookback=86400)
+    # saved runs with tied timestamps
+    add_labeled_run(old_store, "gained", [], t - 60, timestamp=t - 60)
+    lost = add_labeled_run(old_store, "lost", ["l"], t - 50, timestamp=t - 60)
+    add_labeled_run(old_store, "other", ["m"], t - 40, timestamp=t - 60)
+    run_store = RunStore(db, lookback=86400)
+    await run_store.load_label_jobs()
+    add_labeled_run(run_store, "lost", [], t - 30)
+    gained = add_labeled_run(run_store, "gained", ["l"], t - 20)
+
+    read = []
+    job_page = db.run_db.job_page
+    monkeypatch.setattr(
+        db.run_db, "job_page", lambda job_id, **kw: read.append(job_id) or job_page(job_id, **kw)
+    )
+    window = await run_store.query_window(WindowSpec(anchor=t, job_filter=JobFilter(labels=("l",))))
+    assert window.run_ids == [lost.run_id, gained.run_id]
+    assert set(read) == {"lost", "gained"}
+
+
+@pytest.mark.parametrize("job_path_rows", [0, 10_000])
+@pytest.mark.asyncio
+async def test_window_label_jobs_match_walk(tmp_path, monkeypatch, job_path_rows):
+    """
+    Random label windows narrowed to the jobs of the label map match walking
+    every run.
+    """
+    monkeypatch.setattr(run_window, "PAGE_ROWS", 3)
+    monkeypatch.setattr(run_window, "JOB_PATH_ROWS", job_path_rows)
+    monkeypatch.setattr("apsis.sqlite.SUMMARY_PAGE_SIZE", 3)
+    rng = random.Random(job_path_rows)
+    db = make_db(tmp_path)
+    t = ora.now()
+    job_labels = {"a": [[], ["l"]], "b": [["m"]], "c": [["l", "m"]], "d": [[]]}
+    run_store = RunStore(db, lookback=3600)
+    for i in range(80):
+        if i == 50:
+            # restart so later runs reach the label map only as they update
+            run_store = RunStore(db, lookback=3600)
+            # job c loses its labels and job d gains one
+            job_labels.update(c=[[]], d=[["l"]])
+        job_id = rng.choice(list(job_labels))
+        expected = i >= 70
+        add_labeled_run(
+            run_store,
+            job_id,
+            # expected runs get any labels
+            rng.choice([[], ["l"], ["m"], ["l", "m"]] if expected else job_labels[job_id]),
+            t + rng.randrange(-30, 30) * 60,
+            state=rng.choice([State.scheduled, State.success, State.failure]),
+            # timestamps tie and some are past the lookback
+            timestamp=t - rng.choice([60, 60, 120, 7200]),
+            expected=expected,
+        )
+
+    specs = [
+        WindowSpec(
+            anchor=t + rng.randrange(-35, 35) * 60,
+            limit=rng.randint(2, 6),
+            grouping=rng.random() < 0.5,
+            job_filter=JobFilter(
+                path=rng.choice([None, "a"]),
+                labels=rng.choice([("l",), ("m",), ("l", "m")]),
+            ),
+        )
+        for _ in range(100)
+    ]
+    walked = [await run_store.query_window(spec) for spec in specs]
+    await run_store.load_label_jobs()
+    assert [await run_store.query_window(spec) for spec in specs] == walked

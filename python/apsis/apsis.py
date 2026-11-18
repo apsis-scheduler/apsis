@@ -1,6 +1,7 @@
 import asyncio
 from functools import partial
 import gc
+import itertools
 import logging
 import math
 from mmap import PAGESIZE
@@ -15,7 +16,7 @@ from .cond.base import PolledCondition, RunStoreCondition, NonmonotonicRunStoreC
 from .host_group import config_host_groups
 from .jobs import Jobs, load_jobs_dir, diff_jobs_dirs
 from .lib.api import run_to_summary_jso
-from .lib.asyn import TaskGroup, Publisher, KeyPublisher
+from .lib.asyn import TaskGroup, Publisher, KeyPublisher, wait_for
 from .lib.parse import nparse_duration
 from .lib.py import get_cfg, more_gc_stats
 from .lib.sys import to_signal
@@ -132,6 +133,7 @@ class Apsis:
                 assert not run.expected
                 time = run.times["schedule"]
                 self.run_log.record(run, "restored")
+                self.__refresh_restored(run)
                 await self.scheduled.schedule(time, run)
 
             # Restore waiting runs from DB.
@@ -143,6 +145,7 @@ class Apsis:
                 # get()s and mutations converge on this object.
                 self.run_store.attach(run)
                 self.run_log.record(run, "restored")
+                self.__refresh_restored(run)
                 self._wait(run)
 
             # If a run is starting in the DB, we can't know if it actually
@@ -188,6 +191,8 @@ class Apsis:
     def start_loops(self):
         # Start a loop to monitor the async event loop.
         self.__tasks.add("check_async", self.__check_async())
+
+        self.__tasks.add("load_label_jobs", self.run_store.load_label_jobs())
 
         # Set up the scheduler.
         log.info("starting scheduler loop")
@@ -476,20 +481,16 @@ class Apsis:
         # Create the run and add it to the run store, which assigns it a run ID
         # and persists it.
         run = Run(inst, expected=expected)
+        # runs that fail to validate or bind keep their schedule time
+        run.times["schedule"] = times["schedule"]
         self.run_store.add(run)
 
         # Check that the run is valid and get it ready.
         try:
-            job = self.jobs.get_job(run.inst.job_id)
-            validate_args(run, job.params)
-            bind(run, job, self.jobs)
+            self.__bind(run)
             # Add the stop time, if any.
             if stop_time is not None:
                 times["stop"] = stop_time
-            # Attach job labels to the run.
-            run.meta["job"] = {
-                "labels": job.meta.get("labels", []),
-            }
         except Exception as exc:
             self._run_exc(run, message=str(exc))
             return run
@@ -522,7 +523,7 @@ class Apsis:
 
         elif run.state == State.waiting:
             # Cancel the waiting task.
-            await self.__wait_tasks.cancel(run.run_id)
+            await self.__cancel_wait(run, "skip")
 
         else:
             raise RunError(f"can't skip {run.run_id} in state {run.state.name}")
@@ -541,13 +542,118 @@ class Apsis:
 
         elif run.state == State.waiting:
             # Cancel the waiting task.  It will remove itself when done.
-            await self.__wait_tasks.cancel(run.run_id)
+            await self.__cancel_wait(run, "start")
             self.run_log.info(run, "waiting run started by override")
             # Start the run.
             self._start(run)
 
         else:
             raise RunError(f"can't start {run.run_id} in state {run.state.name}")
+
+    async def refresh(self, run: Run) -> None:
+        """
+        Rebinds a scheduled or waiting run to the current config of its job.
+
+        :raise RunError:
+          The run isn't scheduled or waiting, or its job's current config
+          doesn't bind for it.
+        """
+        if run.state not in {State.scheduled, State.waiting}:
+            raise RunError(f"can't refresh {run.run_id} in state {run.state.name}")
+        if not self.__differs(run, self.__rebind(run)):
+            return
+
+        if run.state == State.waiting:
+            await self.__cancel_wait(run, "refresh")
+            # the run now has no wait task until the finally below starts one.
+            # don't await anything in between, since a caller cancelled there
+            # would leave the run waiting forever with nothing checking it
+        elif not self.scheduled.unschedule(run):
+            raise RunError(f"can't refresh {run.run_id}, it isn't on the schedule")
+
+        try:
+            # bind again against the jobs loaded now
+            self.__set_config(run, self.__rebind(run))
+        finally:
+            if run.state == State.waiting:
+                self._wait(run)
+            else:
+                await self.scheduled.schedule(run.times["schedule"], run)
+
+    def __refresh_restored(self, run: Run) -> None:
+        """
+        Rebinds a run restored from the DB to the current config of its job.
+        """
+        try:
+            fresh = self.__rebind(run)
+        except RunError as exc:
+            self.run_log.info(run, str(exc))
+        else:
+            if self.__differs(run, fresh):
+                self.__set_config(run, fresh)
+
+    def __differs(self, run: Run, fresh: Run) -> bool:
+        """
+        Returns whether `fresh` is bound to different config than `run`.
+        """
+        return (fresh.program, fresh.conds, fresh.actions, fresh.meta["job"]) != (
+            run.program,
+            run.conds,
+            run.actions,
+            run.meta.get("job"),
+        )
+
+    def __set_config(self, run: Run, fresh: Run) -> None:
+        """
+        Gives `run` the program, conditions, actions, and job labels of `fresh`.
+        """
+        run.program = fresh.program
+        run.conds = fresh.conds
+        run.actions = fresh.actions
+        run.meta["job"] = fresh.meta["job"]
+        self.run_store.update(run, now())
+        self.summary_publisher.publish(messages.make_run_transition(run))
+        self.run_log.info(run, "refreshed from job config")
+
+    def __rebind(self, run: Run) -> Run:
+        """
+        Returns a new run like `run`, bound to the current config of its job.
+
+        :raise RunError:
+          The job's current config doesn't bind for `run`.
+        """
+        fresh = Run(run.inst)
+        fresh.run_id = run.run_id
+        try:
+            self.__bind(fresh)
+        except Exception as exc:
+            raise RunError(f"can't refresh {run.run_id}: {exc}") from exc
+        return fresh
+
+    def __bind(self, run: Run) -> None:
+        """
+        Binds `run` to the current config of its job and attaches the job's
+        labels.
+        """
+        job = self.jobs.get_job(run.inst.job_id)
+        validate_args(run, job.params)
+        bind(run, job, self.jobs)
+        run.meta["job"] = {"labels": job.meta.get("labels", [])}
+
+    async def __cancel_wait(self, run: Run, operation: str) -> None:
+        """
+        Cancels the waiting task of `run`, including one restarted by a
+        concurrent refresh while cancelling.
+
+        :raise RunError:
+          A concurrent operation moved the run out of waiting.
+        """
+        while run.run_id in self.__wait_tasks:
+            await self.__wait_tasks.cancel(run.run_id)
+        # don't await anything after the loop, so the caller can't be cancelled
+        # between the wait ending and what it does with the run next
+        if run.state != State.waiting:
+            raise RunError(f"can't {operation} {run.run_id} in state {run.state.name}")
 
     async def mark(self, run, state):
         """
@@ -743,7 +849,7 @@ async def _wait_loop(apsis, run, timeout):
             else:
                 # Subtract time we have already waited from the timeout.
                 waiting_timeout = timeout - (now() - waiting_time)
-        return asyncio.wait_for(cond_wait, waiting_timeout)
+        return wait_for(cond_wait, waiting_timeout)
 
     if len(conds) > 0:
         apsis.run_log.record(run, f"waiting until: {conds[0]}")
@@ -864,6 +970,26 @@ async def reschedule_runs(apsis, job_id):
         await apsis.schedule(time, inst, expected=True, stop_time=stop_time)
 
 
+async def _refresh_runs(apsis: Apsis, job_ids: frozenset[str]) -> None:
+    """
+    Refreshes waiting and scheduled runs of `job_ids` that weren't rebuilt from
+    their schedules.
+    """
+    run_ids = [
+        r.run_id
+        for r in itertools.chain(apsis.run_store.get_active_runs(), apsis.scheduled.get_runs())
+        if r.inst.job_id in job_ids and not r.expected
+    ]
+    for run_id in run_ids:
+        # get the run again
+        _, run = apsis.run_store.get(run_id)
+        if run.state in {State.scheduled, State.waiting}:
+            try:
+                await apsis.refresh(run)
+            except RunError as exc:
+                apsis.run_log.info(run, str(exc))
+
+
 async def reload_jobs(apsis, *, dry_run=False):
     """
     :param dry_run:
@@ -902,6 +1028,9 @@ async def reload_jobs(apsis, *, dry_run=False):
         for job_id in sorted(chg_ids):
             log.info(f"scheduling changed: {job_id}")
             await reschedule_runs(apsis, job_id)
+
+        # refresh runs only after every changed job is rescheduled
+        await _refresh_runs(apsis, chg_ids)
 
         # Publish job changes.
         publish = apsis.summary_publisher.publish
