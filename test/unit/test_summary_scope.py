@@ -161,6 +161,7 @@ async def test_scope_failure_sends_error(monkeypatch):
     request = SimpleNamespace(
         app=SimpleNamespace(apsis=SimpleNamespace(jobs=None)),
         socket=("127.0.0.1", 1),
+        ctx=SimpleNamespace(user=None),
         query_string="init&dependents_of=a",
     )
     await api.websocket_summary(request, SimpleNamespace(send=send, close=close))
