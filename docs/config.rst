@@ -108,8 +108,9 @@ refuses cross origin requests and the debug endpoint with HTTP 403, so the
 proxy has to pass on the browser's ``Host`` header.
 
 Enable it only when the proxy is the only thing that can reach Apsis, for
-example on a unix socket with `\--unix` or on a localhost port, since anyone
-else who can connect can claim to be any user.
+example on a unix socket with `\--unix` that only the proxy's group can open,
+since anyone else who can connect can claim to be any user.  A localhost port
+isn't enough, since any user on the host can connect to it.
 
 
 Schedule
