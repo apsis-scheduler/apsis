@@ -26,7 +26,8 @@ export default {
   justify-content: center;
   cursor: default;
   display: inline-block;
-  width: 10ch;
+  min-width: 10ch;
+  white-space: nowrap;
 
   &:hover {
     color: $apsis-run-color;

@@ -107,7 +107,7 @@ export default {
 
 .dependencies {
   display: grid;
-  grid-template-columns: repeat(7, max-content);
+  grid-template-columns: max-content minmax(0, max-content) repeat(5, max-content);
   column-gap: 8px;
   row-gap: 1px;
   padding: 16px 0;
@@ -154,6 +154,8 @@ export default {
   }
 
   .col-job {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .col-run {
