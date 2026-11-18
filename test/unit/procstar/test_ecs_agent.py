@@ -41,10 +41,11 @@ def test_run_args_env_vars_ecs():
 
 
 def test_no_run_args_env_ecs():
-    """Without applied args, the ECS proc spec sets only APSIS_RUN_ID."""
+    """Without applied args, the ECS proc spec sets only APSIS_RUN_ID and APSIS_JOB_ID."""
     bound = ProcstarECSProgram(run_spec=Argv(["/usr/bin/echo", "hi"])).bind({})
     running = RunningProcstarECSProgram("r1", bound, ECS_CFG)
-    assert running._spec.to_jso()["env"]["vars"] == {"APSIS_RUN_ID": "r1"}
+    running.job_id = "job1"
+    assert running._spec.to_jso()["env"]["vars"] == {"APSIS_RUN_ID": "r1", "APSIS_JOB_ID": "job1"}
 
 
 def test_run_args_not_in_jso():
