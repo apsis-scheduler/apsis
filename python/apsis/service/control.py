@@ -17,8 +17,8 @@ API = sanic.Blueprint("control")
 
 @API.route("/debug")
 async def on_debug(request):
-    if request.app.authenticated:
-        return error("debug is disabled on a unix socket", 403)
+    if request.app.proxy_auth:
+        return error("debug is disabled with proxy auth", 403)
     breakpoint()
     return response_json({})
 

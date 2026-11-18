@@ -10,6 +10,7 @@ from instance import ApsisService
 
 USER = "aaronf@EXAMPLE.COM"
 EVIL = {"Origin": "https://evil.example"}
+PROXY_AUTH = {"proxy_auth": {"enabled": True}}
 LATER_RUN = {"job": {"program": {"type": "no-op"}}, "times": {"schedule": "2100-01-01T00:00:00Z"}}
 
 
@@ -33,7 +34,7 @@ def skip_later_run(client: httpx.Client) -> list[str]:
 
 
 def test_serve_unix():
-    inst = ApsisService(unix=True, user=USER)
+    inst = ApsisService(unix=True, user=USER, cfg=PROXY_AUTH)
     # leave a stale socket file behind for serve to replace
     with socket.socket(socket.AF_UNIX) as stale:
         stale.bind(str(inst.sock_path))
@@ -65,9 +66,9 @@ def test_serve_unix():
         assert any("/summary unix aaronf request_id='req-1':" in l for l in lines)
 
 
-def test_user_unix():
+def test_proxy_auth_unix():
     with (
-        ApsisService(unix=True, user=USER) as inst,
+        ApsisService(unix=True, user=USER, cfg=PROXY_AUTH) as inst,
         inst.http_client() as client,
         inst.http_client(user=None) as anon,
     ):
@@ -143,10 +144,20 @@ def test_user_unix():
         assert "shut down starting; restart=False by aaronf" in log
 
 
-def test_user_tcp():
+def test_proxy_auth_tcp():
     with (
-        ApsisService() as inst,
-        inst.http_client(headers=EVIL | {"X-Remote-User": USER}) as client,
+        ApsisService(user=USER, cfg=PROXY_AUTH) as inst,
+        inst.http_client() as client,
+        inst.http_client(user=None) as anon,
+    ):
+        assert anon.get("/api/v1/runs").status_code == 401
+        assert skip_later_run(client)[-1] == "skipped by aaronf"
+
+
+def test_no_proxy_auth_unix():
+    with (
+        ApsisService(unix=True, user=USER) as inst,
+        inst.http_client(headers=EVIL) as client,
     ):
         assert skip_later_run(client) == ["scheduled: 2100-01-01T00:00:00+00:00", "skipped"]
 
@@ -157,7 +168,7 @@ def test_user_tcp():
 
 
 def test_serve_unix_creates_dir():
-    inst = ApsisService(unix=True, user=USER)
+    inst = ApsisService(unix=True)
     inst.sock_path = inst.tmp_dir / "run" / "apsis.sock"
     with inst, inst.http_client() as client:
         assert client.get("/api/v1/running").status_code == 200
@@ -180,7 +191,7 @@ def test_summary_tcp():
 
 
 def test_serve_unix_refuses_running_server():
-    with ApsisService(unix=True, user=USER) as inst:
+    with ApsisService(unix=True) as inst:
         proc = subprocess.run(
             ["apsisctl", "serve", "--config", inst.cfg_path, "--unix", inst.sock_path],
             stderr=subprocess.PIPE,
@@ -232,7 +243,7 @@ def test_serve_unix_rejects_host_or_port(opt):
 
 
 def test_summary_log_escapes_request_id():
-    with ApsisService(unix=True, user=USER) as inst:
+    with ApsisService(unix=True, user=USER, cfg=PROXY_AUTH) as inst:
         with socket.socket(socket.AF_UNIX) as sock:
             sock.connect(str(inst.sock_path))
             # a raw handshake, since websocket clients refuse control characters in headers
