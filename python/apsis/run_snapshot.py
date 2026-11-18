@@ -38,7 +38,7 @@ def snapshot_run(apsis, run):
     # Get the job, if available.
     try:
         job = apsis.jobs.get_job(run.inst.job_id)
-    except KeyError:
+    except LookupError:
         job = None
 
     # Load all outputs.
