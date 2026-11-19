@@ -222,7 +222,7 @@ def main():
         type=Path,
         default=None,
         help="serve on a unix socket at PATH instead of HOST and PORT, "
-        "whose folders must not be replaceable by other users",
+        "warning if other users could replace its folders",
     )
     cmd.add_argument(
         "--config",
