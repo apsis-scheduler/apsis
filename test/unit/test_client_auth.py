@@ -251,7 +251,10 @@ def test_no_kerberos_without_gssapi_packages(monkeypatch):
 @pytest.mark.parametrize("get", [Client.get_outputs, lambda c, r: c.get_output(r, "output")])
 @pytest.mark.parametrize(
     "content, error",
-    [(b"<html>", NO_HTTPS_ERROR), (b'{"error": "missing X-Remote-User"}', "missing X-Remote-User")],
+    [
+        (b"<html>", NO_HTTPS_ERROR),
+        (b'{"error": "missing or invalid X-Remote-User"}', "missing or invalid X-Remote-User"),
+    ],
 )
 def test_raw_gets_raise_auth_error(monkeypatch, get, content, error):
     monkeypatch.setattr("apsis.service.client.HTTPSPNEGOAuth", Mock())
