@@ -9,6 +9,32 @@ describe('Urls', () => {
   })
 })
 
+describe('applyRunSummary', () => {
+  test('takes summary fields and keeps full run fields', () => {
+    const run = {
+      run_id: 'r1',
+      state: 'scheduled',
+      expected: true,
+      conds: [{str: 'dep'}],
+      actions: [],
+      meta: {job: {labels: ['a']}},
+      program: {str: 'echo'},
+    }
+    const summary = {run_id: 'r1', state: 'running', times: {running: 't'}}
+    const merged = runs.applyRunSummary(run, summary)
+    expect(merged).toEqual({
+      run_id: 'r1',
+      state: 'running',
+      times: {running: 't'},
+      conds: [{str: 'dep'}],
+      actions: [],
+      meta: {job: {labels: ['a']}},
+      program: {str: 'echo'},
+    })
+    expect(Object.isFrozen(merged)).toBe(true)
+  })
+})
+
 describe('run windows', () => {
   const run = (run_id, state) => ({
     run_id, job_id: 'a', args: {}, state, times: {schedule: '2026-10-14T00:00:00+00:00'},
