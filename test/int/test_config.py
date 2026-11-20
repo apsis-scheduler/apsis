@@ -15,11 +15,12 @@ def test_adhoc_config(tmp_path: Path, config: str, enabled: bool) -> None:
     assert apsis.config.load(path)["adhoc"]["enabled"] is enabled
 
 
+@pytest.mark.parametrize("name", ["adhoc", "proxy_auth"])
 @pytest.mark.parametrize("value", ['"false"', "0", "null", "[]", "{}"])
-def test_invalid_adhoc_config(tmp_path: Path, value: str) -> None:
+def test_invalid_enabled_config(tmp_path: Path, name: str, value: str) -> None:
     path = tmp_path / "config.yaml"
-    path.write_text(f"adhoc:\n  enabled: {value}\n")
-    with pytest.raises(ValueError, match="adhoc.enabled must be a boolean"):
+    path.write_text(f"{name}:\n  enabled: {value}\n")
+    with pytest.raises(ValueError, match=f"{name}.enabled must be a boolean"):
         apsis.config.load(path)
 
 
