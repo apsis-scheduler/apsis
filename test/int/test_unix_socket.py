@@ -97,6 +97,7 @@ def test_proxy_auth_unix():
                 inst.connect_ws("/api/v1/summary", origin=origin, user=user)
             assert exc.value.response.status_code == status
         assert client.get("/api/control/debug").status_code == 403
+        assert client.get("/api/v1/whoami").json() == {"user": "aaronf"}
 
         bad_args = LATER_RUN | {"args": {"x": "1"}}
         (run,) = client.post("/api/v1/runs", json=bad_args).json()["runs"].values()
@@ -167,6 +168,7 @@ def test_no_proxy_auth_unix():
         (run_id,) = client.post("/api/v1/runs", json=LATER_RUN).json()["runs"]
         assert client.post(f"/api/v1/runs/{run_id}/start").status_code == 200
         assert "scheduled run started by override" in run_log(client, run_id)
+        assert client.get("/api/v1/whoami").json() == {"user": None}
         with inst.connect_ws("/api/v1/summary"):
             pass
     assert "/summary unix:" in "".join(inst.get_log_lines())
