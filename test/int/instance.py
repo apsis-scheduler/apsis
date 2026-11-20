@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import contextmanager
 import functools
+import httpx
 import logging
 import os
 from pathlib import Path
@@ -11,10 +12,10 @@ import sys
 import tempfile
 import time
 import ujson
+import websockets.sync.client
 import yaml
 
 import apsis.service.client
-from apsis.service.client import get_ws_msgs
 from apsis.sqlite import SqliteDB
 
 # -------------------------------------------------------------------------------
@@ -36,10 +37,15 @@ class ApsisService:
     An Apsis service instance running in a separate process.
     """
 
-    def __init__(self, *, port=None, job_dir=None, cfg={}, env={}):
-        self.port = int(port) if port is not None else find_free_port()
-
+    def __init__(self, *, port=None, job_dir=None, cfg={}, env={}, unix=False):
+        if unix and port is not None:
+            raise ValueError("an instance serves on either a port or a unix socket")
         self.tmp_dir = Path(tempfile.mkdtemp())
+        self.sock_path = self.tmp_dir / "apsis.sock" if unix else None
+        if unix:
+            self.port = None
+        else:
+            self.port = int(port) if port is not None else find_free_port()
         logging.info(f"Apsis instance in {self.tmp_dir}")
         self.db_path = self.tmp_dir / "apsis.db"
         if job_dir is None:
@@ -82,8 +88,11 @@ class ApsisService:
                     "serve",
                     "--config",
                     str(self.cfg_path),
-                    "--port",
-                    str(self.port),
+                    *(
+                        ("--port", str(self.port))
+                        if self.sock_path is None
+                        else ("--unix", str(self.sock_path))
+                    ),
                 ],
                 env=os.environ
                 | self.env
@@ -94,7 +103,41 @@ class ApsisService:
             )
 
     def wait_for_serve(self):
-        self.client.wait_running(2)
+        if self.sock_path is None:
+            self.client.wait_running(2)
+            return
+        deadline = time.monotonic() + 2
+        with self.http_client() as client:
+            while True:
+                try:
+                    client.get("/api/v1/running")
+                    return
+                except httpx.TransportError:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.05)
+
+    def http_client(self, **kwargs) -> httpx.Client:
+        """
+        Returns an HTTP client for this instance over its unix socket or TCP port.
+        """
+        if self.sock_path is None:
+            return httpx.Client(base_url=f"http://127.0.0.1:{self.port}", **kwargs)
+        return httpx.Client(
+            transport=httpx.HTTPTransport(uds=str(self.sock_path)),
+            base_url="http://apsis",
+            **kwargs,
+        )
+
+    def connect_ws(self, path: str, **kwargs) -> websockets.sync.client.ClientConnection:
+        """
+        Opens a websocket to `path` on this instance over its unix socket or TCP port.
+        """
+        if self.sock_path is None:
+            return websockets.sync.client.connect(f"ws://127.0.0.1:{self.port}{path}", **kwargs)
+        return websockets.sync.client.unix_connect(
+            str(self.sock_path), f"ws://apsis{path}", **kwargs
+        )
 
     def is_running(self):
         if self.srv_proc is None:
@@ -106,9 +149,17 @@ class ApsisService:
         else:
             return False
 
+    def tcp_port(self) -> int:
+        """
+        Returns the TCP port, or raises if this instance serves on a unix socket.
+        """
+        if self.sock_path is not None:
+            raise RuntimeError("this instance serves on a unix socket, use http_client")
+        return self.port
+
     @functools.cached_property
     def client(self):
-        return apsis.service.client.Client(("localhost", self.port))
+        return apsis.service.client.Client(("localhost", self.tcp_port()))
 
     @contextmanager
     def get_log(self):
@@ -165,8 +216,9 @@ class ApsisService:
         :return:
           The return code and stdout.
         """
+        port = self.tcp_port()
         assert self.srv_proc is not None
-        argv = ["apsis", "--port", str(self.port), *(str(a) for a in argv)]
+        argv = ["apsis", "--port", str(port), *(str(a) for a in argv)]
         proc = subprocess.run(argv, stdout=subprocess.PIPE)
         logging.info(f"apsis returned: {proc.returncode} {proc.stdout}")
         return proc.returncode, proc.stdout
@@ -184,6 +236,15 @@ class ApsisService:
         assert returncode == 0, f"'apsis {' '.join(argv)}' failed: {stdout.decode()}"
         return ujson.loads(stdout)
 
+    def get_run(self, run_id: str) -> dict:
+        """
+        Returns the JSO for run `run_id`.
+        """
+        with self.http_client() as client:
+            res = client.get(f"/api/v1/runs/{run_id}")
+        res.raise_for_status()
+        return res.json()["runs"][run_id]
+
     def wait_run(
         self,
         run_id,
@@ -195,7 +256,7 @@ class ApsisService:
         Polls for a run to no longer be running.
         """
         for _ in range(int(timeout / 0.1)):
-            res = self.client.get_run(run_id)
+            res = self.get_run(run_id)
             if res["state"] in wait_states:
                 time.sleep(0.1)
                 continue
@@ -214,7 +275,7 @@ class ApsisService:
         # FIXME: There should be a proper slow-poll endpoint for this, instead
         # of polling.
         for _ in range(int(timeout / 0.1)):
-            res = self.client.get_run(run_id)
+            res = self.get_run(run_id)
             if res["state"] in wait_states:
                 await asyncio.sleep(0.1)
                 continue
@@ -228,17 +289,16 @@ class ApsisService:
         Reads summary websocket messages for `query` through the first
         message of type `until`.
         """
-        url = f"ws://localhost:{self.port}/api/v1/summary?{query}"
 
-        async def read():
+        def read():
+            deadline = time.monotonic() + timeout
             msgs = []
-            async with get_ws_msgs(url) as frames:
-                async for frame in frames:
-                    msgs += ujson.loads(frame)
-                    if msgs[-1]["type"] == until:
-                        return msgs
+            with self.connect_ws(f"/api/v1/summary?{query}", max_size=None) as ws:
+                while not msgs or msgs[-1]["type"] != until:
+                    msgs += ujson.loads(ws.recv(timeout=deadline - time.monotonic()))
+            return msgs
 
-        return await asyncio.wait_for(read(), timeout)
+        return await asyncio.to_thread(read)
 
     def wait_for_run_to_start(self, run_id):
         return self.wait_run(run_id, wait_states=("new", "scheduled", "waiting", "starting"))
