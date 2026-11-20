@@ -1,3 +1,4 @@
+import base64
 from collections import namedtuple
 from contextlib import asynccontextmanager
 import http.client
@@ -8,9 +9,16 @@ import os
 import re
 import requests
 import time
+from typing import Any
 import ujson
-from urllib.parse import quote, urlunparse
+from urllib.parse import quote, urlsplit, urlunsplit
 import websockets.client
+
+try:
+    import gssapi
+    from requests_gssapi import DISABLED, SPNEGO, HTTPSPNEGOAuth
+except ImportError:
+    gssapi = HTTPSPNEGOAuth = None
 
 import apsis.service
 from apsis.runs import run_number
@@ -21,23 +29,102 @@ from apsis.lib.json import nkey
 Address = namedtuple("Address", ("host", "port"))
 
 
+def parse_address(loc: str, port: int = apsis.service.DEFAULT_PORT) -> Address:
+    """
+    Returns the host and port in `loc`, or `port` if it has none.
+    """
+    try:
+        host, loc_port = loc.split(":", 1)
+        return Address(host, int(loc_port))
+    except ValueError:
+        return Address(loc, port)
+
+
 def get_address() -> Address:
     """
     Returns the configured host and port where Apsis runs.
     """
-    try:
-        loc = os.environ["APSIS_HOST"]
-    except KeyError:
-        host, port = "localhost", apsis.service.DEFAULT_PORT
+    loc = os.environ.get("APSIS_HOST")
+    return Address("localhost", apsis.service.DEFAULT_PORT) if loc is None else parse_address(loc)
+
+
+def get_url(host: str | None = None, port: str | None = None) -> str:
+    """
+    Returns the base URL for a URL, host or host:port, defaulting to APSIS_URL or APSIS_HOST.
+    """
+    if host is None:
+        url = os.environ.get("APSIS_URL")
+        if url:
+            if port is not None:
+                raise ValueError(f"can't use --port with APSIS_URL {url}, pass --host too")
+            return url.rstrip("/")
+        addr = get_address()
+    elif "://" in host:
+        if port is not None:
+            raise ValueError(f"can't use --port with URL {host}, put the port in the URL")
+        return host.rstrip("/")
     else:
-        try:
-            host, port = loc.split(":", 1)
-            port = int(port)
-        except ValueError:
-            host, port = loc, apsis.service.DEFAULT_PORT
-        else:
-            port = int(port)
-    return Address(host, port)
+        addr = parse_address(host, get_address().port)
+    return f"http://{addr.host}:{port or addr.port}"
+
+
+AUTH_ERROR = "not authenticated, get a Kerberos ticket and check APSIS_KRB5CCNAME or KRB5CCNAME"
+NO_KERBEROS_ERROR = "not authenticated, install requests-gssapi for Kerberos"
+NO_HTTPS_ERROR = "not authenticated, use an https URL for Kerberos"
+
+
+def get_auth_error(url: str) -> str:
+    """
+    Returns the error for a 401 from `url` without a server error message.
+    """
+    if HTTPSPNEGOAuth is None:
+        return NO_KERBEROS_ERROR
+    if urlsplit(url).scheme not in ("https", "wss"):
+        return NO_HTTPS_ERROR
+    return AUTH_ERROR
+
+
+def get_credentials() -> "gssapi.Credentials":
+    """
+    Returns Kerberos initiate credentials from APSIS_KRB5CCNAME if set, else the default cache.
+    """
+    # KRB5CCNAME can point at a ticket that expires too quickly, so this uses a longer lived one
+    # remove APSIS_KRB5CCNAME and go back to KRB5CCNAME once it points at the longer lived ticket
+    ccache = os.environ.get("APSIS_KRB5CCNAME")
+    if ccache:
+        return gssapi.Credentials(usage="initiate", store={"ccache": ccache})
+    return gssapi.Credentials(usage="initiate")
+
+
+def get_kerberos_creds(url: str) -> "gssapi.Credentials | None":
+    """
+    Returns credentials with an unexpired ticket to send to `url`, or None to send no token.
+    """
+    if urlsplit(url).scheme not in ("https", "wss") or HTTPSPNEGOAuth is None:
+        return None
+    try:
+        creds = get_credentials()
+        return creds if creds.lifetime != 0 else None
+    except gssapi.exceptions.GSSError:
+        return None
+
+
+def get_negotiate_headers(url: str) -> dict[str, str]:
+    """
+    Returns an SPNEGO Authorization header for a wss `url`, or no headers.
+    """
+    creds = get_kerberos_creds(url)
+    if creds is None:
+        return {}
+    parts = urlsplit(url)
+    try:
+        name = gssapi.Name(f"HTTP@{parts.hostname}", gssapi.NameType.hostbased_service)
+        ctx = gssapi.SecurityContext(name=name, mech=SPNEGO, usage="initiate", creds=creds)
+        token = ctx.step()
+    except gssapi.exceptions.GSSError as exc:
+        logging.debug(f"no negotiate token for {parts.hostname}: {exc}")
+        return {}
+    return {"Authorization": "Negotiate " + base64.b64encode(token).decode()}
 
 
 @asynccontextmanager
@@ -46,17 +133,23 @@ async def get_ws_msgs(url):
     Async context manager of async iterator of messages read from websocket
     at `url`.
     """
-    async with websockets.client.connect(url, max_size=None) as conn:
+    headers = get_negotiate_headers(url)
+    try:
+        async with websockets.client.connect(url, max_size=None, extra_headers=headers) as conn:
 
-        async def get_msgs():
-            while True:
-                try:
-                    msg = await conn.recv()
-                except websockets.ConnectionClosedOK:
-                    break
-                yield msg
+            async def get_msgs():
+                while True:
+                    try:
+                        msg = await conn.recv()
+                    except websockets.ConnectionClosedOK:
+                        break
+                    yield msg
 
-        yield get_msgs()
+            yield get_msgs()
+    except websockets.exceptions.InvalidStatusCode as exc:
+        if exc.status_code == 401:
+            raise APIError(401, get_auth_error(url), {}) from None
+        raise
 
 
 def parse_content_range(header):
@@ -72,18 +165,42 @@ class APIError(RuntimeError):
         self.jso = jso
 
 
+def get_api_error(resp: requests.Response, default: str) -> APIError:
+    """
+    Returns an `APIError` for `resp` with the server's error, or `default`.
+    """
+    try:
+        jso = resp.json()
+        error = jso.get("error", default)
+    except Exception:
+        jso = {}
+        error = default
+    return APIError(resp.status_code, error, jso)
+
+
 NO_ARG = object()
 
 
 class Client:
-    def __init__(self, address=None):
+    def __init__(self, address=None, *, url: str | None = None):
         """
         :param address:
-          Apsis hostname and port, or none for default.
+          Apsis hostname and port.
+        :param url:
+          Apsis base URL if `address` is none, or none for `get_url`.
         """
-        self.__addr = get_address() if address is None else Address(*address)
+        if address is not None:
+            url = "http://{}:{}".format(*address)
+        self.__base = get_url() if url is None else url
 
-    def __url(self, *path, scheme="http", query=None, **kw_query):
+    @property
+    def base_url(self) -> str:
+        """
+        The base URL requests go to.
+        """
+        return self.__base
+
+    def __url(self, *path, ws=False, query=None, **kw_query):
         # query holds params whose names may collide with these keywords
         query = {**(query or {}), **kw_query}
         query = "&".join(
@@ -91,31 +208,31 @@ class Client:
             for k, v in query.items()
             if v is not None
         )
-        return urlunparse(
-            (
-                scheme,
-                f"{self.__addr.host}:{self.__addr.port}",
-                "/".join(path),
-                "",
-                query,
-                "",
-            )
+        scheme, netloc, base_path, _, _ = urlsplit(self.__base)
+        if ws:
+            scheme = {"http": "ws", "https": "wss"}[scheme]
+        return urlunsplit((scheme, netloc, base_path + "/".join(path), query, ""))
+
+    def __send(self, method: str, url: str, **kw: Any) -> requests.Response:
+        creds = get_kerberos_creds(url)
+        auth = (
+            HTTPSPNEGOAuth(mutual_authentication=DISABLED, opportunistic_auth=True, creds=creds)
+            if creds is not None
+            else None
         )
+        resp = requests.request(method, url, auth=auth, **kw)
+        if resp.status_code == 401:
+            raise get_api_error(resp, get_auth_error(url))
+        return resp
 
     def __request(self, method, *path, timeout=None, data=None, query=None, **kw_query):
         url = self.__url(*path, query={**(query or {}), **kw_query})
         logging.debug(f"{method} {url} data={data}")
-        resp = requests.request(method, url, json=data, timeout=timeout)
+        resp = self.__send(method, url, json=data, timeout=timeout)
         if 200 <= resp.status_code < 300:
             return resp.json()
         else:
-            try:
-                jso = resp.json()
-                error = jso.get("error", "unknown error")
-            except Exception:
-                jso = {}
-                error = "unknown error"
-            raise APIError(resp.status_code, error, jso)
+            raise get_api_error(resp, "unknown error")
 
     def __get(self, *path, **query):
         return self.__request("GET", *path, **query)
@@ -221,13 +338,13 @@ class Client:
         Returns output metadata for `run_id`.
         """
         url = self.__url("/api/v1/runs", run_id, "outputs")
-        resp = requests.get(url)
+        resp = self.__send("GET", url)
         resp.raise_for_status()
         return resp.json()
 
     def get_output(self, run_id, output_id) -> bytes:
         url = self.__url("/api/v1/runs", run_id, "output", output_id)
-        resp = requests.get(url)
+        resp = self.__send("GET", url)
         resp.raise_for_status()
         return resp.content
 
@@ -247,7 +364,7 @@ class Client:
             "output",
             output_id,
             "updates",
-            scheme="ws",
+            ws=True,
             **({} if start is None else {"start": start}),
         )
 
@@ -356,7 +473,7 @@ class Client:
             "/api/v1/runs",
             run_id,
             "updates",
-            scheme="ws",
+            ws=True,
             **({"init": NO_ARG} if init else {}),
         )
         async with get_ws_msgs(url) as msgs:

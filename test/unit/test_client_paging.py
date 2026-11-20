@@ -96,7 +96,7 @@ def test_get_runs_sends_colliding_args_as_filters(monkeypatch):
     # job args named like client keywords or starting with an underscore still reach the server as filters
     requests = []
 
-    def fake_request(method, url, json, timeout):
+    def fake_request(method, url, json, timeout, auth):
         requests.append((url, json, timeout))
         return Mock(status_code=200, json=Mock(return_value={"runs": {}}))
 
