@@ -2,6 +2,7 @@ import aiofiles
 import asyncio
 from collections import defaultdict
 from collections.abc import Hashable
+from dataclasses import dataclass
 import functools
 import logging
 import os
@@ -19,6 +20,7 @@ from .cond.dependency import Dependency
 from .exc import JobError, JobsDirErrors, SchemaError
 from .lib import itr
 from .lib.json import to_array, to_narray, check_schema
+from .lib.parse import parse_duration
 from .lib.py import tupleize, format_ctor
 from .program import Program, NoOpProgram
 from .runs import BIND_ARGS, eval_enabled, is_template, template_expand
@@ -29,7 +31,31 @@ log = logging.getLogger(__name__)
 # Literal API path suffix for a job's run history.
 JOB_RUNS_SUFFIX = "/runs"
 
+RETRY_MAX_COUNT = 5
+
 # -------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Retry:
+    """Reruns a failed run up to `count` times, `delay` seconds after each failure."""
+
+    count: int
+    delay: float
+
+    def to_jso(self) -> dict:
+        return {"count": self.count, "delay": self.delay}
+
+    @classmethod
+    def from_jso(cls, jso: dict) -> "Retry":
+        with check_schema(jso) as pop:
+            count = pop("count")
+            delay = pop("delay", parse_duration)
+        if type(count) is not int or not 1 <= count <= RETRY_MAX_COUNT:
+            raise SchemaError(f"retry count must be a whole number from 1 to {RETRY_MAX_COUNT}")
+        if delay < 0:
+            raise SchemaError("retry delay can't be negative")
+        return cls(count, delay)
 
 
 class Job:
@@ -44,6 +70,7 @@ class Job:
         *,
         meta={},
         ad_hoc=False,
+        retry=None,
     ):
         """
         :param schedules:
@@ -53,6 +80,8 @@ class Job:
           True if this is an ad hoc job.
         :param meta:
           Dict of metadata.  Must be JSON-serializable.
+        :param retry:
+          `Retry` policy for failed runs, or none for no retries.
         """
         self.job_id = None if job_id is None else str(job_id)
         self.params = frozenset(str(p) for p in tupleize(params))
@@ -62,6 +91,7 @@ class Job:
         self.actions = actions
         self.meta = meta
         self.ad_hoc = bool(ad_hoc)
+        self.retry = retry
 
     def __repr__(self):
         return format_ctor(
@@ -74,6 +104,7 @@ class Job:
             actions=self.actions,
             meta=self.meta,
             ad_hoc=self.ad_hoc,
+            retry=self.retry,
         )
 
     def __eq__(self, other):
@@ -86,10 +117,11 @@ class Job:
             and other.conds == self.conds
             and other.actions == self.actions
             and other.meta == self.meta
+            and other.retry == self.retry
         )
 
     def to_jso(self):
-        return {
+        jso = {
             "job_id": self.job_id,
             "params": list(sorted(self.params)),
             "schedule": [schedule_to_jso(s) for s in self.schedules],
@@ -99,6 +131,9 @@ class Job:
             "metadata": self.meta,
             "ad_hoc": self.ad_hoc,
         }
+        if self.retry is not None:
+            jso["retry"] = self.retry.to_jso()
+        return jso
 
     @classmethod
     def from_jso(cls, jso, job_id):
@@ -128,6 +163,9 @@ class Job:
 
             ad_hoc = pop("ad_hoc", bool, default=False)
 
+            retry = pop("retry", default=None)
+            retry = None if retry is None else Retry.from_jso(retry)
+
         return cls(
             job_id,
             params,
@@ -137,6 +175,7 @@ class Job:
             actions=acts,
             meta=metadata,
             ad_hoc=ad_hoc,
+            retry=retry,
         )
 
 

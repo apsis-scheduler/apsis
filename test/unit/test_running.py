@@ -6,6 +6,7 @@ import ora
 import pytest
 
 from apsis.apsis import Apsis
+from apsis.jobs import InMemoryJobs
 from apsis.lib import memo
 from apsis.program.base import (
     ProgramError,
@@ -94,6 +95,7 @@ class _FakeApsis:
     _Apsis__start_actions = staticmethod(lambda run: None)
 
     def __init__(self, run, updates):
+        self.jobs = InMemoryJobs([])
         self.run_log = _RunLog()
         self.run_store = _RunStore()
         self.run_update_publisher = _Publisher()
