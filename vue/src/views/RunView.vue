@@ -44,6 +44,14 @@ div
               th message
               td {{ run.message }}
 
+            tr(v-if="retry")
+              th attempt
+              td {{ retryAttempt(retry, run.state) }}
+
+            tr(v-if="retry && retry.original")
+              th original run
+              td: Run(:run-id="retry.original")
+
             tr(v-if="run.program")
               th program
               td.no-padding: Program(:program="run.program")
@@ -121,7 +129,7 @@ import JobWithArgs from '@/components/JobWithArgs'
 import OperationButton from '@/components/OperationButton'
 import Program from '@/components/Program'
 import Run from '@/components/Run'
-import { isComplete, OPERATIONS } from '@/runs'
+import { isComplete, OPERATIONS, retryAttempt } from '@/runs'
 import RunArgs from '@/components/RunArgs'
 import RunDependencies from '@/components/RunDependencies'
 import RunElapsed from '@/components/RunElapsed'
@@ -191,10 +199,15 @@ export default {
     metadata() {
       return this.metadata ? this.metadata.program || {} : {}
     },
+
+    retry() {
+      return this.run && this.run.meta ? this.run.meta.retry : undefined
+    },
   },
 
   methods: {
     join,
+    retryAttempt,
 
     fetchRun() {
       const url = api.getRunUrl(this.run_id)

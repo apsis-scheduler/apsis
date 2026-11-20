@@ -240,6 +240,22 @@ export function sortStates(states) {
 }
 
 /**
+ * Describes the attempt of a run with `state` and `retry` metadata.
+ *
+ * @param retry - `{attempt, count, original, pending}` from `run.meta.retry`,
+ *   or undefined for a run of a job with no retry setting
+ * @returns e.g. "attempt 2 of 3, retry pending", or null with no `retry`
+ */
+export function retryAttempt(retry, state) {
+  if (!retry)
+    return null
+  let text = 'attempt ' + (retry.attempt + 1) + ' of ' + (retry.count + 1)
+  if (state === 'failure' || state === 'error')
+    text += retry.pending ? ', retry pending' : ', no retry coming'
+  return text
+}
+
+/**
  * Converts a run args dict to an array of PARAM=VALUE strings.
  */
 export function argsToArray(args) {
