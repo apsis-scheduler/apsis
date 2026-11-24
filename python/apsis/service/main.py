@@ -1,15 +1,21 @@
 import asyncio
 import logging
+import os
 from pathlib import Path
+import re
 import sanic
 import sanic.response
 import sanic.router
 import signal
+import socket
+import stat
+from urllib.parse import urlsplit
 
 from apsis import __version__
 from apsis.apsis import Apsis
 from apsis.exc import JobsDirErrors
 from apsis.jobs import load_jobs_dir
+from apsis.lib.api import error
 from apsis.lib.asyn import cancel_task
 from apsis.sqlite import SqliteDB
 from . import api, control, procstar
@@ -58,6 +64,39 @@ app.config.RESPONSE_TIMEOUT = 180
 app.config.WEBSOCKET_PING_TIMEOUT = 300
 app.config.WEBSOCKET_PING_INTERVAL = 100
 
+
+# the default useradd name pattern, up to 32 characters, without the trailing $ for machine accounts
+USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+
+
+@app.middleware("request")
+async def set_user(request: sanic.Request) -> sanic.HTTPResponse | None:
+    """
+    Sets `request.ctx.user` from the proxy's X-Remote-User header with proxy
+    auth enabled, or to none with it disabled.
+
+    :return:
+      With proxy auth enabled, a 401 response for a missing, repeated or
+      invalid X-Remote-User, or a 403 response for an Origin on another host.
+    """
+    if not request.app.proxy_auth:
+        request.ctx.user = None
+        return
+    users = request.headers.getall("X-Remote-User", [])
+    user = users[0].split("@", 1)[0].lower() if len(users) == 1 and users[0].isascii() else ""
+    if USER_RE.fullmatch(user) is None:
+        return error("missing or invalid X-Remote-User", 401)
+    origin = request.headers.get("Origin")
+    if origin is not None:
+        try:
+            origin_host = urlsplit(origin).hostname
+        except ValueError:
+            origin_host = None
+        if origin_host != request.server_name:
+            return error(f"cross origin request from {origin!r}", 403)
+    request.ctx.user = user
+
+
 app.blueprint(api.API, url_prefix="/api/v1")
 app.blueprint(control.API, url_prefix="/api/control")
 app.blueprint(procstar.API, url_prefix="/api/procstar")
@@ -92,11 +131,64 @@ def build_apsis(cfg):
     return Apsis(cfg, jobs, db)
 
 
+def find_unix_dir_problem(path: Path) -> str | None:
+    """
+    Returns why another user could replace a folder holding `path`, up to the
+    first sticky one, or None.
+    """
+    parent = Path(os.path.abspath(path.parent))
+    for folder in (parent, *parent.parents):
+        st = os.lstat(folder)
+        if stat.S_ISLNK(st.st_mode):
+            return f"socket folder {folder} is a symlink"
+        if st.st_mode & stat.S_ISVTX:
+            return None
+        if st.st_uid not in (os.geteuid(), 0):
+            return f"socket folder {folder} is owned by another user"
+        if st.st_mode & 0o022:
+            return f"socket folder {folder} is writable by group or others"
+    return None
+
+
+def bind_unix(path: Path) -> socket.socket:
+    """
+    Binds a unix socket at `path` that only its owner and group can connect to,
+    creating its directory and warning about one other users could replace, and
+    replacing a stale socket file but not one a server is listening on.
+    """
+    umask = os.umask(0o022)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    finally:
+        os.umask(umask)
+    problem = find_unix_dir_problem(path)
+    if problem is not None:
+        log.error(f"{problem}, so another user could replace the socket")
+    if path.is_socket():
+        with socket.socket(socket.AF_UNIX) as probe:
+            try:
+                probe.connect(str(path))
+            except ConnectionRefusedError:
+                path.unlink()
+            else:
+                raise RuntimeError(f"something is already serving on {path}")
+    sock = socket.socket(socket.AF_UNIX)
+    umask = os.umask(0o117)
+    try:
+        sock.bind(str(path))
+    finally:
+        os.umask(umask)
+    sock.listen()
+    return sock
+
+
 # FIXME: Get host, port from config.
-def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
+def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False, unix: Path | None = None):
     """
     Runs the Apsis service.
 
+    :param unix:
+      Path of a unix socket to serve on instead of `host` and `port`.
     :return:
       True if the service should be restarted on exit.
     """
@@ -106,21 +198,19 @@ def serve(cfg, host="127.0.0.1", port=DEFAULT_PORT, debug=False):
     asyncio.set_event_loop(loop)
     loop.set_debug(True)
 
+    addr = {"host": host, "port": port} if unix is None else {"sock": bind_unix(unix)}
+
     apsis = build_apsis(cfg)
 
     app.apsis = apsis
     # Flag to indicate whether to restart after shutting down.
     app.restart = False
     app.running = True  # FIXME: ??  Remove?
+    app.proxy_auth = cfg["proxy_auth"]["enabled"]
 
     # Set up the HTTP server.
     log.info("starting HTTP service")
-    server = app.create_server(
-        host=host,
-        port=port,
-        debug=debug,
-        return_asyncio_server=True,
-    )
+    server = app.create_server(**addr, debug=debug, return_asyncio_server=True)
     server_task = asyncio.ensure_future(server)
 
     # Get Apsis running.

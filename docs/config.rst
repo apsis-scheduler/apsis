@@ -25,6 +25,9 @@ config file.
     adhoc:
       enabled: false
 
+    proxy_auth:
+      enabled: false
+
     schedule:
       since: null               # now, or YYYY-MM-DDTHH:MM:SSZ
       max_age: null             # seconds
@@ -90,6 +93,24 @@ When disabled, API requests containing a job definition return HTTP 403 before
 the job is loaded or saved.  Previously saved ad hoc jobs can still be scheduled
 or rerun, and queued and running jobs continue normally.  Registered jobs are
 unaffected.
+
+
+Proxy auth
+----------
+
+``proxy_auth.enabled`` controls whether Apsis trusts the user an authenticating
+proxy puts in front of it.  It defaults to ``false`` and must be a YAML boolean.
+
+When enabled, every request must carry exactly one valid ``X-Remote-User``
+header from the proxy, like ``aaronf@EXAMPLE.COM``, or it gets HTTP 401, and
+Apsis records the user on run actions like ``skipped by aaronf``.  Apsis also
+refuses cross origin requests and the debug endpoint with HTTP 403, so the
+proxy has to pass on the browser's ``Host`` header.
+
+Enable it only when the proxy is the only thing that can reach Apsis, for
+example on a unix socket with `\--unix` that only the proxy's group can open,
+since anyone else who can connect can claim to be any user.  A localhost port
+isn't enough, since any user on the host can connect to it.
 
 
 Schedule
