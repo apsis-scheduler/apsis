@@ -100,6 +100,8 @@ def get_kerberos_creds(url: str) -> "gssapi.Credentials | None":
     """
     Returns credentials with an unexpired ticket to send to `url`, or None to send no token.
     """
+    # only offers a ticket over https and wss so it never goes out in the clear
+    # a server that doesn't check tickets ignores it
     if urlsplit(url).scheme not in ("https", "wss") or HTTPSPNEGOAuth is None:
         return None
     try:

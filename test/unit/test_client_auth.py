@@ -113,7 +113,8 @@ def test_host_help_shows_default_url(monkeypatch, capsys, main):
     monkeypatch.setattr("sys.argv", ["apsis", "--help"])
     with pytest.raises(SystemExit):
         main()
-    assert "[def: https://apsis.example.com]" in " ".join(capsys.readouterr().out.split())
+    out = " ".join(capsys.readouterr().out.split())
+    assert "[def: APSIS_URL, else APSIS_HOST, now https://apsis.example.com]" in out
 
 
 @pytest.mark.parametrize(

@@ -51,12 +51,13 @@ def main():
     parser.add_argument(
         "--host",
         metavar="HOST",
-        help=f"connect to HOST, a URL, host or host:port [def: {apsis.service.client.get_url()}]",
+        help="connect to HOST, a URL, host or host:port, overriding APSIS_URL and APSIS_HOST "
+        f"[def: APSIS_URL, else APSIS_HOST, now {apsis.service.client.get_url()}]",
     )
     parser.add_argument(
         "--port",
         metavar="PORT",
-        help="connect to PORT on a HOST that isn't a URL",
+        help="connect to PORT on a HOST that isn't a URL, overriding the port in APSIS_HOST",
     )
 
     # --- command: adhoc ----------------------------------------------
