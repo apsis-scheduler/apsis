@@ -198,6 +198,16 @@ def migrate_2_8_0(db: SqliteDB) -> None:
     conn.commit()
 
 
+def migrate_2_9_0(db: SqliteDB) -> None:
+    """
+    Add an index backing timestamp-range queries on runs.
+    """
+    conn = db.conn
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_timestamp ON runs (timestamp)")
+    log.info("created idx_runs_timestamp")
+    conn.commit()
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("path", metavar="PATH", type=Path, help="migrate db file PATH")
@@ -209,6 +219,7 @@ def main():
         migrate_2_4_0(db)
         migrate_2_4_5(db)
         migrate_2_8_0(db)
+        migrate_2_9_0(db)
 
         db.conn.commit()
 

@@ -41,6 +41,24 @@ def test_migrate_2_8_0(tmp_path, migrate_db):
     assert {"idx_runs_schedule", "idx_runs_job_cover"} <= indexes(path)
 
 
+def test_migrate_2_9_0(tmp_path, migrate_db):
+    path = tmp_path / "apsis.db"
+    SqliteDB.create(path)
+    assert "idx_runs_timestamp" in indexes(path)
+
+    conn = SqliteDB.open(path).conn
+    conn.execute("DROP INDEX idx_runs_timestamp")
+    conn.commit()
+
+    db = SqliteDB.open(path)
+    migrate_db.migrate_2_9_0(db)
+    assert "idx_runs_timestamp" in indexes(path)
+
+    # running again leaves the index alone
+    migrate_db.migrate_2_9_0(db)
+    assert "idx_runs_timestamp" in indexes(path)
+
+
 def test_main(tmp_path, migrate_db, monkeypatch):
     path = tmp_path / "apsis.db"
     SqliteDB.create(path)
