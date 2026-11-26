@@ -310,6 +310,7 @@ sa.Index(
     TBL_RUNS.c.run_id,
     TBL_RUNS.c.timestamp,
 )
+sa.Index("idx_runs_timestamp", TBL_RUNS.c.timestamp)
 
 # schedule time of a run, written the same as idx_runs_schedule
 SCHEDULE_TIME_SQL = "json_extract(times, '$.schedule')"
